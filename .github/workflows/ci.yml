@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: MIT
+
+# Builds agblib on its own whenever main changes: on Windows x64 with clang-cl. The Windows job
+# also builds the conversions (AGBLIB_SEQUENCE_EXPORT=ON) and runs ctest.
+# Changes to documentation alone don't start a run.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE", "tools/**", ".clang-format", ".gitignore"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push waits for the run before it. A run that has started is never cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64 (clang-cl)
+            os: windows-2025
+            cmake: -A x64 -T ClangCL -DAGBLIB_SEQUENCE_EXPORT=ON
+            tests: true
+            timeout: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S . -B build ${{ matrix.cmake }}
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        if: matrix.tests
+        run: ctest --test-dir build --build-config Release --output-on-failure --parallel 4
