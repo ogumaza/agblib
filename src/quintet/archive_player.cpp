@@ -33,7 +33,7 @@ constexpr int kTailFrames = 2;
 
 // A timer's prescaler, from bits 0 and 1 of its control.
 constexpr uint32_t kPrescale[4] = {1, 64, 256, 1024};
-constexpr uint8_t kTimerOn = 0x80;
+constexpr uint8_t kTimerOn = 0x80; // bit 7 of the control, in its low byte
 constexpr uint8_t kDmaOn = 0x80; // bit 15 of the control, in its high byte
 
 // The bytes that a note's start stores in its FIFO, and the bytes in a FIFO at which its DMA moves more.
@@ -132,14 +132,14 @@ void SoundBus::ResetFifos(const agb::RegisterWrite& write)
 void SoundBus::StoreTimer(int timer, uint32_t offset, int size, uint32_t value)
 {
     Timer& t = timers_[size_t(timer)];
-    const bool was_on = t.registers[3] & kTimerOn;
+    const bool was_on = t.registers[2] & kTimerOn;
     for (int b = 0; b < size && offset + uint32_t(b) < kTimerBytes; b++)
     {
         t.registers[offset + uint32_t(b)] = uint8_t(value >> (8 * b));
     }
 
     // A timer that starts loads its reload. A running timer takes a new reload at its next overflow.
-    const bool on = t.registers[3] & kTimerOn;
+    const bool on = t.registers[2] & kTimerOn;
     const uint32_t period = (0x10000 - Le(t.registers, 0, 2)) * kPrescale[t.registers[2] & 3];
     if (!on)
     {

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 cmake_minimum_required(VERSION 3.20)
-project(agblib VERSION 1.0.0 LANGUAGES C CXX)
+project(agblib VERSION 1.1.0 LANGUAGES C CXX)
 
 # CMake 3.20 has no PROJECT_IS_TOP_LEVEL. agblib is the top-level project when the build starts in its folder.
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
@@ -212,6 +212,12 @@ xsflib_add_project_library(agblib logikstate src/logikstate/driver.cpp src/logik
                            src/logikstate/mod1_player.cpp src/logikstate/player.cpp src/logikstate/song.cpp
                            src/logikstate/mod30.cpp src/logikstate/mod30_player.cpp src/logikstate/mod30_games.cpp)
 target_link_libraries(agblib_logikstate PUBLIC agblib::agb)
+
+# ITE Media's GBA driver, a player of 4-channel modules in a bank: detection, the reader of its songs and the walk of a
+# song's rows for its loop or end.
+xsflib_add_project_library(agblib ite src/ite/driver.cpp)
+target_link_libraries(agblib_ite PUBLIC agblib::agb)
+xsflib_add_project_test(agblib ite agblib::ite)
 
 # Enough of a GBA to run a game's sound driver on the ARM interpreter: the memories, the I/O registers, the DMA's
 # immediate transfers and the BIOS's calls that the drivers make. A game's MP2K driver runs on it (mp2k_game), as the

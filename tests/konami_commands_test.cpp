@@ -634,6 +634,16 @@ void TestNewCommands()
     Check(Throws(command(Kind::kVolume, 0x20), Revision::kWct2004), "a volume past 15 in WCT 2004");
     Check(BytesOfCommand(command(Kind::kVolume, 3, 1), Revision::kDungeonDiceMonsters) == bytes_of({0xD3}), "Dx");
 
+    // The Ultimate Masters revisions set a wave in the duty byte. Their decoders read it as a duty command. The later
+    // builds take it from the opcode's low nibble less 4. A wave above 11 has no byte there.
+    const Command wave = command(Kind::kProgram, 1, 1);
+    Check(BytesOfCommand(wave, Revision::kPrinceOfTennis) == bytes_of({0x85}), "a wave in a later build");
+    Check(BytesOfCommand(command(Kind::kProgram, 0, 1), Revision::kPrinceOfTennis) == bytes_of({0x80}), "wave 0");
+    Check(BytesOfCommand(command(Kind::kProgram, 11, 1), Revision::kLiveStart) == bytes_of({0x8F}), "wave 11");
+    Check(Throws(command(Kind::kProgram, 12, 1), Revision::kPrinceOfTennis), "wave 12 in a later build");
+    Check(Throws(command(Kind::kProgram, 64, 1), Revision::kPrinceOfTennis), "wave 64 in a later build");
+    Check(BytesOfCommand(wave, Revision::kUltimateMasters) == bytes_of({0x05}), "a wave in Ultimate Masters");
+
     Check(BytesOfCommand(command(Kind::kNoteOff, 0), Revision::kWct2004) == bytes_of({0xE0}), "a rest");
     Check(BytesOfCommand(command(Kind::kNoteOff, 0), Revision::kDungeonDiceMonsters) == bytes_of({0xFC}), "FC");
 

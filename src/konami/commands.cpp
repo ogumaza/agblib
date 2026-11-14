@@ -567,7 +567,19 @@ std::optional<Item> ReadBack(const std::vector<uint8_t>& bytes, bool wait, int t
 // std::invalid_argument where the usual bytes don't read as its values either: the revision lacks the command.
 std::vector<uint8_t> ItemBytes(const Item& item, Revision r)
 {
-    const Item raw = ToConsole(item, r);
+    // The Ultimate Masters revisions have no wave command. A wave goes in the track's duty byte, and reads back as the
+    // command that sets the duty byte. The later builds take a wave from an opcode's low nibble less 4: 0 to 11.
+    Item raw = ToConsole(item, r);
+    if (UltimateMasters(r) && raw.kind == Kind::kProgram && raw.index == 1)
+    {
+        if (LaterUltimateMasters(r) && raw.value.value > 11)
+        {
+            throw std::invalid_argument("revision " + std::string(RevisionName(r)) +
+                                        " has no bytes for a wave above 11");
+        }
+        raw.index = 0;
+    }
+
     const bool wait = item.kind == Kind::kWait;
     const bool arguments = KeepsArguments(item.kind);
     const int track = ReadingTrack(item);

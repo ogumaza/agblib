@@ -23,6 +23,8 @@
 
 #include "seqlib/midi/reader.h"
 #include "seqlib/testing/check.h"
+#include "xsflib/bytes.h"
+#include "xsflib/text.h"
 
 #include "agblib/agb/files.h"
 #include "agblib/agb/gba.h"
@@ -171,8 +173,8 @@ inline std::vector<PresetHeader> ReadPresets(const std::string& path)
     std::vector<PresetHeader> presets;
     for (size_t h = 0; h + 2 * 38 <= phdr.size(); h += 38) // the last header only ends the list
     {
-        presets.push_back({reinterpret_cast<const char*>(&phdr[h]), phdr[h + 22] | (phdr[h + 23] << 8),
-                           phdr[h + 20] | (phdr[h + 21] << 8)});
+        presets.push_back({reinterpret_cast<const char*>(&phdr[h]), xsflib::LoadLe16(&phdr[h + 22]),
+                           xsflib::LoadLe16(&phdr[h + 20])});
     }
 
     return presets;
@@ -186,14 +188,14 @@ inline std::vector<std::array<int, 3>> ReadZoneKeys(const std::string& path)
     std::vector<std::array<int, 3>> zones;
     for (size_t g = 0; g + 4 <= igen.size(); g += 4)
     {
-        const int op = igen[g] | (igen[g + 1] << 8);
+        const int op = xsflib::LoadLe16(&igen[g]);
         if (op == sf2::kKeyRange)
         {
             zones.push_back({igen[g + 2], igen[g + 3], -1});
         }
         else if (op == sf2::kOverridingRootKey && !zones.empty())
         {
-            zones.back()[2] = int16_t(igen[g + 2] | (igen[g + 3] << 8));
+            zones.back()[2] = int16_t(xsflib::LoadLe16(&igen[g + 2]));
         }
     }
 

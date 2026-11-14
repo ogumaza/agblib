@@ -542,8 +542,8 @@ std::vector<std::array<int, 3>> ReadZoneTuning(const std::string& path)
     std::vector<std::array<int, 3>> zones;
     for (size_t g = 0; g + 4 <= igen.size(); g += 4)
     {
-        const int op = igen[g] | (igen[g + 1] << 8);
-        const int amount = int16_t(igen[g + 2] | (igen[g + 3] << 8));
+        const int op = xsflib::LoadLe16(&igen[g]);
+        const int amount = int16_t(xsflib::LoadLe16(&igen[g + 2]));
         if (op == sf2::kKeyRange)
         {
             zones.push_back({igen[g + 2], igen[g + 3], 0});

@@ -553,6 +553,35 @@ void TestLoopAtSecondPass()
     }
 }
 
+// The noise channel rests, then loops a note and a rest. At tempo 82, the loop point falls partway through a frame. The
+// driver drops the part of a frame it has counted when it loops. The note then spans a frame more or less in the first
+// pass than in the second. With a volume fade that changes the registers in every frame, the two notes make two drums.
+// They start alike, and the loop starts at the first pass. A note that plays at another volume in the second pass
+// differs in a frame that both passes span, and the loop starts at the second pass.
+void TestLoopNoiseEnds()
+{
+    for (const bool differs : {false, true})
+    {
+        Cart cart(Revision::kA);
+        Channel noise;
+        noise.Bytes({0x7F, 82, 0x5E, 15, 0xD2, 100, 0, 0, 60, 1}).Rest(1).Bytes({0xBF}).Note(12, 2);
+        if (differs)
+        {
+            noise.Bytes({0x5E, 8});
+        }
+        cart.Songs({Song({{0xFF}, {0xFF}, {0xFF}, noise.Rest(2).End()})});
+        const Rom rom = cart.ToRom();
+        const DriverInfo info = Detect(rom);
+        ConvertSettings opt = TempSettings(differs ? "loop_noise_differs" : "loop_noise_ends");
+
+        const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
+
+        const double pass = sum.loop_end - sum.loop_start;
+        SEQLIB_CHECK(sum.ok && sum.loop_start > 0);
+        SEQLIB_CHECK((sum.loop_start < pass) != differs);
+    }
+}
+
 // Square 1 loops two quarter notes from its start, and square 2 the same after a rest of 56 ticks. At tempo 90, a frame
 // is 90 of the MIDI file's ticks and a tick is 37, so square 2's loop point is 2 MIDI ticks into frame 23, and square
 // 1's is at the start of frame 0. Each loop drops the part of a frame that the channel has counted, 84 MIDI ticks for
@@ -725,6 +754,53 @@ void TestPcm()
     SEQLIB_CHECK_EQ(FifoFrames(0, 600, 100), 8);
     SEQLIB_CHECK_EQ(FifoFrames(5000, 600, 100), 0);
     SEQLIB_CHECK_EQ(FifoFrames(0, 0, 100), 0);
+}
+
+// The driver starts a FIFO's timer with one 32-bit store to TMxCNT_L. Its third byte sets the start bit: bit 7 of
+// TMxCNT_H. A store of 0 stops the timer, and a 16-bit store to TMxCNT_H starts timer 1 for FIFO B. On the player, a
+// PCM note on FIFO A sounds with no other channel playing, and the player stops at the sample's end.
+void TestPcmPlays()
+{
+    Cart cart(Revision::kA);
+    cart.Songs({Song({{0xFF}, {0xFF}, {0xFF}, {0xFF}, Channel().Bytes({0xDC, 0x00, 0x5E, 1}).Note(12, 3).End()})});
+    const std::vector<uint32_t> data = cart.Samples(kSampleFile, {{Saw(4000), 10000}});
+    const Rom rom = cart.ToRom();
+    const DriverInfo info = Detect(rom);
+
+    agblib::quintet::SoundBus bus(rom, agblib::quintet::InitRegisters(Revision::kA), true);
+    bus.Store({0x040000BC, 4, data[0] + 32});
+    bus.Store({0x040000C4, 4, 0xB6400000});
+    bus.Store({0x04000100, 4, 0x0080FA0F});
+    const bool a_runs = bus.FifoRunning(0);
+    bus.Store({0x04000100, 4, 0});
+    const bool a_stops = !bus.FifoRunning(0);
+    bus.Store({0x040000C8, 4, data[0] + 32});
+    bus.Store({0x040000D0, 4, 0xB6400000});
+    bus.Store({0x04000104, 2, 0xFA0F});
+    bus.Store({0x04000106, 2, 0x0080});
+    const bool b_runs = bus.FifoRunning(1);
+
+    ArchivePlayer player(rom, std::span<const DriverInfo>(&info, 1));
+    player.Start(0);
+    player.MeterTracks(true);
+    std::vector<int16_t> out;
+    int32_t peak = 0;
+    for (int f = 0; f < 8; f++)
+    {
+        player.RunFrame(out);
+        peak = std::max(peak, player.TrackPeaks(4)[0]);
+    }
+    const bool sounds = std::any_of(out.begin(), out.end(), [&out](int16_t v) { return v != out.front(); });
+    int frames = 8;
+    for (; frames < 600 && player.Busy(); frames++)
+    {
+        player.RunFrame();
+    }
+
+    SEQLIB_CHECK(a_runs && a_stops && b_runs);
+    SEQLIB_CHECK(peak > 0);
+    SEQLIB_CHECK(sounds);
+    SEQLIB_CHECK(frames < 600);
 }
 
 // An audition plays one note with the instrument, the pitch and the volume given, as the channel's commands would: on
@@ -1271,12 +1347,14 @@ int RunTests()
     TestLoopAfterTempoChange();
     TestLoopLengths();
     TestLoopAtSecondPass();
+    TestLoopNoiseEnds();
     TestLoopSeam();
     TestLoopSettingsAgain();
     TestHourLimit();
     TestRegisters();
     TestWaveVolumes();
     TestPcm();
+    TestPcmPlays();
     TestAudition();
     TestInstruments();
     TestBanks();

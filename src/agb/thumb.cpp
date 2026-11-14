@@ -733,9 +733,14 @@ uint32_t FindFirstThumb(const Rom& rom, std::string_view text)
     return hits.empty() ? 0 : hits[0];
 }
 
+uint32_t ThumbLiteralAddress(const Rom& rom, uint32_t at)
+{
+    return ((at + 4) & ~3u) + (rom.U16(at) & 0xFFu) * 4;
+}
+
 uint32_t ThumbLiteral(const Rom& rom, uint32_t at)
 {
-    return rom.U32(((at + 4) & ~3u) + (rom.U16(at) & 0xFFu) * 4);
+    return rom.U32(ThumbLiteralAddress(rom, at));
 }
 
 uint32_t BlTarget(const Rom& rom, uint32_t at)

@@ -6,10 +6,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <map>
 #include <string>
 #include <vector>
+
+#include "xsflib/text.h"
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
@@ -556,9 +557,8 @@ Output FindOutput(const Rom& rom, std::vector<std::string>& log)
             const int fifos = ((value & kFifoA) ? 1 : 0) + ((value & kFifoB) ? 1 : 0);
             if (fifos != 2)
             {
-                char text[16];
-                std::snprintf(text, sizeof text, "0x%04X", unsigned(value));
-                log.push_back("one FIFO plays the mix (SOUNDCNT_H " + std::string(text) + " at " + Hex(next) + ")");
+                log.push_back("one FIFO plays the mix (SOUNDCNT_H " + xsflib::Hex(value, 4, true) + " at " + Hex(next) +
+                              ")");
             }
             return {at, fifos};
         }

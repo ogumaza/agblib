@@ -15,6 +15,7 @@
 
 #include "seqlib/sf2/soundfont.h"
 #include "seqlib/testing/check.h"
+#include "xsflib/bytes.h"
 
 #include "agblib/agb/files.h"
 #include "agblib/agb/rom.h"
@@ -180,7 +181,7 @@ public:
 
     uint16_t ReadU16(uint32_t at) const
     {
-        return uint16_t(image_[at - kRomBase] | (image_[at - kRomBase + 1] << 8));
+        return xsflib::LoadLe16(&image_[at - kRomBase]);
     }
 
     Rom Build() const

@@ -203,9 +203,7 @@ void TestCallDump()
 
     const auto line_at = [](const std::string& s, uint32_t addr)
     {
-        char key[16];
-        std::snprintf(key, sizeof key, "0x%08X", addr);
-        const size_t at = s.find(key);
+        const size_t at = s.find(xsflib::Hex(addr, 8, true));
         return at == std::string::npos ? std::string() : s.substr(at, s.find('\n', at) - at);
     };
     for (const std::string& s : listings)

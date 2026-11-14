@@ -907,7 +907,7 @@ private:
 
 // The start of a note in a pass through a loop. FirstPassRepeats() compares the passes by these fields: the MIDI ticks
 // from the pass's start, the key and program, the controllers for the levels and the bend of the note's first frame,
-// and the MIDI file's tempo there.
+// and the MIDI file's tempo there. A noise note's key is 0: its drum is compared on its own.
 struct NoteStart
 {
     bool operator==(const NoteStart& other) const = default;
@@ -921,12 +921,30 @@ struct NoteStart
     int tempo = 0;
 };
 
+// A noise note's drum and the frames that the note spans.
+struct NoiseNote
+{
+    NoiseSound drum;
+    size_t frames = 0;
+};
+
+// Returns the frames of `drum` up to its `frames`th, without the frames at the end that change nothing.
+NoiseSound NoiseUpTo(const NoiseSound& drum, size_t frames)
+{
+    NoiseSound sound = drum;
+    sound.frames.resize(std::min(sound.frames.size(), frames));
+    sound.Trim();
+
+    return sound;
+}
+
 // Returns true if each channel's second pass through its loop plays the same notes as its first: the same keys and
 // programs at the same ticks from the pass's start, with the same levels, bend and tempo. Every note has the same
 // velocity. The notes' ends aren't compared: the first pass can be a fraction of a frame longer than the next, as the
 // driver drops the part of a frame it has counted when it loops, and the sound hardware's clocks, which aren't tied to
-// the frames, can end a note a frame earlier or later from pass to pass. `sim` has to hold three passes of the song's
-// loop, so that every channel's second pass is complete.
+// the frames, can end a note a frame earlier or later from pass to pass. A noise note's drum contains every frame of
+// the note. Its frames are compared up to the frames that both passes' notes span, and the spans may differ by a frame
+// at most. `sim` has to hold three passes of the song's loop, so that every channel's second pass is complete.
 bool FirstPassRepeats(const Rom& rom, const DriverInfo& info, const Simulation& sim)
 {
     NoteMaker maker(rom, info, sim);
@@ -952,6 +970,7 @@ bool FirstPassRepeats(const Rom& rom, const DriverInfo& info, const Simulation& 
         }
 
         std::array<std::vector<NoteStart>, 2> passes;
+        std::array<std::vector<NoiseNote>, 2> noise;
         for (const Note& n : maker.Make(c))
         {
             for (size_t k = 0; k < 2; k++)
@@ -961,14 +980,31 @@ bool FirstPassRepeats(const Rom& rom, const DriverInfo& info, const Simulation& 
                     const auto frame = std::upper_bound(sim.frame_ticks.begin(), sim.frame_ticks.end(), n.on) - 1;
                     int cc10 = 64, cc11 = 0;
                     LevelsToControllers(n.sounds[0].left, n.sounds[0].right, cc10, cc11);
-                    passes[k].push_back({n.on - bounds[k], n.key, n.program, cc10, cc11, n.sounds[0].bend,
+                    passes[k].push_back({n.on - bounds[k], c == kNoise ? 0 : n.key, n.program, cc10, cc11,
+                                         n.sounds[0].bend,
                                          MidiTempo(sim.frames[size_t(frame - sim.frame_ticks.begin())])});
+                    if (c == kNoise)
+                    {
+                        noise[k].push_back({n.noise, n.sounds.size()});
+                    }
                 }
             }
         }
         if (passes[0] != passes[1])
         {
             return false;
+        }
+
+        for (size_t i = 0; i < noise[0].size(); i++)
+        {
+            const NoiseNote& a = noise[0][i];
+            const NoiseNote& b = noise[1][i];
+            const size_t frames = std::min(a.frames, b.frames);
+            if (std::max(a.frames, b.frames) > frames + 1 ||
+                NoiseUpTo(a.drum, frames).frames != NoiseUpTo(b.drum, frames).frames)
+            {
+                return false;
+            }
         }
     }
 
