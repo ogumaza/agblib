@@ -17,6 +17,7 @@ namespace agblib::mp2k
 using agblib::agb::BlTarget;
 using agblib::agb::Hex;
 using agblib::agb::ThumbLiteral;
+using agblib::agb::ThumbLiteralAddress;
 
 namespace
 {
@@ -124,15 +125,18 @@ uint32_t RoutineHolding(const Rom& rom, uint32_t at)
 }
 
 // Finds the init from its call of m4aSoundMode with the mode that detection found: ldr r0, =mode and a bl, before the
-// literal pool that holds the music player table's address. Returns 0 when there's none.
-uint32_t FindInitFromMode(const Rom& rom, const DriverInfo& info)
+// literal pool that holds the music player table's address. Returns 0 when there's none. Sets `sound_mode` to the
+// call's target, m4aSoundMode, in the init that it returns.
+uint32_t FindInitFromMode(const Rom& rom, const DriverInfo& info, uint32_t& sound_mode)
 {
+    sound_mode = 0;
     if (!info.sound_mode || !info.player_table)
     {
         return 0;
     }
 
     std::vector<uint32_t> inits;
+    std::vector<uint32_t> modes;
     for (uint32_t pool = agb::kRomBase; rom.Contains(pool, 4); pool += 4)
     {
         if (rom.U32(pool) != info.player_table)
@@ -152,10 +156,20 @@ uint32_t FindInitFromMode(const Rom& rom, const DriverInfo& info)
         if (const uint32_t init = call ? RoutineHolding(rom, call) : 0)
         {
             inits.push_back(init);
+            modes.push_back(BlTarget(rom, call + 2));
         }
     }
 
-    return Nearest(inits, info.song_start);
+    const uint32_t init = Nearest(inits, info.song_start);
+    for (size_t i = 0; i < inits.size(); i++)
+    {
+        if (inits[i] == init)
+        {
+            sound_mode = modes[i];
+        }
+    }
+
+    return init;
 }
 
 bool InRam(uint32_t address, uint32_t size)
@@ -213,7 +227,7 @@ bool FindCamelotRoutines(const Rom& rom, const std::vector<uint32_t>& vsyncs, Ga
         {
             continue;
         }
-        const uint32_t pool = ((at + 4) & ~3u) + 4 * (rom.U16(at) & 0xFFu);
+        const uint32_t pool = ThumbLiteralAddress(rom, at);
         if (rom.Contains(pool, 12) && rom.U32(pool + 4) == kIdent && rom.U32(pool + 8) == kSoundInfoPointer)
         {
             main = at;
@@ -355,7 +369,8 @@ bool FindGameRoutines(const Rom& rom, const DriverInfo& info, GameRoutines& rout
     }
 
     // Without the init's call of m4aSoundMode, the init is the routine before m4aSoundMain.
-    uint32_t init = FindInitFromMode(rom, info);
+    uint32_t sound_mode = 0;
+    uint32_t init = FindInitFromMode(rom, info, sound_mode);
     const uint32_t wrapper = info.song_start - kMainSize;
     if (!init && rom.Contains(wrapper, kMainSize) && rom.U16(wrapper) == kPushLr && BlTarget(rom, wrapper + 2) == main)
     {
@@ -375,6 +390,7 @@ bool FindGameRoutines(const Rom& rom, const DriverInfo& info, GameRoutines& rout
     }
 
     routines.init = init;
+    routines.sound_mode = sound_mode;
     routines.song_start = info.song_start;
     routines.main = main;
     routines.vsync = vsync;

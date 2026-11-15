@@ -66,11 +66,6 @@ constexpr uint32_t kRegTimer0Reload = 0x04000100;
 // The registers of DMA 1's source, whose store in the handler comes before the loads of the rings' addresses.
 constexpr uint32_t kRegDma1Source = 0x040000BC;
 
-bool IsLiteralLoad(const agb::Rom& rom, uint32_t at)
-{
-    return (rom.U16(at) & 0xF800) == 0x4800;
-}
-
 bool InIwram(uint32_t address)
 {
     return address >= agb::kIwramBase && address < agb::kIwramBase + agb::kIwramSize;
@@ -79,7 +74,7 @@ bool InIwram(uint32_t address)
 // The literal that the load at `at` reads, or 0 when there's no load there or the literal is outside IWRAM.
 uint32_t IwramLiteral(const agb::Rom& rom, uint32_t at)
 {
-    if (!rom.Contains(at, 2) || !IsLiteralLoad(rom, at))
+    if (!rom.Contains(at, 2) || !agb::IsThumbLiteralLoad(rom, at))
     {
         return 0;
     }
@@ -166,9 +161,10 @@ std::optional<GameRoutines> FindGameRoutines(const agb::Rom& rom, const DriverIn
         }
     }
 
-    const uint32_t echo_mix = rom.Contains(mixer + kEchoRoutineLoad, 2) && IsLiteralLoad(rom, mixer + kEchoRoutineLoad)
-                                  ? agb::ThumbLiteral(rom, mixer + kEchoRoutineLoad) & ~1u
-                                  : 0;
+    const uint32_t echo_mix =
+        rom.Contains(mixer + kEchoRoutineLoad, 2) && agb::IsThumbLiteralLoad(rom, mixer + kEchoRoutineLoad)
+            ? agb::ThumbLiteral(rom, mixer + kEchoRoutineLoad) & ~1u
+            : 0;
     if (echo_mix)
     {
         r.echo_offset = IwramLiteral(rom, echo_mix + kEchoOffsetLoad);
@@ -197,7 +193,7 @@ std::optional<GameRoutines> FindGameRoutines(const agb::Rom& rom, const DriverIn
 
         for (uint32_t at = handler; at < handler + kMaxHandler; at += 2)
         {
-            if (IsLiteralLoad(rom, at) && agb::ThumbLiteral(rom, at) == kRegDma1Source)
+            if (agb::IsThumbLiteralLoad(rom, at) && agb::ThumbLiteral(rom, at) == kRegDma1Source)
             {
                 r.transfer = handler;
                 r.fifo_a = FirstIwramLiteral(rom, at + 2, 0x10);

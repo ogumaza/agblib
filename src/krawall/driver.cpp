@@ -444,7 +444,7 @@ uint32_t ThumbConstant(const Rom& rom, uint32_t at)
         return uint32_t(op & 0xFF) << ((next >> 6) & 0x1F);
     }
 
-    return (op & 0xF800) == 0x4800 ? ThumbLiteral(rom, at) : 0;
+    return agb::IsThumbLiteralLoad(rom, at) ? ThumbLiteral(rom, at) : 0;
 }
 
 // Returns the library's version string at `at`: its printable characters.

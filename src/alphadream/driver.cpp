@@ -22,6 +22,7 @@ using agblib::agb::kRomBase;
 using agblib::agb::ParseThumbPattern;
 using agblib::agb::Rom;
 using agblib::agb::ThumbLiteral;
+using agblib::agb::ThumbLiteralAddress;
 using agblib::agb::ThumbPattern;
 
 namespace
@@ -84,12 +85,6 @@ constexpr const char* kWaveLevelRoutine = "49xx 7918 0880 1840 7800 0200 8010";
 // The most songs, instruments and samples that detection reads.
 constexpr int kMaxEntries = 4096;
 
-// Returns the address that the Thumb `adr rX, #imm` at `at` gives.
-uint32_t AdrTarget(const Rom& rom, uint32_t at)
-{
-    return ((at + 4) & ~3u) + (rom.U16(at) & 0xFF) * 4;
-}
-
 // Returns the only match of a pattern, or 0 if there's none or more than one.
 uint32_t FindOnly(const Rom& rom, const char* pattern)
 {
@@ -134,7 +129,7 @@ uint32_t FindEffectTable(const Rom& rom)
     // The first literal in the ROM among the routine's first 16 instructions.
     for (uint32_t at = routine; routine && rom.Contains(at, 2) && at < routine + 32; at += 2)
     {
-        if ((rom.U16(at) & 0xF800) == 0x4800)
+        if (agb::IsThumbLiteralLoad(rom, at))
         {
             const uint32_t literal = ThumbLiteral(rom, at);
             if (rom.Contains(literal, 4))
@@ -188,8 +183,8 @@ bool DetectDriver(const Rom& rom, DriverInfo& info, std::string& error)
     info.song_table = ThumbLiteral(rom, flags + kSongTableLiteral);
     info.instrument_table = ThumbLiteral(rom, lookup + kInstrumentLiteral);
     info.sample_table = ThumbLiteral(rom, voice + kSampleLiteral);
-    info.key_table = AdrTarget(rom, step + 2);
-    info.step_table = AdrTarget(rom, step + 6);
+    info.key_table = ThumbLiteralAddress(rom, step + 2);
+    info.step_table = ThumbLiteralAddress(rom, step + 6);
     info.psg_pitch_table = ThumbLiteral(rom, psg + kPsgPitchLiteral);
     info.noise_table = ThumbLiteral(rom, noise + kNoiseLiteral);
     info.wave_table = ThumbLiteral(rom, wave + kWaveLiteral);

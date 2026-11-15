@@ -582,6 +582,114 @@ void TestLoopNoiseEnds()
     }
 }
 
+// Square 1 plays C, and then loops a note that slides from the C before it to E, and a C. The slide takes 4 frames
+// the first time through. With `differs`, the loop then sets 16 frames, and every later pass slides over 16. The
+// slide's notes start alike in both passes, at the same tick, key and bend, and differ only in their later frames. The
+// loop starts at the first pass when the slides match, and at the second when they don't.
+void TestLoopSlideSpeed()
+{
+    for (const bool differs : {false, true})
+    {
+        Cart cart(Revision::kA);
+        cart.Songs({Song({Channel()
+                              .Bytes({0x7F, 90, 0x5E, 15, 0x4F, 3, 0xE5, 4})
+                              .Note(0, 3)
+                              .Bytes({0xBF, 0xD4})
+                              .Note(4, 3)
+                              .Bytes({0xE5, uint8_t(differs ? 16 : 4)})
+                              .Note(0, 3)
+                              .End()})});
+        const Rom rom = cart.ToRom();
+        const DriverInfo info = Detect(rom);
+        ConvertSettings opt = TempSettings(differs ? "loop_slide_differs" : "loop_slide_same");
+
+        const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
+
+        const double pass = sum.loop_end - sum.loop_start;
+        SEQLIB_CHECK(sum.ok && sum.loop_start > 0);
+        SEQLIB_CHECK((sum.loop_start < pass) != differs);
+    }
+}
+
+// Returns true if the song's loop starts at its second pass, and checks that it has a loop and an intro.
+bool LoopsAtSecondPass(const Cart& cart, const char* name)
+{
+    const Rom rom = cart.ToRom();
+    const DriverInfo info = Detect(rom);
+    ConvertSettings opt = TempSettings(name);
+
+    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
+
+    const double pass = sum.loop_end - sum.loop_start;
+    SEQLIB_CHECK(sum.ok && sum.loop_start > 0);
+    return sum.loop_start >= pass;
+}
+
+// A channel plays a note, and then loops a second note and the first again. The second note has a setting the first
+// time through that `change` turns off after it. The note starts alike in both passes and differs only in what the
+// driver writes in its later frames. The loop starts at the first pass when `change` is empty, and at the second when
+// it isn't. On square 1, the setting is a volume envelope from 100% down to 50% over 8 frames (D2), and the driver
+// writes NR12 as it falls. On square 1 again, it is the hardware envelope's step (3E), which NR12 sets at the note's
+// start. On the wave channel, it is a volume envelope, and the driver writes NR32 as it falls.
+void TestLoopLevels()
+{
+    struct Case
+    {
+        const char* name;
+        int channel;
+        std::vector<uint8_t> setup;
+        std::vector<uint8_t> change;
+    };
+    const Case cases[] = {
+        {"loop_envelope", 0, {0x5E, 15, 0xD2, 100, 100, 50, 1, 8}, {0xD3}},
+        {"loop_envelope_step", 0, {0x5E, 15, 0x4E, 0x3E, 2}, {0x3E, 0}},
+        {"loop_wave_envelope", 2, {0xDA, 0x00, 0x5E, 3, 0xD2, 100, 100, 50, 1, 8}, {0xD3}},
+    };
+    for (const Case& test : cases)
+    {
+        for (const bool changes : {false, true})
+        {
+            std::vector<uint8_t> setup = {0x7F, 90, 0x4F, 3};
+            setup.insert(setup.end(), test.setup.begin(), test.setup.end());
+            Channel channel;
+            channel.Bytes(setup).Note(0, 3).Bytes({0xBF}).Note(4, 3);
+            if (changes)
+            {
+                channel.Bytes(test.change);
+            }
+            std::vector<std::vector<uint8_t>> channels(size_t(test.channel), {0xFF});
+            channels.push_back(channel.Note(0, 3).End());
+            Cart cart(Revision::kA);
+            cart.Songs({Song(channels)});
+
+            const std::string name = std::string(test.name) + (changes ? "_differs" : "_same");
+            SEQLIB_CHECK(LoopsAtSecondPass(cart, name.c_str()) == changes);
+        }
+    }
+}
+
+// Square 1 plays C, and then loops an E and a C with the hardware's sweep bending each note down. The sweep's clock
+// isn't tied to the frames, and a pass doesn't last a whole number of its steps. Its steps then fall at other places
+// in the frames from pass to pass, and the bends of the frames differ. The game plays each pass as the one before.
+// The bends of a swept note aren't compared, and the loop starts at the first pass. When the loop turns the sweep off
+// after the E, only the first E sweeps. NR10 then differs, and the loop starts at the second pass.
+void TestLoopSweep()
+{
+    for (const bool once : {false, true})
+    {
+        Channel square;
+        square.Bytes({0x7F, 90, 0x5E, 15, 0x4F, 3, 0x1F, 1, 0x0E, 7, 0x1E}).Note(0, 3).Bytes({0xBF}).Note(4, 3);
+        if (once)
+        {
+            square.Bytes({0x1F, 0, 0x0E, 0});
+        }
+        Cart cart(Revision::kA);
+        cart.Songs({Song({square.Note(0, 3).End()})});
+
+        SEQLIB_CHECK(LoopsAtSecondPass(cart, once ? "loop_sweep_once" : "loop_sweep") == once);
+    }
+}
+
 // Square 1 loops two quarter notes from its start, and square 2 the same after a rest of 56 ticks. At tempo 90, a frame
 // is 90 of the MIDI file's ticks and a tick is 37, so square 2's loop point is 2 MIDI ticks into frame 23, and square
 // 1's is at the start of frame 0. Each loop drops the part of a frame that the channel has counted, 84 MIDI ticks for
@@ -1348,6 +1456,9 @@ int RunTests()
     TestLoopLengths();
     TestLoopAtSecondPass();
     TestLoopNoiseEnds();
+    TestLoopSlideSpeed();
+    TestLoopLevels();
+    TestLoopSweep();
     TestLoopSeam();
     TestLoopSettingsAgain();
     TestHourLimit();

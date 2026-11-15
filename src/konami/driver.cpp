@@ -18,14 +18,19 @@
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/thumb.h"
 #include "agblib/konami/seqformat.h"
 
 namespace agblib::konami
 {
 
+using agblib::agb::FindThumb;
 using agblib::agb::Hex;
 using agblib::agb::kRomBase;
 using agblib::agb::kSecondCycles;
+using agblib::agb::ThumbLiteral;
+using agblib::agb::ThumbLiteralAddress;
+
 namespace
 {
 
@@ -37,12 +42,7 @@ constexpr int kMaxSongs = 1024;
 constexpr uint32_t kPackedPairs = 0x40; // the size of the table of pairs
 constexpr uint32_t kPackedData = 0x4C;  // where the packed data starts in the header
 
-// A Thumb instruction to look for: its bits under `mask` have to equal `value`.
-struct Pattern
-{
-    uint16_t value;
-    uint16_t mask;
-};
+using Pattern = agb::ThumbPattern;
 
 // Returns a pattern that matches one Thumb instruction exactly.
 constexpr Pattern Exact(uint16_t v)
@@ -55,50 +55,6 @@ constexpr Pattern Exact(uint16_t v)
 constexpr Pattern HiByte(uint16_t v)
 {
     return {v, 0xFF00};
-}
-
-// Finds every halfword-aligned match of `pat` in the ROM (Thumb code).
-std::vector<uint32_t> FindThumb(const Rom& rom, const std::vector<Pattern>& pat)
-{
-    std::vector<uint32_t> hits;
-    const size_t n = pat.size();
-    if (rom.Size() < 2 * n)
-    {
-        return hits;
-    }
-
-    const uint8_t* d = rom.Ptr(kRomBase);
-    const size_t last = rom.Size() - 2 * n;
-    for (size_t i = 0; i <= last; i += 2)
-    {
-        size_t k = 0;
-        for (; k < n; k++)
-        {
-            const uint16_t h = xsflib::LoadLe16(&d[i + 2 * k]);
-            if ((h & pat[k].mask) != pat[k].value)
-            {
-                break;
-            }
-        }
-        if (k == n)
-        {
-            hits.push_back(kRomBase + uint32_t(i));
-        }
-    }
-
-    return hits;
-}
-
-// Returns the address of the literal that the Thumb "ldr rX, [pc, #imm]" at `addr` loads.
-uint32_t LiteralAddress(const Rom& rom, uint32_t addr)
-{
-    return ((addr + 4) & ~3u) + (uint32_t(rom.U16(addr) & 0xFF) << 2);
-}
-
-// Returns the value loaded by the Thumb "ldr rX, [pc, #imm]" at `addr`.
-uint32_t ThumbLiteral(const Rom& rom, uint32_t addr)
-{
-    return rom.U32(LiteralAddress(rom, addr));
 }
 
 // Returns the literal loaded by the ldr at index `ldr_index` of the first match of `pat` whose literal is a ROM
@@ -675,7 +631,7 @@ struct TableCode
 };
 
 // Returns the address that the code in `table` loads, or 0 if no match of the code loads one. A revision without such
-// code gives an empty pattern. FindThumb() would match that at every halfword.
+// code gives an empty pattern, and no table.
 uint32_t TableFromCode(const Rom& rom, const TableCode& table)
 {
     return table.code.empty() ? 0 : FindLiteral(rom, table.code, table.ldr);
@@ -1533,7 +1489,7 @@ uint32_t FindTimerTable(const Rom& rom)
     {
         const std::vector<uint32_t> hits =
             FindThumb(rom, {Exact(0x6888), Exact(0x3138), HiByte(0x4800), Exact(0x6008)});
-        table = hits.empty() ? 0 : LiteralAddress(rom, hits.front() + 4);
+        table = hits.empty() ? 0 : ThumbLiteralAddress(rom, hits.front() + 4);
     }
     if (!table)
     {
@@ -1541,7 +1497,7 @@ uint32_t FindTimerTable(const Rom& rom)
         {
             if (ThumbLiteral(rom, hit) == 0x04000100)
             {
-                table = LiteralAddress(rom, hit + 2);
+                table = ThumbLiteralAddress(rom, hit + 2);
                 break;
             }
         }

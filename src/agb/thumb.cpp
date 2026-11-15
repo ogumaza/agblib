@@ -733,6 +733,11 @@ uint32_t FindFirstThumb(const Rom& rom, std::string_view text)
     return hits.empty() ? 0 : hits[0];
 }
 
+bool IsThumbLiteralLoad(const Rom& rom, uint32_t at)
+{
+    return (rom.U16(at) & 0xF800u) == 0x4800u;
+}
+
 uint32_t ThumbLiteralAddress(const Rom& rom, uint32_t at)
 {
     return ((at + 4) & ~3u) + (rom.U16(at) & 0xFFu) * 4;

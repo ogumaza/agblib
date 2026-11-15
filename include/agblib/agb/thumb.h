@@ -34,7 +34,11 @@ std::vector<uint32_t> FindThumb(const Rom& rom, const std::vector<ThumbPattern>&
 // ROM has none.
 uint32_t FindFirstThumb(const Rom& rom, std::string_view text);
 
-// Returns the address of the word that the Thumb instruction `ldr rX, [pc, #imm]` at `at` loads.
+// Whether the Thumb instruction at `at` is `ldr rX, [pc, #imm]`.
+bool IsThumbLiteralLoad(const Rom& rom, uint32_t at);
+
+// Returns the address of the word that the Thumb instruction `ldr rX, [pc, #imm]` at `at` loads. For an
+// `adr rX, #imm` (`add rX, pc, #imm`) at `at`, the result is the address that the instruction sets.
 uint32_t ThumbLiteralAddress(const Rom& rom, uint32_t at);
 
 // Returns the word that the Thumb instruction `ldr rX, [pc, #imm]` at `at` loads.

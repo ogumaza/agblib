@@ -218,7 +218,7 @@ std::vector<uint32_t> MusicJingles(const Rom& rom, uint32_t loader_code)
         }
         for (uint32_t play : routine ? FindCalls(rom, routine) : std::vector<uint32_t>())
         {
-            if (rom.U16(play - 2) == 0x2100 && (rom.U16(play - 4) & 0xF800) == 0x4800)
+            if (rom.U16(play - 2) == 0x2100 && agb::IsThumbLiteralLoad(rom, play - 4))
             {
                 jingles.push_back(ThumbLiteral(rom, play - 4));
             }

@@ -39,12 +39,6 @@ bool InIwram(uint32_t address)
     return (address >> 24) == 0x03;
 }
 
-// Whether the Thumb instruction at `at` is `ldr rX, [pc, #imm]`.
-bool IsLiteralLoad(const Rom& rom, uint32_t at)
-{
-    return (rom.U16(at) & 0xF800) == 0x4800;
-}
-
 // The address of the init's literal pool, or 0 if the ROM has none.
 uint32_t FindPool(const Rom& rom)
 {
@@ -72,7 +66,7 @@ uint32_t FindInit(const Rom& rom, uint32_t pool)
         pool > agblib::agb::kRomBase + kMaxPoolDistance ? pool - kMaxPoolDistance : agblib::agb::kRomBase;
     for (uint32_t load = pool - 2; load >= lowest; load -= 2)
     {
-        if (!IsLiteralLoad(rom, load) || agblib::agb::ThumbLiteralAddress(rom, load) != pool)
+        if (!agblib::agb::IsThumbLiteralLoad(rom, load) || agblib::agb::ThumbLiteralAddress(rom, load) != pool)
         {
             continue;
         }

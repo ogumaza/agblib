@@ -51,7 +51,7 @@ bool InRam(uint32_t address, uint32_t base, uint32_t size)
 // IWRAM, and outside EWRAM too unless `ewram`.
 uint32_t RamLiteral(const Rom& rom, uint32_t at, bool ewram = false)
 {
-    if (!rom.Contains(at, 2) || (rom.U16(at) & 0xF800) != 0x4800)
+    if (!rom.Contains(at, 2) || !agb::IsThumbLiteralLoad(rom, at))
     {
         return 0;
     }

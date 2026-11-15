@@ -67,6 +67,7 @@ struct DriverInfo
     uint32_t player_table = 0;
     std::vector<Player> players;
     uint32_t sound_mode = 0;           // the setting the init gives the driver, or 0 if it wasn't found
+    std::vector<uint32_t> game_modes;  // the settings that the game's code gives the driver after the init, in order
     int max_channels = 8;              // DirectSound channels
     int master_volume = 15;            // 0-15
     int reverb = 0;                    // 0-127

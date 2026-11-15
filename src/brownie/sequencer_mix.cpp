@@ -279,6 +279,8 @@ void Sequencer::MeterVoices(bool on)
     }
 }
 
+Sequencer::Enhanced::Enhanced() = default;
+
 void Sequencer::StartEnhancedMixing()
 {
     Enhanced& e = enhanced_.emplace();

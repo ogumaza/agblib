@@ -23,10 +23,12 @@ namespace agblib::mp2k
 using agblib::agb::BlTarget;
 using agblib::agb::FindThumb;
 using agblib::agb::Hex;
+using agblib::agb::IsThumbLiteralLoad;
 using agblib::agb::kRomBase;
 using agblib::agb::ParseThumbPattern;
 using agblib::agb::Rom;
 using agblib::agb::ThumbLiteral;
+using agblib::agb::ThumbLiteralAddress;
 
 namespace
 {
@@ -345,8 +347,8 @@ std::vector<uint32_t> FindGameSoundModes(const Rom& rom, uint32_t init_mode)
     uint32_t sound_mode = 0;
     for (uint32_t at = kRomBase; at + 6 <= rom.End() && !init_call; at += 2)
     {
-        if ((rom.U16(at) >> 8) == 0x48 && IsBl(rom, at + 2) &&
-            rom.Contains(((at + 4) & ~3u) + (rom.U16(at) & 0xFFu) * 4, 4) && ThumbLiteral(rom, at) == init_mode)
+        if ((rom.U16(at) >> 8) == 0x48 && IsBl(rom, at + 2) && rom.Contains(ThumbLiteralAddress(rom, at), 4) &&
+            ThumbLiteral(rom, at) == init_mode)
         {
             init_call = at;
             sound_mode = BlTarget(rom, at + 2);
@@ -381,7 +383,7 @@ std::vector<uint32_t> FindGameSoundModes(const Rom& rom, uint32_t init_mode)
             if ((code >> 8) == 0x48 && next + 6 <= rom.End() && IsBl(rom, next + 2) &&
                 BlTarget(rom, next + 2) == sound_mode)
             {
-                const uint32_t literal = ((next + 4) & ~3u) + (code & 0xFFu) * 4;
+                const uint32_t literal = ThumbLiteralAddress(rom, next);
                 if (!rom.Contains(literal, 4))
                 {
                     break;
@@ -670,7 +672,7 @@ bool FindMetroidTables(const Rom& rom, DriverInfo& info)
     const uint32_t end = kRomBase + uint32_t(rom.Size());
     for (uint32_t at = kRomBase; at + 10 <= end; at += 2)
     {
-        if ((rom.U16(at) & 0xF800) != 0x4800 || (rom.U16(at + 2) & 0xF800) != 0x4800)
+        if (!IsThumbLiteralLoad(rom, at) || !IsThumbLiteralLoad(rom, at + 2))
         {
             continue;
         }
@@ -764,16 +766,17 @@ void FindDriverCode(const Rom& rom, DriverInfo& info)
         if (info.sound_mode)
         {
             ApplySoundMode(info.sound_mode, info);
-            for (const uint32_t mode : FindGameSoundModes(rom, info.sound_mode))
-            {
-                ApplySoundMode(mode, info);
-            }
+            info.game_modes = FindGameSoundModes(rom, info.sound_mode);
             for (const GameMode& row : kGameModes)
             {
                 if (rom.GameCode() == row.game_code)
                 {
-                    ApplySoundMode(row.mode, info);
+                    info.game_modes.push_back(row.mode);
                 }
+            }
+            for (const uint32_t mode : info.game_modes)
+            {
+                ApplySoundMode(mode, info);
             }
         }
         else

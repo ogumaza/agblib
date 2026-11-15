@@ -23,19 +23,19 @@ namespace agblib::logikstate
 using agblib::agb::BlTarget;
 using agblib::agb::FindCalls;
 using agblib::agb::Hex;
+using agblib::agb::IsThumbLiteralLoad;
 using agblib::agb::kFrameCycles;
 using agblib::agb::kRomBase;
 using agblib::agb::kSecondCycles;
 using agblib::agb::ThumbLiteral;
+using agblib::agb::ThumbLiteralAddress;
 
 namespace
 {
 
-// Thumb's `push {..., lr}`, `ldr rX, [pc, #imm]` and `movs r1, #imm`.
+// Thumb's `push {..., lr}` and `movs r1, #imm`.
 constexpr uint16_t kPushLr = 0xB500;
 constexpr uint16_t kPushLrMask = 0xFF00;
-constexpr uint16_t kLoadLiteral = 0x4800;
-constexpr uint16_t kLoadLiteralMask = 0xF800;
 constexpr uint16_t kMoveR1 = 0x2100;
 constexpr uint16_t kMoveR1Mask = 0xFF00;
 
@@ -51,8 +51,7 @@ constexpr uint32_t kLiteralReach = 0x400;
 // Returns true if the Thumb instruction at `at` is `ldr rX, [pc, #imm]` and loads the word at `word`.
 bool LoadsWord(const Rom& rom, uint32_t at, uint32_t word)
 {
-    const uint16_t op = rom.U16(at);
-    return (op & kLoadLiteralMask) == kLoadLiteral && ((at + 4) & ~3u) + (op & 0xFFu) * 4 == word;
+    return IsThumbLiteralLoad(rom, at) && ThumbLiteralAddress(rom, at) == word;
 }
 
 // Returns the address of the nearest `push {..., lr}` at or before `at`, up to `span` bytes back, or 0.
@@ -204,12 +203,12 @@ PlayCall ReadCall(const Rom& rom, uint32_t call)
     {
         const uint16_t op = rom.U16(at);
         const int reg = (op >> 8) & 7;
-        if ((op & kLoadLiteralMask) == kLoadLiteral && reg == 0 && !have_module)
+        if (IsThumbLiteralLoad(rom, at) && reg == 0 && !have_module)
         {
             out.module = ThumbLiteral(rom, at);
             have_module = true;
         }
-        else if ((op & kLoadLiteralMask) == kLoadLiteral && reg == 2 && !have_bank)
+        else if (IsThumbLiteralLoad(rom, at) && reg == 2 && !have_bank)
         {
             out.bank = ThumbLiteral(rom, at);
             have_bank = true;
@@ -541,14 +540,14 @@ Output FindOutput(const Rom& rom, std::vector<std::string>& log)
 {
     for (uint32_t at = kRomBase; rom.Contains(at, 2); at += 2)
     {
-        if ((rom.U16(at) & kLoadLiteralMask) != kLoadLiteral || ThumbLiteral(rom, at) != kDmaControl)
+        if (!IsThumbLiteralLoad(rom, at) || ThumbLiteral(rom, at) != kDmaControl)
         {
             continue;
         }
 
         for (uint32_t next = at + 2; next < at + kOutputSpan; next += 2)
         {
-            const uint32_t value = (rom.U16(next) & kLoadLiteralMask) == kLoadLiteral ? ThumbLiteral(rom, next) : 0;
+            const uint32_t value = IsThumbLiteralLoad(rom, next) ? ThumbLiteral(rom, next) : 0;
             if (value > 0xFFFF || !(value & kFifoResets) || !(value & (kFifoA | kFifoB)))
             {
                 continue;

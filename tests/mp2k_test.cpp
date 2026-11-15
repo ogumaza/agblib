@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <span>
+#include <vector>
 
 #include "mp2k_test_util.h"
 
@@ -103,6 +104,7 @@ void TestDetection()
     SEQLIB_REQUIRE_EQ(info.players.size(), 2);
     SEQLIB_CHECK(info.players[1].track_count == 3);
     SEQLIB_CHECK_EQ(info.sound_mode, kMode);
+    SEQLIB_CHECK(info.game_modes.empty());
     SEQLIB_CHECK_EQ(info.max_channels, 5);
     SEQLIB_CHECK_EQ(info.master_volume, 12);
     SEQLIB_CHECK_EQ(info.mix_rate, 13379);
@@ -198,19 +200,23 @@ void TestSoundModes()
     again.Song({Track().Fine()}, voices);
     const DriverInfo again_info = Detect(again.ToRom());
     SEQLIB_CHECK_EQ(again_info.sound_mode, kMode);
+    SEQLIB_CHECK(again_info.game_modes == std::vector<uint32_t>{0x00960680});
     SEQLIB_CHECK_EQ(again_info.max_channels, 6);
     SEQLIB_CHECK_EQ(again_info.master_volume, 12);
     SEQLIB_CHECK_EQ(again_info.mix_rate, 18157);
     Cart elsewhere;
     elsewhere.GameSoundMode(0x00960680, false);
     elsewhere.Song({Track().Fine()}, voices);
-    SEQLIB_CHECK_EQ(Detect(elsewhere.ToRom()).max_channels, 5);
+    const DriverInfo elsewhere_info = Detect(elsewhere.ToRom());
+    SEQLIB_CHECK_EQ(elsewhere_info.max_channels, 5);
+    SEQLIB_CHECK(elsewhere_info.game_modes.empty());
 
     // A row gives the mode of a game that works it out while it runs.
     Cart spyro;
     spyro.GameCode("ASYE");
     spyro.Song({Track().Fine()}, voices);
     const DriverInfo spyro_info = Detect(spyro.ToRom());
+    SEQLIB_CHECK(spyro_info.game_modes == std::vector<uint32_t>{0x00D4A880});
     SEQLIB_CHECK_EQ(spyro_info.max_channels, 8);
     SEQLIB_CHECK_EQ(spyro_info.master_volume, 10);
     SEQLIB_CHECK_EQ(spyro_info.mix_rate, 13379);
@@ -241,6 +247,7 @@ void TestSoundModes()
 
         SEQLIB_CHECK_EQ(game_info.max_channels, c.channels);
         SEQLIB_CHECK_EQ(game_info.master_volume, c.master_volume);
+        SEQLIB_CHECK_EQ(game_info.game_modes.size(), c.other_calls < 3 ? c.modes.size() : 0);
     }
 
     // A row gives the mode that Strawberry Shortcake: Sweet Dreams sets each time it starts a song.

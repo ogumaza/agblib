@@ -503,6 +503,12 @@ private:
 
     struct Enhanced
     {
+        // Declared here and defaulted in sequencer_mix.cpp. An implicit constructor would depend on the member
+        // initializers below. Those can't be used before Sequencer is complete. Some standard libraries test
+        // std::is_constructible_v<Enhanced> inside Sequencer, and the compiler keeps the false result. emplace() in
+        // StartEnhancedMixing then fails to compile. A user-provided constructor makes the test true at any point.
+        Enhanced();
+
         std::array<EnhancedVoice, kVoiceCount> voices = {};
         std::vector<float> out; // FIFO A's samples, then FIFO B's
         bool frames = true;

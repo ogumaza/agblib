@@ -503,6 +503,13 @@ struct Sound
     int shape = -1;             // the duty or the wave shape that the frame plays
     uint32_t tick = 0;          // the MIDI tick its changes go at
     std::vector<SweepStep> sweeps;
+    // What the driver writes for a square: the envelope register (NRx2), with 0x100 in a frame that restarts the
+    // channel, the sweep register (NR10) on square 1, and the scale of each side. The hardware's envelope changes the
+    // level of a square on a clock that isn't tied to the frames. On the other channels, `left` and `right` change only
+    // with the driver's writes.
+    int envelope = -1;
+    int sweep = -1;
+    double side_left = 0, side_right = 0;
 };
 
 // The SoundFont instrument a note plays.
@@ -783,12 +790,16 @@ private:
         default:
             level = kPsgLevelPerVolume * volume;
             s.shape = (hw.registers[size_t(kPsgEnvelope[c])] >> 6) & 3;
+            s.envelope = (hw.registers[size_t(kPsgEnvelope[c])] >> 8) | (((hw.restarted >> c) & 1) << 8);
+            s.sweep = c == 0 ? hw.registers[kNr10] : -1;
             break;
         }
 
         s.sounding = true;
-        s.left = (nr51 & (0x10 << c)) ? level * scale.left : 0;
-        s.right = (nr51 & (0x01 << c)) ? level * scale.right : 0;
+        s.side_left = (nr51 & (0x10 << c)) ? scale.left : 0;
+        s.side_right = (nr51 & (0x01 << c)) ? scale.right : 0;
+        s.left = level * s.side_left;
+        s.right = level * s.side_right;
 
         if (c != kNoise && base)
         {
@@ -938,13 +949,69 @@ NoiseSound NoiseUpTo(const NoiseSound& drum, size_t frames)
     return sound;
 }
 
+// Returns the bend of each of a note's frames, or nothing for a note that the hardware's sweep bends. The sweep's
+// clock isn't tied to the frames. Its steps fall at other places in the frames from pass to pass.
+std::vector<double> FrameBends(const Note& note)
+{
+    std::vector<double> bends;
+    bends.reserve(note.sounds.size());
+    for (const Sound& s : note.sounds)
+    {
+        if (!s.sweeps.empty())
+        {
+            return {};
+        }
+        bends.push_back(s.bend);
+    }
+
+    return bends;
+}
+
+// The levels of a frame of a note as the driver writes them (see Sound::envelope).
+struct FrameLevel
+{
+    bool operator==(const FrameLevel& other) const = default;
+
+    bool square = false;
+    int envelope = -1;
+    int sweep = -1;
+    double left = 0, right = 0; // the scales of a square's sides, or the levels of another channel
+};
+
+// Returns the levels that the driver writes for each frame of a note.
+std::vector<FrameLevel> FrameLevels(const Note& note)
+{
+    std::vector<FrameLevel> levels;
+    levels.reserve(note.sounds.size());
+    for (const Sound& s : note.sounds)
+    {
+        const bool square = s.envelope >= 0;
+        levels.push_back({square, s.envelope, s.sweep, square ? s.side_left : s.left, square ? s.side_right : s.right});
+    }
+
+    return levels;
+}
+
+// Returns true if `a` and `b` are the same up to the shorter one's end.
+template <typename T>
+bool SameStart(const std::vector<T>& a, const std::vector<T>& b)
+{
+    const size_t frames = std::min(a.size(), b.size());
+    return std::equal(a.begin(), a.begin() + std::ptrdiff_t(frames), b.begin());
+}
+
 // Returns true if each channel's second pass through its loop plays the same notes as its first: the same keys and
 // programs at the same ticks from the pass's start, with the same levels, bend and tempo. Every note has the same
 // velocity. The notes' ends aren't compared: the first pass can be a fraction of a frame longer than the next, as the
 // driver drops the part of a frame it has counted when it loops, and the sound hardware's clocks, which aren't tied to
-// the frames, can end a note a frame earlier or later from pass to pass. A noise note's drum contains every frame of
-// the note. Its frames are compared up to the frames that both passes' notes span, and the spans may differ by a frame
-// at most. `sim` has to hold three passes of the song's loop, so that every channel's second pass is complete.
+// the frames, can end a note a frame earlier or later from pass to pass. The bends and the levels of the later frames
+// of a note are compared up to the last frame that the notes of both passes span. That covers a slide, a vibrato and a
+// volume envelope. The levels are those that the driver writes, without the hardware's envelope. On square 1, they
+// include the sweep register (NR10). The bends of a note that the hardware's sweep bends aren't compared. A slide that
+// runs at another speed in the first pass, or an envelope that only the later passes play, then moves the loop to the
+// second pass. A noise note's drum contains every frame of the note. Its frames are compared up to the frames that both
+// passes' notes span, and the spans may differ by a frame at most. `sim` has to hold three passes of the song's loop,
+// so that every channel's second pass is complete.
 bool FirstPassRepeats(const Rom& rom, const DriverInfo& info, const Simulation& sim)
 {
     NoteMaker maker(rom, info, sim);
@@ -971,6 +1038,8 @@ bool FirstPassRepeats(const Rom& rom, const DriverInfo& info, const Simulation& 
 
         std::array<std::vector<NoteStart>, 2> passes;
         std::array<std::vector<NoiseNote>, 2> noise;
+        std::array<std::vector<std::vector<double>>, 2> bends;
+        std::array<std::vector<std::vector<FrameLevel>>, 2> levels;
         for (const Note& n : maker.Make(c))
         {
             for (size_t k = 0; k < 2; k++)
@@ -983,9 +1052,14 @@ bool FirstPassRepeats(const Rom& rom, const DriverInfo& info, const Simulation& 
                     passes[k].push_back({n.on - bounds[k], c == kNoise ? 0 : n.key, n.program, cc10, cc11,
                                          n.sounds[0].bend,
                                          MidiTempo(sim.frames[size_t(frame - sim.frame_ticks.begin())])});
+                    levels[k].push_back(FrameLevels(n));
                     if (c == kNoise)
                     {
                         noise[k].push_back({n.noise, n.sounds.size()});
+                    }
+                    else
+                    {
+                        bends[k].push_back(FrameBends(n));
                     }
                 }
             }
@@ -993,6 +1067,21 @@ bool FirstPassRepeats(const Rom& rom, const DriverInfo& info, const Simulation& 
         if (passes[0] != passes[1])
         {
             return false;
+        }
+
+        for (size_t i = 0; i < levels[0].size(); i++)
+        {
+            if (!SameStart(levels[0][i], levels[1][i]))
+            {
+                return false;
+            }
+        }
+        for (size_t i = 0; i < bends[0].size(); i++)
+        {
+            if (!SameStart(bends[0][i], bends[1][i]))
+            {
+                return false;
+            }
         }
 
         for (size_t i = 0; i < noise[0].size(); i++)

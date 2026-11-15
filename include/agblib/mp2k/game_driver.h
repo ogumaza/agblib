@@ -28,6 +28,7 @@ struct GameRoutines
     uint32_t song_start = 0; // m4aSongNumStart
     uint32_t main = 0;       // SoundMain: the routine that m4aSoundMain calls in the game's VBlank interrupt
     uint32_t vsync = 0;      // m4aSoundVSync: the routine that restarts the sound DMA at the buffer's end
+    uint32_t sound_mode = 0; // m4aSoundMode, which the init calls with DriverInfo::sound_mode, or 0 if it wasn't found
 
     // Camelot's version of the driver, and 0 for the SDK's. The game's boot code copies `copy_size` bytes from
     // `copy_source` to `copy_destination` in IWRAM: Camelot's mixer among them. The game's VBlank interrupt copies the
