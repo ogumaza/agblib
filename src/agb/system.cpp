@@ -25,6 +25,7 @@ constexpr uint32_t kDmaStride = 12;
 constexpr uint32_t kDmaControl = 10;
 constexpr uint16_t kDmaEnable = 0x8000;
 constexpr uint16_t kDmaTiming = 0x3000; // 0: at once
+constexpr uint16_t kDmaRepeat = 0x0200;
 constexpr uint16_t kDmaWords = 0x0400;
 
 // What the BIOS's GetBiosChecksum gives on the GBA, by GBATEK. The DS's mode of the GBA gives another.
@@ -81,7 +82,9 @@ uint32_t System::Call(uint32_t address, std::span<const uint32_t> args)
     cpu_->SetReg(13, kStack);
     try
     {
-        return cpu_->Call(address, args, kCallCycles);
+        const uint32_t result = cpu_->Call(address, args, kCallCycles);
+        EndTimedDmas();
+        return result;
     }
     catch (const std::runtime_error&)
     {
@@ -355,6 +358,19 @@ void System::StartDma(int channel)
     }
 
     WriteLe(&io_[base + kDmaControl], 2, control & ~kDmaEnable);
+}
+
+void System::EndTimedDmas()
+{
+    for (int c = 0; c < 4; c++)
+    {
+        const uint32_t control = kRegDma0Source - kIoBase + kDmaStride * uint32_t(c) + kDmaControl;
+        const uint16_t value = uint16_t(ReadLe(&io_[control], 2));
+        if ((value & kDmaEnable) && (value & kDmaTiming) && !(value & kDmaRepeat))
+        {
+            WriteLe(&io_[control], 2, value & ~kDmaEnable);
+        }
+    }
 }
 
 bool System::Swi(ntdlib::arm::Cpu& cpu, uint32_t comment)

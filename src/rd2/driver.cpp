@@ -699,6 +699,18 @@ void ReadEffects(const Rom& rom, DriverInfo& info)
     }
 }
 
+// Sets the order of the free sample voices that a game's boot leaves before its first request. Super Mario Advance 4's
+// boot (revision 1 of the US release) plays sound effect 169 at frame 660, from 0x080E6DB8 with player 5, sequence 0
+// and track 0xA9. The effect plays on voices 0 and 1. At the first request for music, at frame 758, the free list at
+// 0x03000144 runs voice 1, voice 0, then voices 2 to 6. The other games start from the init's order.
+void SetFreeVoices(const Rom& rom, DriverInfo& info)
+{
+    if (rom.GameCode() == "AX4E" && rom.U8(agblib::agb::kRomBase + 0xBC) == 1)
+    {
+        info.free_voices = {1, 0, 2, 3, 4, 5, 6};
+    }
+}
+
 // Adds the lines that --info prints: the revision, the game's settings and tables, and the driver's tables. `music` is
 // the line for the settings that the game's play-music routine makes. An empty line adds nothing.
 void LogDetection(const Rom& rom, const std::string& music, DriverInfo& info)
@@ -812,6 +824,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
 
     const std::string music = ReadMusicSettings(rom, game_count, info);
     ReadEffects(rom, info);
+    SetFreeVoices(rom, info);
 
     int unreadable = 0;
     for (uint32_t sequence : info.sequence_addresses)

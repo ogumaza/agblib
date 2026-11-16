@@ -26,6 +26,23 @@ GameDriver::GameDriver(const agb::Rom& rom, const GameRoutines& routines)
 
 void GameDriver::Play(const DriverInfo& info, int song, int version)
 {
+    // A voice's record links to the voice before it in its list at +68, and to the one after it at +6C.
+    if (!requested_ && routines_.free_list)
+    {
+        const auto& order = info.free_voices;
+        const auto record = [&](size_t i)
+        {
+            return routines_.voices + uint32_t(order[i]) * uint32_t(kVoiceRecordBytes);
+        };
+        for (size_t i = 0; i < order.size(); i++)
+        {
+            system_.Store(record(i) + 0x68, 4, i > 0 ? record(i - 1) : 0);
+            system_.Store(record(i) + 0x6C, 4, i + 1 < order.size() ? record(i + 1) : 0);
+        }
+        system_.Store(routines_.free_list, 4, record(0));
+    }
+    requested_ = true;
+
     const MusicSettings settings = VersionSettings(info, song, version);
     if (const Effect* effect = SongEffect(info, song))
     {

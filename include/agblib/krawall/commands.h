@@ -16,8 +16,8 @@
 //   kProgram       an instrument without a note, in `value`
 //   kNoteOff       a note off (kNoteOff in the note's place), with its instrument in `sample`, or 0 for none
 //   kVolume        the volume column's byte, in the module's codes
-//   kOther         an effect, with kEffectOpcode plus the effect's number in `encoding.opcode` and its operand in
-//                  `bytes`
+//   kOther         an effect, with kEffectOpcode plus the effect's number (EffectNumber, `agblib/krawall/effects.h`)
+//                  in `encoding.opcode` and its operand in `bytes`
 //   kWait          the end of `value` rows: the last row that has items, and the empty rows after it
 //
 // Each item but a wait and a pattern's start names its channel in `index`. A row's items of one channel make one entry

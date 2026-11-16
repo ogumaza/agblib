@@ -52,6 +52,7 @@ constexpr uint32_t kImageSize = 0x1100;            // the image ends partway thr
 
 constexpr uint32_t kDma0 = 0x040000B0;
 constexpr uint32_t kDma1 = 0x040000BC;
+constexpr uint32_t kDma2 = 0x040000C8;
 constexpr uint32_t kDma3 = 0x040000D4;
 
 void Put16(std::vector<uint8_t>& image, uint32_t address, std::initializer_list<uint16_t> halfwords)
@@ -282,6 +283,13 @@ void TestDma()
     // A write that leaves the enable bit set starts nothing.
     CallThumb(system, kDma, {kData, kEwramBase + 0x100, 4 | 0x8400u << 16, kDma1});
     XSFLIB_CHECK(system.Load(kEwramBase + 0x100, 4) == 0);
+
+    // A transfer at the vertical blank without repeat ends after its call, and the channel can then copy at once.
+    CallThumb(system, kDma, {kData, kEwramBase + 0x140, 4 | 0x9400u << 16, kDma2});
+    XSFLIB_CHECK(system.Load(kEwramBase + 0x140, 4) == 0);
+    XSFLIB_CHECK(system.Load(kDma2 + 10, 2) == 0x1400);
+    CallThumb(system, kDma, {kData, kEwramBase + 0x140, 4 | 0x8400u << 16, kDma2});
+    XSFLIB_CHECK(system.Load(kEwramBase + 0x14C, 4) == 0x44444444);
 
     // A count of 0 is 0x4000 units on DMA 0, and 0x10000 on DMA 3. These fill from a fixed source.
     CallThumb(system, kDma, {kData, kEwramBase + 0x10000, 0x8100u << 16, kDma3});

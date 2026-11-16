@@ -17,6 +17,7 @@
 #include "agblib/agb/rom.h"
 #include "agblib/logikstate/driver.h"
 #include "agblib/logikstate/player.h"
+#include "agblib/sequence_export/agb/midi.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/sequence_export/logikstate/convert.h"
 #include "agblib/sequence_export/logikstate/soundfont.h"
@@ -278,6 +279,39 @@ void TestMusicVolume()
         return e.bytes[1] == 11 && e.bytes[2] == 78;
     };
     SEQLIB_CHECK(std::any_of(controllers.begin(), controllers.end(), sets));
+}
+
+// A game whose calls of the routine that sets the music's volume pass no constant above 0 plays at the full volume. The
+// cart's call passes 0. Detection reads no constant from it, the same as from a variable. A release that the table of
+// games' volumes doesn't name gets a warning. So does a release of Zapper's build, with long records, that passes no
+// constant. Zapper's releases are named. A game of the other build that never calls the routine gets no warning.
+void TestVolumeFromVariable()
+{
+    Cart plain(TestBank());
+    plain.AddCall(plain.AddModule(EmptyModule()), kBank, 0);
+    Cart cart = plain;
+    cart.AddMusicVolume(0);
+    Cart named = cart;
+    named.SetGameCode("AZPE");
+    Cart long_records = plain;
+    long_records.UseLongRecords();
+    Cart european = long_records;
+    european.SetGameCode("AZPP");
+
+    const DriverInfo info = Detect(cart.ToRom());
+    const DriverInfo named_info = Detect(named.ToRom());
+    const DriverInfo long_info = Detect(long_records.ToRom());
+    const DriverInfo european_info = Detect(european.ToRom());
+
+    SEQLIB_CHECK_EQ(info.music_volume, kFullVolume);
+    SEQLIB_REQUIRE(info.warnings.size() == 1);
+    SEQLIB_CHECK(info.warnings[0].starts_with("no music volume for this release"));
+    SEQLIB_CHECK_EQ(named_info.music_volume, 0x20);
+    SEQLIB_CHECK(named_info.warnings.empty());
+    SEQLIB_REQUIRE(long_info.warnings.size() == 1);
+    SEQLIB_CHECK(long_info.warnings[0].starts_with("no music volume for this release"));
+    SEQLIB_CHECK(european_info.music_volume == 0x20 && european_info.warnings.empty());
+    SEQLIB_CHECK(Detect(plain.ToRom()).warnings.empty());
 }
 
 // A game whose code switches the sound off plays both FIFOs at half volume from then on, and its conversion plays at
@@ -738,6 +772,34 @@ void TestTuningAndLoops()
     SEQLIB_CHECK_EQ(SampleField(sf, 1, kShdrEndLoop) - SampleField(sf, 1, kShdrStart), 3500u);
 }
 
+// The mixer drops the place's fraction at each turn of a loop. A loop of 8 points at the step of pitch 200 takes 21
+// samples a turn, not 8 × 4096 / s, and the note bends down once it reaches the loop. A long loop's difference of under
+// 3 cents gets no bend.
+void TestShortLoop()
+{
+    TestModule module = EmptyModule();
+    module.samples[1] = {200, 0, 64, 192, 8};
+    module.samples[2] = {3000, 0, 64, 1000, 2000};
+    module.patterns[0][0] = {NoteCell(200, 2), NoteCell(200, 3)};
+    const Rom rom = RomWith(module);
+
+    const SongReport report = Convert(rom, "logikstate_short_loop");
+    const agblib::testing::agb_files::MidiEvents midi = ReadMidi(report.midi_path);
+    const std::vector<seqlib::midi::Bend> bends = seqlib::midi::Bends(midi);
+
+    const double span = 8 * 4096.0;
+    const uint32_t step = TestStep(200);
+    SEQLIB_REQUIRE(report.ok && uint32_t(std::ceil(span / step)) == 21);
+    const int value = agblib::sequence_export::agb::BendValue(12 * std::log2(span / (21.0 * step)), 2);
+    const auto expected = [&](const seqlib::midi::Bend& b)
+    {
+        return b.channel == 0 && b.value == value;
+    };
+    SEQLIB_CHECK(value < 8192 - 400);
+    SEQLIB_CHECK(std::any_of(bends.begin(), bends.end(), expected));
+    SEQLIB_CHECK(midi.Find(0xE1).empty());
+}
+
 // A note ends where its volume falls to 0. When the volume rises again, a new note starts from the point where the
 // sample waited, on an instrument that starts there.
 void TestPausedNote()
@@ -874,6 +936,7 @@ int RunTests()
     TestDetection();
     TestDetectionFailures();
     TestMusicVolume();
+    TestVolumeFromVariable();
     TestSoundOff();
     TestModuleReader();
     TestRowsAndTicks();
@@ -889,6 +952,7 @@ int RunTests()
     TestMixerPlaces();
     TestConversion();
     TestTuningAndLoops();
+    TestShortLoop();
     TestPausedNote();
     TestSecondPass();
     TestSilentLoop();

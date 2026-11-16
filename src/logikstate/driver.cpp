@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <map>
 #include <string>
 #include <vector>
@@ -388,6 +389,9 @@ constexpr GameVolume kGameVolumes[] = {
     // 0x03000981
     // and 0x03000982). The routine at 0x080C7748 passes them to the driver.
     {"AZPE", 0x20},
+    // The European release's options have the same default (0x080C7D9A). In mGBA 0.11.0, its setup sets the music's
+    // volume to 0x20 at frame 17, through the call that returns to 0x080C7EDE.
+    {"AZPP", 0x20},
     // Pinball Challenge Deluxe's options keep a level from 0 to 10, 10 by default (0x08003728). The game converts it
     // to a volume, times 0x6666 >> 12 (0x08003960): 63 for level 10. The start routine copies it to 0x02000710.
     {"APLP", 63},
@@ -498,6 +502,7 @@ void SetMusicVolume(const Rom& rom, DriverInfo& info)
         info.log.push_back("music volume " + std::to_string(info.music_volume) + " of " + std::to_string(kFullVolume) +
                            ", which the game sets at " + Hex(volume_call));
     }
+    bool named = false;
     for (const GameVolume& game : kGameVolumes)
     {
         if (rom.GameCode() == game.game_code)
@@ -505,7 +510,19 @@ void SetMusicVolume(const Rom& rom, DriverInfo& info)
             info.music_volume = game.music_volume;
             info.log.push_back("music volume " + std::to_string(info.music_volume) + " of " +
                                std::to_string(kFullVolume) + ", the default of the game's options");
+            named = true;
         }
+    }
+
+    // Zapper and Pinball Challenge Deluxe set the volume from a variable. Another release of either game has no row.
+    // Detection doesn't find the routine in Zapper's build, the build with long records, or in the GBAMOD1 build.
+    const bool from_variable =
+        info.music_volume_routine && volume_call == 0 && !FindCalls(rom, info.music_volume_routine).empty();
+    const bool variable_build = info.format == Format::kGbaMod1 || info.build == Build::kLongRecords;
+    if (!named && (from_variable || (volume_call == 0 && variable_build)))
+    {
+        const std::string text = "no music volume for this release: the game sets it at run time. The music plays at ";
+        info.warnings.push_back(text + std::to_string(info.music_volume) + " of " + std::to_string(kFullVolume));
     }
 }
 
@@ -600,6 +617,15 @@ bool PatternJumps(const Rom& rom, const Module& module, uint32_t pattern)
 // scale of the slide to a note that the game sets for it.
 void DetectMod1(const Rom& rom, const std::vector<uint32_t>& modules, DriverInfo& info)
 {
+    const bool named = std::any_of(std::begin(kGameSlideScales), std::end(kGameSlideScales),
+                                   [&rom](const GameSlideScale& game) { return rom.GameCode() == game.game_code; });
+    if (!named)
+    {
+        info.warnings.push_back(
+            "no slide scales for this release: the game sets one for each module. The slides to a note play at the "
+            "driver's default");
+    }
+
     for (size_t i = 0; i < modules.size(); i++)
     {
         Module module;

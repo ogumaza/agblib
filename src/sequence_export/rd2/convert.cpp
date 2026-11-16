@@ -12,6 +12,7 @@
 #include <map>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -234,7 +235,8 @@ struct Simulation
     bool frame_timing = false; // each event at the start of the frame the driver plays it in, rather than its time
     int volume2 = 0x80;        // the player's second volume, as the game sets it for the sequence
     bool truncated = false;    // the sequence was cut off after kMaxFrames
-    std::vector<agblib::rd2::TrackRead> reads; // each read of the tracks' data, on request
+    LoopStart start_pass = LoopStart::kFirstPass; // the pass through the loop that the plan's loop starts at
+    std::vector<agblib::rd2::TrackRead> reads;    // each read of the tracks' data, on request
     std::vector<std::string> warnings;
 };
 
@@ -519,6 +521,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int versio
 {
     Simulation sim;
     sim.frame_timing = frame_timing;
+    sim.start_pass = start_pass;
     Sequencer seq(rom, info, song, version);
     seq.KeepReads(keep_reads);
     sim.frame_ticks.push_back(0);
@@ -645,6 +648,7 @@ struct Note
     uint64_t on = 0; // MIDI ticks
     uint64_t off = 0;
     uint64_t length = 0;
+    uint64_t units = 0; // the time of the note's command
     uint32_t frame = 0; // the frame the driver starts it in
     bool open = true;
     int psg = -1;         // a PSG voice's channel, whose volume the note follows, or -1
@@ -683,6 +687,16 @@ struct Program
     std::map<int, ZoneSound> keys; // the sound of each key its notes play
 };
 
+// A note that the driver cuts: another note takes its sample voice while it still sounds. The hardware stops the voice
+// at once. Where nothing else of the track sounds, the MIDI file writes All Sound Off (CC120) on the track's channel
+// at `tick`. `units` is the same time in the sequence's units.
+struct Cut
+{
+    int track = 0;
+    uint64_t tick = 0;
+    uint64_t units = 0;
+};
+
 // The conversion of a sequence's notes into the MIDI file's, and of its instruments into programs.
 class NoteMaker
 {
@@ -695,9 +709,10 @@ public:
     // Works out the notes, the end of each, and the programs they play. A PSG voice's note holds its channel until
     // another note takes the channel. The note lasts as long as the channel sounds in that time (see EndSound()). A
     // sample note lasts until its voice's release, or until its voice plays another note. A voice in legato plays the
-    // track's next note without a release.
+    // track's next note without a release. Also works out the cuts that end with All Sound Off (see Cuts()).
     std::vector<Note> Make()
     {
+        std::vector<Stop> stops;
         std::vector<Note> notes;
         std::map<uint32_t, size_t> by_id;
         std::array<uint32_t, kVoices> voice_note = {};
@@ -735,6 +750,8 @@ public:
                     EndSound(notes[size_t(holder[size_t(channel)])], te.frame, tick, end);
                     holder[size_t(channel)] = -1;
                 }
+                // A note without a region holds a voice in the game even where the file leaves it out (see Missing()).
+                missing_ = missing_ || (e.lookup.missing && e.units < sim_.plan.end);
                 if (e.velocity == 0 || e.track < 0 || !(mask_ >> e.track & 1) || e.units >= sim_.plan.end)
                 {
                     continue;
@@ -745,6 +762,7 @@ public:
                 n.velocity = e.velocity;
                 n.on = tick;
                 n.length = e.length;
+                n.units = e.units;
                 n.frame = te.frame;
                 n.id = e.id;
                 n.program = ProgramOf(e, n.key);
@@ -767,7 +785,13 @@ public:
                 const auto found = by_id.find(e.id);
                 if (found != by_id.end())
                 {
-                    close(e.id, OffTick(notes[found->second], e, te.frame));
+                    const uint64_t tick = OffTick(notes[found->second], e, te.frame);
+                    if (e.kind == Event::kStop && e.phase == Event::kCommands && e.voice >= 0 &&
+                        e.voice < kSampleVoices)
+                    {
+                        stops.push_back({e.id, te.frame, tick, e.units});
+                    }
+                    close(e.id, tick);
                 }
             }
         }
@@ -787,8 +811,24 @@ public:
                 EndSound(notes[size_t(h)], uint32_t(sim_.frames.size()), end, end);
             }
         }
+        FindCuts(notes, by_id, stops);
 
         return notes;
+    }
+
+    // Returns the cuts that the last Make() found, in the order of their tracks and ticks. A cut ends with All Sound
+    // Off only where every other sound of its track is cut in the same frame (see FindCuts()).
+    const std::vector<Cut>& Cuts() const
+    {
+        return cuts_;
+    }
+
+    // Returns true if a note of the sequence plays an instrument that has no region for it, even a note that the file
+    // leaves out, such as one of a masked track. The driver plays such a note's sample from past its tables, and its
+    // voices can differ from the model's (see WarnMissing()).
+    bool Missing() const
+    {
+        return missing_;
     }
 
     const std::vector<Program>& Programs() const
@@ -802,6 +842,103 @@ public:
     }
 
 private:
+    // A sample voice's stop by the commands: another note took the voice. `id` is the stopped note's, and `tick` and
+    // `units` give the stop's time.
+    struct Stop
+    {
+        uint32_t id = 0;
+        uint32_t frame = 0;
+        uint64_t tick = 0;
+        uint64_t units = 0;
+    };
+
+    // Finds the cuts that end with All Sound Off, from the stops of the notes' sample voices. A cut's channel is clear
+    // when every sample voice that played a note of the track in the frame before the cut is stopped in the cut's
+    // frame too, and no PSG note of the track sounds across the cut's tick. CC120 then stops nothing that the game
+    // plays. A cut in the first frame is never clear. The cut's tick is the stop's, or the start of an earlier note of
+    // the track in the same frame: the MIDI file puts controllers before the notes of a tick, and the CC120 then
+    // stops nothing of that note. `notes` come in the order of their frames.
+    void FindCuts(const std::vector<Note>& notes, const std::map<uint32_t, size_t>& by_id,
+                  const std::vector<Stop>& stops)
+    {
+        cuts_.clear();
+        std::set<std::pair<uint32_t, uint32_t>> stopped; // (frame, note) for each stop
+        for (const Stop& s : stops)
+        {
+            stopped.emplace(s.frame, s.id);
+        }
+
+        // Each track's PSG notes in the order of their starts, with the latest end of a note up to each.
+        std::array<std::vector<std::pair<uint64_t, uint64_t>>, kPlayerTracks> psg;
+        for (const Note& n : notes)
+        {
+            if (n.psg >= 0)
+            {
+                psg[size_t(n.track)].emplace_back(n.on, n.off);
+            }
+        }
+        for (auto& list : psg)
+        {
+            std::sort(list.begin(), list.end());
+            for (size_t i = 1; i < list.size(); i++)
+            {
+                list[i].second = std::max(list[i].second, list[i - 1].second);
+            }
+        }
+
+        const auto by_frame = [](const Note& n, uint32_t frame)
+        {
+            return n.frame < frame;
+        };
+        for (const Stop& s : stops)
+        {
+            const Note& cut = notes[by_id.at(s.id)];
+            if (s.frame == 0)
+            {
+                continue;
+            }
+
+            bool clear = true;
+            const FrameData& before = sim_.frames[s.frame - 1];
+            for (size_t v = 0; v < size_t(kSampleVoices) && clear; v++)
+            {
+                const auto other = by_id.find(before.sample_note[v]);
+                if (other != by_id.end() && notes[other->second].track == cut.track)
+                {
+                    clear = stopped.count({s.frame, other->first}) > 0;
+                }
+            }
+
+            Cut c{cut.track, s.tick, s.units};
+            for (auto n = std::lower_bound(notes.begin(), notes.end(), s.frame, by_frame);
+                 n != notes.end() && n->frame == s.frame; ++n)
+            {
+                if (n->track == cut.track)
+                {
+                    c.tick = std::min(c.tick, n->on);
+                    c.units = std::min(c.units, n->units);
+                }
+            }
+
+            const auto& list = psg[size_t(cut.track)];
+            const auto after = std::lower_bound(list.begin(), list.end(), std::make_pair(c.tick, uint64_t(0)));
+            if (after != list.begin() && std::prev(after)->second > c.tick)
+            {
+                clear = false;
+            }
+            if (clear)
+            {
+                cuts_.push_back(c);
+            }
+        }
+
+        const auto order = [](const Cut& a, const Cut& b)
+        {
+            return std::tie(a.track, a.tick, a.units) < std::tie(b.track, b.tick, b.units);
+        };
+        std::sort(cuts_.begin(), cuts_.end(), order);
+    }
+
     // Ends `n`, a PSG voice's note. The note holds its channel until another note takes it in frame `until`, at tick
     // `until_tick`. Where no note takes it, `until` is the frames' end. The channel sounds until the start of the frame
     // after the last one in which its volume is above 0. The note lasts that long, but ends by `until_tick` and `end`.
@@ -1064,6 +1201,8 @@ private:
     uint32_t mask_;
     std::vector<Program> programs_;
     std::vector<std::string> warnings_;
+    std::vector<Cut> cuts_;
+    bool missing_ = false;
 };
 
 // Adds the SoundFont presets of a sequence's programs, each in the bank and program of `slots` that its program number
@@ -1780,10 +1919,12 @@ std::vector<ExpressionSpan> TrackSpans(const Simulation& sim, Revision revision,
 }
 
 // Encodes the MIDI file: a conductor track, then a track for each of the player's tracks that plays notes, with the
-// levels of the driver's revision. `psg` gives the tracks whose notes are all PSG notes (see PsgTracks()).
+// levels of the driver's revision. `psg` gives the tracks whose notes are all PSG notes (see PsgTracks()). Each of
+// `cuts` writes All Sound Off on its track's channel.
 std::vector<uint8_t> EncodeMidi(const std::string& title, const std::string& about, Revision revision,
                                 const Simulation& sim, const std::vector<Note>& notes,
-                                const std::array<bool, kPlayerTracks>& psg, const std::vector<BankProgram>& slots)
+                                const std::array<bool, kPlayerTracks>& psg, const std::vector<BankProgram>& slots,
+                                const std::vector<Cut>& cuts)
 {
     constexpr uint16_t kDivision = kTicksPerQuarter;
     const SongPlan& plan = sim.plan;
@@ -1859,9 +2000,78 @@ std::vector<uint8_t> EncodeMidi(const std::string& title, const std::string& abo
         WriteLevels(mt, c, revision, psg[size_t(n)], scales[size_t(n)], StartLevels(sim), changes[size_t(n)],
                     TrackSpans(sim, revision, list, shares[size_t(n)], end), loop);
         WriteNotes(mt, c, list, slots, program, scales[size_t(n)], loop);
+
+        // The cuts come in the order of their tracks and ticks. Two of a track at one tick write one CC120.
+        uint64_t last = std::numeric_limits<uint64_t>::max();
+        for (const Cut& cut : cuts)
+        {
+            if (cut.track == n && cut.tick < end && cut.tick != last)
+            {
+                mt.Control(uint32_t(cut.tick), c, cc::kAllSoundOff, 0);
+                last = cut.tick;
+            }
+        }
     }
 
     return midi.Encode();
+}
+
+// Returns `cuts` without the cuts of the marked pass that a player who loops on the markers wouldn't repeat as the game
+// does. Such a player plays the marked pass again after the pass's end. The tails that still sound then can differ from
+// those of the first time. A cut of the marked pass stays only where `later`, the cuts of a simulation that plays the
+// next pass, has one on the same track a loop's length later. The times are compared in units: with frame timing, the
+// ticks of two passes don't line up. The cuts outside the marked pass stay. A cut belongs to the marked pass by its
+// tick, as the file plays it between the loop markers.
+std::vector<Cut> RepeatedCuts(const Simulation& sim, const std::vector<Cut>& cuts, const std::vector<Cut>& later)
+{
+    const SongPlan& plan = sim.plan;
+    if (!plan.loops)
+    {
+        return cuts;
+    }
+
+    const uint64_t first = TimeTick(sim, plan.loop_start);
+    const uint64_t last = TimeTick(sim, plan.loop_end);
+    const uint64_t length = plan.loop_end - plan.loop_start;
+    std::set<std::pair<int, uint64_t>> again;
+    for (const Cut& c : later)
+    {
+        again.emplace(c.track, c.units);
+    }
+
+    std::vector<Cut> kept;
+    for (const Cut& c : cuts)
+    {
+        const bool marked = c.tick >= first && c.tick < last;
+        if (!marked || again.count({c.track, c.units + length}) > 0)
+        {
+            kept.push_back(c);
+        }
+    }
+
+    return kept;
+}
+
+// Returns the cuts that a sequence's MIDI file ends with All Sound Off (see NoteMaker::FindCuts() and RepeatedCuts()).
+// A sequence with a note that has no region gets none: the driver plays such a note from past its tables, and the
+// model's voices can differ from the game's. With one pass through the loop, a second simulation with two passes gives
+// the next pass's cuts. The marked pass then has the cuts that it has with two passes.
+std::vector<Cut> AllSoundOffs(const Rom& rom, const DriverInfo& info, int song, const ConvertSettings& settings,
+                              const Simulation& sim, const NoteMaker& maker)
+{
+    if (maker.Missing())
+    {
+        return {};
+    }
+    if (!sim.plan.loops || settings.loops >= 2)
+    {
+        return RepeatedCuts(sim, maker.Cuts(), maker.Cuts());
+    }
+
+    const Simulation two = Simulate(rom, info, song, settings.version, 2, settings.frame_timing, sim.start_pass);
+    NoteMaker next(rom, info, two, settings.track_mask);
+    next.Make();
+    return next.Missing() ? std::vector<Cut>() : RepeatedCuts(sim, maker.Cuts(), next.Cuts());
 }
 
 // Plays a sequence as the conversion does. The marked loop starts at the sequence's second pass if its first plays
@@ -1973,8 +2183,8 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
                       rom.GameCode().c_str(), song, named.c_str(), unsigned(info.sequence_addresses[size_t(song)]),
                       settings.program.c_str());
     }
-    std::vector<uint8_t> midi =
-        EncodeMidi(title, about, info.revision, sim, notes, PsgTracks(notes, maker.Programs()), slots);
+    std::vector<uint8_t> midi = EncodeMidi(title, about, info.revision, sim, notes, PsgTracks(notes, maker.Programs()),
+                                           slots, AllSoundOffs(rom, info, song, settings, sim, maker));
 
     std::string error;
     if (files)

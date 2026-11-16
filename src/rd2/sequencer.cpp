@@ -155,18 +155,20 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, int song, int versi
 {
     valid_ = effect_ ? effect_->address != 0 : song >= 0 && song < int(info.sequence_addresses.size());
 
-    // The voices as the driver's init leaves them: the sample voices in the free list, and a PSG voice for each of the
-    // PSG's channels.
-    for (int v = 0; v < kSampleVoices; v++)
+    // The voices as the game's first request finds them: the sample voices in the free list, in the order of
+    // `info.free_voices`, and a PSG voice for each of the PSG's channels.
+    const auto& order = info.free_voices;
+    for (size_t i = 0; i < order.size(); i++)
     {
-        voices_[size_t(v)].prev = v - 1;
-        voices_[size_t(v)].next = v + 1 < kSampleVoices ? v + 1 : -1;
+        Voice& v = voices_[order[i]];
+        v.prev = i > 0 ? order[i - 1] : -1;
+        v.next = i + 1 < order.size() ? order[i + 1] : -1;
     }
     for (int i = 0; i < kPsgVoices; i++)
     {
         voices_[size_t(kSampleVoices + i)].type = uint8_t(kSquare1Type + i);
     }
-    free_ = 0;
+    free_ = order[0];
 
     // The registers that init writes and the PSG voices read back.
     registers_[kNr10 - kRegisters] = 0x08;

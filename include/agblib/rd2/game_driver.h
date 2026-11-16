@@ -46,6 +46,7 @@ struct GameRoutines
     int player_playing = 0x42;   // the record's byte that is 1 while the player plays
     uint32_t play_music = 0;     // the game's play-music routine, or 0: r0 = the game's music number
     uint32_t yoshi_mute = 0;     // the game's routine for the tracks that play only with Yoshi, or 0: r0 = 1 with him
+    uint32_t free_list = 0;      // the word that points to the first free sample voice, or 0 to keep the init's list
 };
 
 class GameDriver
@@ -57,6 +58,8 @@ public:
     GameDriver& operator=(const GameDriver&) = delete;
 
     // Requests version `version` of song `song` of `info` as the game does. The driver starts it in the next frame.
+    // Before the first request, where the routines give the free list, it links the free sample voices in the order of
+    // `info.free_voices`.
     void Play(const DriverInfo& info, int song, int version = 0);
 
     // Asks the driver for the echo's level `level`, as the game's request does. The level moves towards it by 1 a
@@ -89,6 +92,7 @@ private:
     GameRoutines routines_;
     agb::System system_;
     int player_ = 0;
+    bool requested_ = false;
     std::vector<agb::RegisterWrite> sound_writes_;
 };
 

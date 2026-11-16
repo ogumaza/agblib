@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -103,6 +104,11 @@ struct DriverInfo
     uint32_t wave_volumes = 0;      // 5 bytes: the wave voice's NR32 for each of its volumes
     uint32_t voice_classes = 0;     // a byte for each region type: the voices that can play it
     uint32_t key_envelope = 0;      // the envelope of instruments that pick a sample for each key
+
+    // The order of the free sample voices when the game's first request comes. The driver's init links them from voice
+    // 0 up. A sound that the game plays before its music can leave them in another order (see docs/rd2.md).
+    std::array<uint8_t, kSampleVoices> free_voices = {0, 1, 2, 3, 4, 5, 6};
+
     std::vector<uint32_t> sequence_addresses;
     std::vector<uint32_t> bank_list_addresses;
 

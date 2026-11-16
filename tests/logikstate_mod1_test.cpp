@@ -201,7 +201,8 @@ void TestReader()
 // Detection tells the format by the load routine's signature, and the FIFOs by the output's SOUNDCNT_H. A GBAMOD1
 // module contains many pieces: a song starts at order 0 and after each order whose pattern has a jump, with no range of
 // orders. The routine that switches the sound off is after the output's start, and a call from the game's code
-// counts.
+// counts. A release that the tables of games' settings don't name gets a warning for its music volume and one for its
+// slide scales.
 void TestDetection()
 {
     Cart cart = Mod1Cart();
@@ -214,6 +215,8 @@ void TestDetection()
     const uint32_t second = cart.AddModule(Mod1Module());
     Cart sound_off = cart;
     sound_off.AddSoundOff(SoundOffCaller::kGame);
+    Cart named = cart;
+    named.SetGameCode("APLP");
     Cart two = Mod1Cart(kTwoFifos);
     two.AddModule(Mod1Module());
     const Rom rom = cart.ToRom();
@@ -228,7 +231,11 @@ void TestDetection()
     SEQLIB_CHECK(info.load_routine == kLoad && info.play_routine == kPlay);
     SEQLIB_CHECK_EQ(info.fifos, 1);
     SEQLIB_CHECK_EQ(Detect(two.ToRom()).fifos, 2);
-    SEQLIB_CHECK(info.warnings.empty() && info.sound_off_call == 0);
+    SEQLIB_CHECK(info.sound_off_call == 0);
+    SEQLIB_REQUIRE(info.warnings.size() == 2);
+    SEQLIB_CHECK(info.warnings[0].starts_with("no slide scales for this release"));
+    SEQLIB_CHECK(info.warnings[1].starts_with("no music volume for this release"));
+    SEQLIB_CHECK(Detect(named.ToRom()).warnings.empty());
     SEQLIB_CHECK_EQ(with_sound_off.sound_off_call, kGameCode + 2);
     SEQLIB_REQUIRE(info.songs.size() == 4);
     const std::array<std::pair<uint32_t, int>, 4> expected = {{{first, 0}, {first, 1}, {first, 3}, {second, 0}}};

@@ -246,6 +246,23 @@ Voice VoiceOf(const Rom& rom, const P& player, int number, double scale)
     v.rate = double(ch.step) * player.Header().rate / 4096.0;
     v.level = std::min(player.MixVolume(ch, number) * scale, kFullLevel);
 
+    // At each turn of a loop, the mixer masks the place with kEndPlaceMask. The mask is 0, and the place's fraction is
+    // lost. A turn of L points at the step s then takes ceil(L × 4096 / s) samples, not L × 4096 / s, and a short loop
+    // plays flat. A loop over the whole sample plays its first pass that way too. A difference below kTuningCents is
+    // left out, as at a note's start.
+    const bool whole_loop = ch.whole_loop_start == 0 && ch.whole_loop_length == ch.whole_length;
+    if (Loops(ch.whole_loop_length) && int32_t(ch.step) > 0 && (in_loop || point >= ch.length || whole_loop))
+    {
+        static_assert(agblib::logikstate::kEndPlaceMask == 0);
+        const uint64_t span = uint64_t(ch.whole_loop_length) << 12;
+        const uint64_t samples = (span + ch.step - 1) / ch.step;
+        const double turn = double(span) / (double(samples) * ch.step);
+        if (-1200 * std::log2(turn) >= kTuningCents)
+        {
+            v.rate *= turn;
+        }
+    }
+
     // In the GBAMOD1 build, a slide down can bring the step to 0 or below it. The sample then stands still or plays
     // backwards. A SoundFont can't play either. The note plays at level 0 until the step is above 0 again or another
     // sample starts, and keeps its bend.

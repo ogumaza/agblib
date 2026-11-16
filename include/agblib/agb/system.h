@@ -5,8 +5,10 @@
 // the game's routines one at a time, in the order of the game's interrupts. Nothing runs between the calls: no
 // interrupt, timer, sound DMA or display. The I/O registers hold what the code writes to them. The vertical count is
 // the exception. It reads as a line that the caller holds, or else moves on a line with each read. Code that waits for
-// a line then goes on. The video memories and the save memory aren't modelled. Their accesses count as unmapped ones.
-// The cartridge's ROM is a copy, and a write there changes the copy.
+// a line then goes on. A timed DMA without repeat is the other exception. The system never runs its transfer. It
+// clears the DMA's enable bit when the call returns, as the console does after the one transfer. A later call can then
+// start a DMA at once on that channel. The video memories and the save memory aren't modelled. Their accesses count as
+// unmapped ones. The cartridge's ROM is a copy, and a write there changes the copy.
 //
 // The BIOS's calls follow GBATEK's description of the GBA's BIOS.
 
@@ -129,6 +131,10 @@ private:
 
     // Runs DMA `channel`'s transfer if its control starts one at once.
     void StartDma(int channel);
+
+    // Clears the enable bit of each timed DMA without repeat. The console clears it after that DMA's one transfer, at
+    // the next blank or FIFO request after the call. The system doesn't run that transfer.
+    void EndTimedDmas();
 
     // The BIOS's calls: Div, CpuSet, CpuFastSet, GetBiosChecksum, LZ77UnCompWram and LZ77UnCompVram. Returns false
     // for a call that the system doesn't model.
