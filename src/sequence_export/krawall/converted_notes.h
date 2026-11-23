@@ -37,7 +37,7 @@ struct ConvertedRow
     int row = 0;
 };
 
-// A channel's volume (0 to 64) and pan (-64 to 64) from a tick on, as the player keeps them.
+// A channel's volume (0 to 64) and pan (-64 to 64) from a tick on as the player keeps them.
 struct ConvertedLevel
 {
     int channel = 0;

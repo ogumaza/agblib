@@ -3,8 +3,8 @@
 // A game's Ubisoft Milan driver, run on the GBA's CPU (agb::System). It calls the routines that the game calls: the
 // mixer's setup, the driver's init with the sound bank, the start of a piece of music, and the two routines of each
 // frame. The game's VBlank runs the sequencer's step, and its main loop runs the sound update. GameDriver then runs the
-// mixer as the FIFOs' interrupts do, once for each 16 points of output that the frame's time holds. It reads what the
-// driver leaves in memory: the track, the voices and the mixer's output. It's the reference for ntdlib's model of the
+// mixer as the FIFOs' interrupts do, once for each 16 points of output that the frame's time contains. It reads what
+// the driver leaves in memory: the track, the voices and the mixer's output. It's the reference for the model of the
 // driver (ubimilan::Output).
 
 #pragma once

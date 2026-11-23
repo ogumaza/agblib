@@ -15,11 +15,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/mp2k/driver.h"
 #include "agblib/mp2k/song.h"
-#include "ntdlib/commands/sequence.h"
 
 namespace agblib::mp2k
 {
@@ -90,7 +91,8 @@ struct Channel
     int next = -1;
 
     // A DirectSound channel's progress through its sample. Camelot's mixer plays a sample of no length as a synth
-    // voice, whose count holds the pulse wave's duty or the saw wave's filter, and whose fraction is the wave's phase.
+    // voice. The count of a synth voice keeps the pulse wave's duty or the saw wave's filter, and its fraction is the
+    // wave's phase.
     int32_t count = 0;     // the points left before the sample's end
     uint32_t fraction = 0; // 23 bits
     uint32_t position = 0; // the address of the point it plays, or the point's number in a compressed sample
@@ -103,7 +105,7 @@ struct Channel
     uint8_t pan = 0;
     uint8_t pan_mask = 0;
 
-    // A PSG channel's register settings, as the driver keeps them for its writes.
+    // A PSG channel's register settings. The driver keeps them for its writes.
     uint8_t modify = 0;   // the settings that the frame writes: kModifyVolume and kModifyPitch
     uint8_t length = 0;   // the voice's sound length, for NRx1
     uint8_t sweep = 0;    // channel 1's sweep, for NR10
@@ -130,7 +132,7 @@ struct Action
         kLevels,      // left and right = the levels that the track's volume and pan give each side
         kPitch,       // value = the pitch offset in 256ths of a semitone
         kTempo,       // value = the tempo, in quarter notes a minute at 60 frames a second
-        kCommand,     // value = the value of a command that a track ran, as the driver reads it (RecordCommands)
+        kCommand,     // value = the value of a command that a track ran as the driver reads it (RecordCommands)
     };
 
     Kind kind = kNoteOn;
@@ -142,7 +144,7 @@ struct Action
     int32_t value = 0;     // kVoice, kPitch, kTempo and kCommand: the setting
     uint8_t left = 0;      // kLevels: the level on the left, 0-255
     uint8_t right = 0;     // kLevels: the level on the right
-    int32_t old_tempo = 0; // kTempo: the tempo before it, which the rest of this tick's progress counted at
+    int32_t old_tempo = 0; // kTempo: the tempo before it, at which the rest of this tick's progress counted
     int32_t counter = 0;   // kTempo: the progress towards the next tick, in the tempo's units, after this one
     uint64_t tick = 0;     // the player's tick count when it happened
     uint32_t frame = 0;    // the frame it happened on
@@ -181,7 +183,7 @@ private:
     uint32_t address_;
 };
 
-// Plays a song one frame at a time, as the driver's per-frame routine does.
+// Plays a song one frame at a time, in the way of the driver's per-frame routine.
 class Sequencer
 {
 public:
@@ -197,10 +199,11 @@ public:
 
     // From the next note on, gives a note a channel past the console's when `on` and the driver would give it a channel
     // whose note is on and not in its release, or none: a grown channel of the note's part whose note is off, or a new
-    // one, up to kMostChannels. A new note still takes a channel whose note is in its release, as on the console. No
-    // note then cuts another before its release, and no priority leaves a note out. A grown DirectSound channel mixes
-    // as the console's do. A grown PSG channel writes the registers of a grown PSG unit (agb::kGrownPsgRegisters), as
-    // the driver writes the PSG's. The enhanced mixing mode's hosts grow the channels. The console has kChannelCount.
+    // one, up to kMostChannels. A new note still takes a channel whose note is in its release. The console does the
+    // same. No note then cuts another before its release, and no priority leaves a note out. A grown DirectSound
+    // channel mixes the way the console's channels do. A grown PSG channel writes the registers of a grown PSG unit
+    // (agb::kGrownPsgRegisters) the way the driver writes the PSG's. The enhanced mixing mode's hosts grow the
+    // channels. The console has kChannelCount.
     void GrowChannels(bool on);
 
     // The sound channels: the console's kChannelCount, and the channels grown since.
@@ -212,11 +215,11 @@ public:
     // Runs one frame of the driver's per-frame routine. Returns what the tracks and channels did in it, in order.
     const std::vector<Action>& Step();
 
-    // From the next frame on, mixes the DirectSound channels' samples into the mixer's buffer as the driver's mixer
-    // does, point for point. The model follows the stereo mixer of the SDK's versions with and without reversed and
+    // From the next frame on, mixes the DirectSound channels' samples into the mixer's buffer point for point, in the
+    // way of the driver's mixer. The model follows the stereo mixer of the SDK's versions with and without reversed and
     // compressed samples, the mono mixer and Camelot's mixer. Call it before the first Step(): the buffer starts
-    // silent. Throws std::invalid_argument when the buffer holds fewer than two frames' parts, or when the echo of
-    // Camelot's mixer doesn't reach back within a frame.
+    // silent. Throws std::invalid_argument when the buffer has room for fewer than two frames' parts, or when the echo
+    // of Camelot's mixer doesn't reach back within a frame.
     void StartMixing();
 
     // The mixer's output for the last frame: a signed 8-bit point for each of the frame's points, on each side, or
@@ -233,7 +236,7 @@ public:
     // - The mixer puts out agb::kEnhancedFrameSamples samples a frame on each side, in floating point, on the scale of
     //   its 8-bit points. Nothing wraps, saturates or rounds a sum.
     // - A sample's position moves on by the console's step for each of the console's points. The enhanced mode's
-    //   samples lie at even shares of the frame's move. The band-limited interpolator (ntdlib::wave::SincKernel) takes
+    //   samples are at even shares of the frame's move. The band-limited interpolator (ntdlib::wave::SincKernel) takes
     //   the sample's points around each position. A looped sample's points repeat its loop. Before a sample's start and
     //   past its end, the points are 0.
     // - Each side's volume follows the console's formula without its rounding. It ramps across the frame from its
@@ -269,16 +272,17 @@ public:
     std::span<const float> EnhancedRight() const;
     std::span<const float> EnhancedLeft() const;
 
-    // The stores that the last frame made to the sound registers before the FIFOs, in order, as the driver makes them:
-    // the PSG's registers, the sound control registers and the wave RAM.
+    // The stores that the last frame made to the sound registers before the FIFOs, in the driver's order: the PSG's
+    // registers, the sound control registers and the wave RAM.
     const std::vector<agb::RegisterWrite>& SoundWrites() const
     {
         return sound_writes_;
     }
 
-    // Sets the sound registers from agb::kRegSound1CntL up to agb::kRegFifoA that the driver's writes start from, as
+    // Sets the sound registers from agb::kRegSound1CntL up to agb::kRegFifoA that the driver's writes start from as
     // the game left them. The driver reads some of them back when it writes them. The model starts from the registers
-    // that the SDK's init leaves. Throws std::invalid_argument unless `registers` holds agb::kSoundRegisterBytes bytes.
+    // that the SDK's init leaves. Throws std::invalid_argument unless `registers` contains agb::kSoundRegisterBytes
+    // bytes.
     void SetSoundRegisters(std::span<const uint8_t> registers);
 
     // From tick `tick` on, has each track report its levels where it first sets its volume or pan. The track reports
@@ -291,8 +295,8 @@ public:
     }
 
     // From the next frame on, reports each command that a track runs (Action::kCommand), with its address and the
-    // address after it. `command` holds the address. An extended wait reports itself once: the ticks in which it runs
-    // again add no report.
+    // address after it. `command` contains the address. An extended wait reports itself once: the ticks in which it
+    // runs again add no report.
     void RecordCommands()
     {
         record_commands_ = true;
@@ -324,6 +328,15 @@ public:
         return owners_[size_t(channel)];
     }
 
+    // Returns the tracks that have made a sound (bit t for track t): those whose channels played at a level above 0 in
+    // some frame. A DirectSound channel plays at the mixer's volume on either side, from the envelope, the channel
+    // volumes and, in the SDK's mixer, the master volume. A square or noise channel plays at the level of the envelope
+    // register, and the wave channel at the volume that NR32 gives it. A muted track counts as it would play unmuted.
+    uint16_t SoundedTracks() const
+    {
+        return sounded_tracks_;
+    }
+
     // From the next frame on, keeps each track's peaks in the mixer when `on`: the largest magnitude, in a frame, of
     // the sum of the points that the track's DirectSound channels add to each side. The mixer's reverb and a muted
     // track add nothing. Without meters, the peaks are 0.
@@ -344,13 +357,14 @@ public:
     {
         return memory_[size_t(index)];
     }
+
     void SetMemory(int index, uint8_t value)
     {
         memory_[size_t(index)] = value;
     }
 
-    // Returns true when the mixer adds nothing more: the last frame's part of its buffer holds only 0, and with a
-    // reverb, the whole buffer does. Without mixing, returns true.
+    // Returns true when the mixer adds nothing more: the last frame's part of its buffer is all 0, and with a reverb,
+    // the whole buffer is. Without mixing, returns true.
     bool MixerSilent() const;
 
     // Returns true once every track has ended.
@@ -458,7 +472,7 @@ private:
     bool RunCommand(int t);
 
     void StartTrack(Track& track);
-    // Plays a note of track `t` whose first byte lies at `command`, with the track's key, velocity and length.
+    // Plays a note of track `t` whose first byte is at `command`, with the track's key, velocity and length.
     void Note(int t, uint32_t command);
     void EndTie(int t);
     void EndTrack(int t);
@@ -475,7 +489,7 @@ private:
     // Fusion).
     static SideLevels MetroidLevels(const Track& track, int pan);
 
-    // Recalculates a track's volumes and pitch, as the driver's TrkVolPitSet does, if its flags ask for it.
+    // Recalculates a track's volumes and pitch in the way of the driver's TrkVolPitSet, if its flags ask for it.
     void UpdateTrack(Track& track);
 
     // Sets a channel's volumes from its velocity and its track's volumes.
@@ -521,10 +535,10 @@ private:
     // The address of the register at the console's `address` in PSG unit `unit`.
     static uint32_t UnitAddress(int unit, uint32_t address);
 
-    // Stores `value` to the sound register at `address` and records the store. The address can lie in a grown unit.
+    // Stores `value` to the sound register at `address` and records the store. The address can be in a grown unit.
     void WriteSound(uint32_t address, int size, uint32_t value);
 
-    // The byte in the sound register at `address`, as the writes left it. The address can lie in a grown unit.
+    // The byte in the sound register at `address` as the writes left it. The address can be in a grown unit.
     uint8_t SoundRegister(uint32_t address) const;
 
     // Starts the frame's part of the mixer's buffer: the reverb of the buffer's earlier output, or silence. Camelot's
@@ -585,6 +599,9 @@ private:
     // Records that a channel's note is audible, the first time the level that the hardware plays it at is above 0.
     void CheckAudible(int channel);
 
+    // Records that a channel played at a level above 0 in the frame, for SoundedTracks().
+    void MarkSounded(int channel);
+
     void Warn(const std::string& message);
 
     const Rom& rom_;
@@ -608,7 +625,7 @@ private:
     std::array<uint8_t, kMemAccSize> memory_ = {};
 
     // The mixer's state: its buffer, the right side's and then the left side's, the frames left before the sound DMA
-    // starts the buffer again, the frames that the buffer holds, the reverb and the frame's part of the buffer.
+    // starts the buffer again, the frames that the buffer has room for, the reverb and the frame's part of the buffer.
     bool mixing_ = false;
     std::vector<int8_t> pcm_;
     uint8_t dma_counter_ = 0;
@@ -622,6 +639,7 @@ private:
     std::vector<int16_t> sums_; // each track's sums for the frame: its right side's points, then its left side's
     std::array<std::array<int32_t, 2>, kMaxTracks> peaks_ = {};
     std::vector<int8_t> owners_ = std::vector<int8_t>(kChannelCount, -1); // ChannelTrack()
+    uint16_t sounded_tracks_ = 0;                                         // SoundedTracks()
 
     // Camelot's mixer: each point's sums of both sides in one word, the count of the channels that the frame mixed, and
     // the place of the last frame's part.
@@ -637,6 +655,7 @@ private:
         std::array<float, 2> volumes = {};
         std::array<float, 32> history = {};
     };
+
     bool enhanced_ = false;
     bool enhanced_frames_ = true;
     std::vector<EnhancedChannel> enhanced_channels_ = std::vector<EnhancedChannel>(kChannelCount);
@@ -656,19 +675,20 @@ private:
 };
 
 // Returns the rate in Hz at which a sample whose header gives `frequency` (1024 times its rate for key 60) plays `key`,
-// raised by `fine`/256 of a semitone, as the driver's MidiKeyToFreq works it out.
+// raised by `fine`/256 of a semitone. The driver's MidiKeyToFreq works it out the same way.
 uint32_t KeyToFrequency(uint32_t frequency, int key, int fine);
 
-// Returns the rate as KeyToFrequency() does, as Camelot's version of MidiKeyToFreq works it out. It shifts the step to
-// the next semitone down by the octaves, where the driver shifts both semitones' rates and takes the difference, so the
-// two can round differently.
+// Returns the rate as Camelot's version of MidiKeyToFreq works it out. It shifts the step to the next semitone down by
+// the octaves. KeyToFrequency() shifts both semitones' rates and takes the difference. The two can therefore round
+// differently.
 uint32_t CamelotKeyToFrequency(uint32_t frequency, int key, int fine);
 
 // Returns the rate as KeyToFrequency() does, or as CamelotKeyToFrequency() does in Camelot's version of the driver.
 uint32_t SampleFrequency(const DriverInfo& info, uint32_t frequency, int key, int fine);
 
-// Returns the frequency setting of PSG channel `channel` (1-4) for `key`, raised by `fine`/256 of a semitone, as the
-// driver's MidiKeyToCgbFreq works it out: the 11-bit register value for channels 1-3, or a noise setting for 4.
+// Returns the frequency setting of PSG channel `channel` (1-4) for `key`, raised by `fine`/256 of a semitone: the
+// 11-bit register value for channels 1-3, or a noise setting for 4. The driver's MidiKeyToCgbFreq works it out the same
+// way.
 uint32_t KeyToPsgFrequency(int channel, int key, int fine);
 
 // Returns how far the phase of a synth voice of Camelot's mixer moves on for each point of the mixer's output, at

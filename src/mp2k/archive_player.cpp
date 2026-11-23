@@ -10,15 +10,11 @@
 #include <utility>
 #include <vector>
 
+#include "agblib/agb/player_steps.h"
+#include "agblib/agb/sound_registers.h"
+
 namespace agblib::mp2k
 {
-
-namespace
-{
-
-constexpr uint32_t kRegSoundCntH = 0x04000082;
-
-} // namespace
 
 ArchivePlayer::ArchivePlayer(const Rom& rom, const DriverInfo& info) : rom_(rom), info_(info)
 {
@@ -36,6 +32,7 @@ void ArchivePlayer::Start(int song, const ArchivePlayerOptions& options)
     {
         throw std::invalid_argument("song " + std::to_string(song) + " can't be played");
     }
+
     sequencer.StartMixing();
     if (options.enhanced)
     {
@@ -90,33 +87,26 @@ void ArchivePlayer::WriteMemory(int index, uint8_t value)
     {
         throw std::out_of_range("memacc's memory holds " + std::to_string(kMemAccSize) + " bytes");
     }
+
     writes_.emplace_back(index, value);
 }
 
 const Sequencer& ArchivePlayer::Driver() const
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(sequencer_));
+
     return *sequencer_;
 }
 
 void ArchivePlayer::RunFrame(std::vector<int16_t>& out)
 {
-    if (enhanced_)
-    {
-        throw std::logic_error("the song plays in the enhanced mode");
-    }
+    agb::CheckPlainFrame(enhanced_);
     Frame(&out, nullptr);
 }
 
 void ArchivePlayer::RunFrame(std::vector<float>& out)
 {
-    if (sequencer_ && !enhanced_)
-    {
-        throw std::logic_error("the song doesn't play in the enhanced mode");
-    }
+    agb::CheckEnhancedFrame(bool(sequencer_), enhanced_);
     Frame(nullptr, &out);
 }
 
@@ -127,40 +117,24 @@ void ArchivePlayer::RunFrame()
 
 void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(sequencer_));
 
     const bool output = out || enhanced_out;
     const bool metering = metered_ && output;
     apu_.MeterChannels(metering);
     apu_.ClearPeaks();
-    const auto run = [&](uint64_t cycles)
-    {
-        if (out)
-        {
-            apu_.Run(cycles, *out);
-        }
-        else if (enhanced_out)
-        {
-            apu_.Run(cycles, *enhanced_out);
-        }
-        else
-        {
-            apu_.Run(cycles);
-        }
-    };
 
     // The hardware plays up to the driver's routine, whose writes then take effect. A note there can give a channel to
     // another track.
     MutePsg();
-    run(store_cycle_);
+    agb::RunApu(apu_, store_cycle_, out, enhanced_out);
     for (const auto& [index, value] : writes_)
     {
         sequencer_->SetMemory(index, value);
     }
     writes_.clear();
+
+    // The driver's routine runs, and its writes reach the hardware. The mixer's points of the frame join the FIFOs.
     sequencer_->SetEnhancedFrames(enhanced_out != nullptr);
     actions_ = sequencer_->Step();
     for (const agb::RegisterWrite& write : sequencer_->SoundWrites())
@@ -175,7 +149,9 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
         apu_.QueueEnhanced(0, sequencer_->EnhancedRight());
         apu_.QueueEnhanced(1, sequencer_->EnhancedLeft());
     }
-    run(agb::kFrameCycles - store_cycle_);
+
+    // The hardware plays the rest of the frame.
+    agb::RunApu(apu_, agb::kFrameCycles - store_cycle_, out, enhanced_out);
     frames_++;
 
     // The FIFOs play the frame's points in the next frame, and the last of them in the frame after.
@@ -208,6 +184,7 @@ void ArchivePlayer::MutePsg()
         {
             continue;
         }
+
         if (channel.unit == 0)
         {
             muted = uint8_t(muted | 1u << (channel.part - 1));
@@ -218,6 +195,7 @@ void ArchivePlayer::MutePsg()
             unit = uint8_t(unit | 1u << (channel.part - 1));
         }
     }
+
     apu_.SetMuted(muted);
     if (!muted_units.empty())
     {
@@ -232,13 +210,15 @@ void ArchivePlayer::UpdatePeaks(bool metering)
     peaks_ = {};
     if (metering)
     {
-        const uint8_t control = apu_.Register(kRegSoundCntH);
+        const uint8_t control = apu_.Register(agb::kRegSoundCntH);
         const int right = (control & 4) ? 4 : 2;
         const int left = info_.mono ? right : (control & 8) ? 4 : 2;
         for (size_t t = 0; t < peaks_.size(); t++)
         {
             peaks_[t] = {mixed_[t][0] * left * 64, mixed_[t][1] * right * 64};
         }
+
+        // A PSG channel's part counts in the meter of the track whose note started it.
         for (int c = kFirstPsgChannel; c < sequencer_->ChannelCount(); c++)
         {
             const Channel& channel = sequencer_->GetChannel(c);
@@ -247,13 +227,12 @@ void ArchivePlayer::UpdatePeaks(bool metering)
             {
                 const std::array<int32_t, 2> part = channel.unit == 0 ? apu_.ChannelPeaks(channel.part - 1)
                                                                       : apu_.UnitPeaks(channel.unit, channel.part - 1);
-                for (size_t side = 0; side < 2; side++)
-                {
-                    peaks_[size_t(owner)][side] = std::max(peaks_[size_t(owner)][side], part[side]);
-                }
+                agb::KeepPeak(peaks_[size_t(owner)], part);
             }
         }
     }
+
+    // The mixer's peaks of this frame play in the next.
     for (int t = 0; t < kMaxTracks; t++)
     {
         mixed_[size_t(t)] = metering ? sequencer_->MixerPeaks(t) : std::array<int32_t, 2>{};
@@ -267,11 +246,7 @@ bool ArchivePlayer::Busy() const
 
 void ArchivePlayer::MuteTrack(int track, bool mute)
 {
-    if (track < 0 || track >= kMaxTracks)
-    {
-        throw std::out_of_range("a song has at most " + std::to_string(kMaxTracks) + " tracks");
-    }
-    muted_ = uint16_t(mute ? muted_ | 1u << track : muted_ & ~(1u << track));
+    agb::SetTrackBit(muted_, track, mute, kMaxTracks);
     if (sequencer_)
     {
         ApplySettings();
@@ -286,6 +261,7 @@ void ArchivePlayer::MeterTracks(bool on)
         mixed_ = {};
         peaks_ = {};
     }
+
     if (sequencer_)
     {
         ApplySettings();
@@ -294,10 +270,7 @@ void ArchivePlayer::MeterTracks(bool on)
 
 ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(sequencer_));
 
     Snapshot snapshot;
     snapshot.owner_ = this;
@@ -313,10 +286,7 @@ ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 
 void ArchivePlayer::Restore(const Snapshot& snapshot)
 {
-    if (snapshot.owner_ != this || !snapshot.sequencer_)
-    {
-        throw std::invalid_argument("the snapshot is another player's");
-    }
+    agb::CheckSnapshotOwner(snapshot.owner_ == this && snapshot.sequencer_);
 
     sequencer_.emplace(*snapshot.sequencer_);
     apu_ = snapshot.apu_;

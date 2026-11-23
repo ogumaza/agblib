@@ -8,11 +8,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+#include "seqlib/testing/check.h"
 #include "xsflib/testing/check.h"
 
 #include "agblib/quintet/commands.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 using xsflib::testing::Check;
 
@@ -23,6 +24,7 @@ namespace quintet = agblib::quintet;
 using ntdlib::commands::Command;
 using ntdlib::commands::Kind;
 using ntdlib::commands::kOne;
+using seqlib::testing::Throws;
 
 // The note values of a test driver's length table: whole, half, quarter and so on, then a quarter again.
 quintet::Traits TraitsA()
@@ -154,15 +156,8 @@ void TestEncode()
           "an eighth note takes index 3");
 
     sequence.items[0].value.value = 5 * kOne;
-    bool threw = false;
-    try
-    {
-        quintet::EncodeSequence(sequence, entries, traits);
-    }
-    catch (const std::invalid_argument&)
-    {
-        threw = true;
-    }
+    bool threw = Throws<std::invalid_argument>([&] { quintet::EncodeSequence(sequence, entries, traits); });
+
     Check(threw, "no note value gives 5 ticks");
 
     // A channel that runs into data. The data's bytes read as a note and an end.
@@ -181,6 +176,7 @@ void TestEncode()
     {
         message = e.what();
     }
+
     Check(message == "a channel reaches bytes that no item starts at", "a channel that reaches data");
 
     // The S revision has no F1.
@@ -190,15 +186,8 @@ void TestEncode()
     volume.index = 1;
     volume.value.value = -1 * kOne;
     step.items = {volume, end};
-    threw = false;
-    try
-    {
-        quintet::EncodeSequence(step, entries, TraitsS());
-    }
-    catch (const std::invalid_argument&)
-    {
-        threw = true;
-    }
+    threw = Throws<std::invalid_argument>([&] { quintet::EncodeSequence(step, entries, TraitsS()); });
+
     Check(threw, "the S revision has no step of the volume");
 }
 

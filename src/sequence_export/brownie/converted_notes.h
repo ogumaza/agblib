@@ -11,6 +11,7 @@
 #include "agblib/agb/rom.h"
 #include "agblib/brownie/driver.h"
 #include "agblib/brownie/sequencer.h"
+#include "agblib/sequence_export/agb/performance_steps.h"
 #include "agblib/sequence_export/agb/settings.h"
 
 namespace agblib::sequence_export::brownie
@@ -33,16 +34,9 @@ struct ConvertedNote
 };
 
 // A sound as its conversion plays it.
-struct ConvertedSong
+struct ConvertedSong : agb::FrameTimes
 {
     std::vector<std::string> warnings;
-    bool truncated = false;
-    bool loops = false;
-    uint32_t loop_start = 0; // frames
-    uint32_t loop_end = 0;
-    uint32_t end_frame = 0;
-    uint32_t end_tick = 0;
-    double quarter_frames = 0;                       // the frames of a quarter note at the song's first tempo
     std::vector<agblib::brownie::ChannelRead> reads; // what the channels read, in the order the driver read it
     std::vector<ConvertedNote> notes;                // each channel's notes in order, the channels in order
 };

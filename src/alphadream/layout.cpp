@@ -14,8 +14,7 @@
 #include <utility>
 #include <vector>
 
-#include "xsflib/bytes.h"
-
+#include "agblib/agb/cut_steps.h"
 #include "agblib/alphadream/commands.h"
 
 namespace agblib::alphadream
@@ -181,27 +180,17 @@ Layout Cut(const Rom& rom, const DriverInfo& info)
     layout.free.filler = agb::FillerRunsOf(rom, reached, kLeastFillerRun);
 
     // Each song once, in the order of the songs' bytes. A song stays among the ROM's bytes when another song reads any
-    // of its bytes, or when it holds the driver's other data: the other reader would lose them when the song moved.
-    auto reader = songs.end(); // the song that reads furthest
-    uint32_t read_to = 0;      // where that song's bytes end
-    for (auto it = songs.begin(); it != songs.end(); ++it)
+    // of its bytes, or when it contains the driver's other data: the other reader would lose them when the song moved.
+    const auto size = [](const CutSong& song)
     {
-        const uint32_t end = it->first + it->second.decoded.size;
-        if (other.Touches(it->first, it->second.decoded.size))
-        {
-            it->second.usable = false;
-        }
-        if (reader != songs.end() && it->first < read_to)
-        {
-            it->second.usable = false;
-            reader->second.usable = false;
-        }
-        if (reader == songs.end() || end > read_to)
-        {
-            reader = it;
-            read_to = end;
-        }
-    }
+        return song.decoded.size;
+    };
+
+    const auto stays = [&](uint32_t address, uint32_t bytes)
+    {
+        return other.Touches(address, bytes);
+    };
+    agb::MarkReadTwice(songs, size, stays);
 
     // The runs between the songs.
     uint32_t at = kRomBase;
@@ -219,6 +208,7 @@ Layout Cut(const Rom& rom, const DriverInfo& info)
         layout.sequences.push_back(std::move(song.decoded.sequence));
         at = address + song.decoded.size;
     }
+
     agb::AddRomRun(rom, at, rom.End(), layout.pieces);
 
     // The place in the pieces of an address in a run.
@@ -255,19 +245,10 @@ std::vector<uint8_t> Join(Version version, std::span<const ntdlib::commands::Seq
     {
         return EncodeSequence(sequences[sequence], version);
     };
+
     agb::JoinedRom rom(pieces, sequences.size(), fields, free,
                        {.alignment = kMovedAlignment, .filler = options.filler, .sequences = "songs"}, encode);
-    for (const ntdlib::sar::Field& field : fields)
-    {
-        uint8_t* at = rom.FieldBytes(field, 4);
-        const uint64_t from = rom.Position(field.from);
-        const uint64_t to = rom.Position(field.to);
-        if (to < from || to - from + kRomBase > std::numeric_limits<uint32_t>::max())
-        {
-            throw std::invalid_argument("a field's address is outside the GBA's address space");
-        }
-        xsflib::StoreLe32(at, uint32_t(to - from + kRomBase));
-    }
+    agb::WriteAddressFields(rom, fields);
 
     return rom.TakeImage();
 }

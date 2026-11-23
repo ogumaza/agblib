@@ -12,14 +12,15 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/wave/sinc.h"
 #include "xsflib/bytes.h"
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/warnings.h"
 #include "agblib/brownie/driver.h"
 #include "agblib/brownie/song.h"
-#include "ntdlib/wave/sinc.h"
 #include "sequencer_internal.h"
 
 namespace agblib::brownie
@@ -30,9 +31,10 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, int song)
 {
     if (vacation_)
     {
-        // The Magical Vacation revision's init empties the FIFOs, sets the mix, sets SOUNDCNT_L before it turns the
-        // sound off and on, which clears it again, clears the PSG channels' registers, writes 0x8000 to 0x0400007A
-        // rather than to NR44, and stops the timers. The channels and the queue start clear.
+        // The Magical Vacation revision's init empties the FIFOs, sets the mix and sets SOUNDCNT_L before it turns the
+        // sound off and on. The sound's switch clears SOUNDCNT_L again. The init then clears the PSG channels'
+        // registers, writes 0x8000 to 0x0400007A rather than to NR44, and stops the timers. The channels and the queue
+        // start clear.
         Write(kIoSoundcntH, 2, 0xC80E);
         Write(kIoSoundcntH, 2, 0x730E);
         Write(kIoSoundcntL, 2, 0x77);
@@ -44,11 +46,13 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, int song)
         {
             Write(address, 2, 0);
         }
+
         for (const uint32_t address :
              {kIoFrequencyRegisters[0], kIoFrequencyRegisters[1], kIoFrequencyRegisters[2], 0x0400007Au})
         {
             Write(address, 2, 0x8000);
         }
+
         Write(kIoTimer0Control, 2, 0);
         Write(kIoTimer1Control, 2, 0);
         Set32(kVacationMaster, 0xFF);
@@ -56,13 +60,7 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, int song)
     else
     {
         // The init resets the sound, the channels, the queue, the voices and the master level, and stops the FIFOs.
-        Write(kIoNr52, 2, 0);
-        Write(kIoNr52, 2, 0x8F);
-        Write(kIoTimer0Control, 2, 0);
-        Write(kIoSoundcntH, 2, 0x8802);
-        Write(kIoSoundcntH, 2, 0x210E);
-        Write(kIoSoundcntL, 2, 0x77);
-        Set16(kSoundcntLCopy, 0x77);
+        ResetSound();
         Set32(kMaster, 0xFF);
         Write(kIoDma1Control, 2, 0);
         Write(kIoDma2Control, 2, 0);
@@ -158,8 +156,9 @@ const std::vector<RegisterWrite>& Sequencer::Step()
         voice_peaks_ = {};
     }
 
-    // The per-frame routine: the channels, then the fades and a request, unless E3 has ended it. Only the game's fade
-    // out routine starts a fade in the Magical Vacation revision, which has no E3, so the model has no fades for it.
+    // The per-frame routine: the channels, then the fades and a request, unless E3 has ended it. The Magical Vacation
+    // revision has no E3. In that revision, only the game's fade out routine starts a fade, and the model has no fades
+    // for it.
     now_ = uint64_t(frame_) * kFrameCycles;
     RunChannels();
     if (!returned_)
@@ -168,6 +167,7 @@ const std::vector<RegisterWrite>& Sequencer::Step()
         {
             Fade();
         }
+
         Requests();
     }
 
@@ -260,6 +260,7 @@ void Sequencer::RunChannels()
                 {
                     SampleEnvelopeStep(c);
                 }
+
                 continue;
             }
 
@@ -279,6 +280,7 @@ void Sequencer::RunChannels()
                 {
                     RampStep(c);
                 }
+
                 continue;
             }
 
@@ -287,11 +289,11 @@ void Sequencer::RunChannels()
     }
 }
 
-// FF: the channel ends. A PSG channel falls silent, unless a sound effect has it; a sound effect gives its PSG channel
-// back to the music, which plays on as it was; and a sample channel's voice falls silent, which stops the FIFOs if
+// FF: the channel ends. A PSG channel falls silent, unless a sound effect has it. A sound effect gives its PSG channel
+// back to the music, and the music plays on as it was. A sample channel's voice falls silent, and the FIFOs stop if
 // voices 0 and 1 seem to be silent. In the Magical Vacation revision, a sample channel stops its FIFO's timer, unless a
-// sound effect has the FIFO, and a sound effect's sample channel gives the FIFO back to the music's, whose sample stays
-// stopped until its next note.
+// sound effect has the FIFO. A sound effect's sample channel gives the FIFO back to the music's channel. The music's
+// sample stays stopped until its next note.
 void Sequencer::EndChannel(int c)
 {
     Channel& ch = channels_[size_t(c)];
@@ -312,6 +314,7 @@ void Sequencer::EndChannel(int c)
         StopEnhanced(c & 1);
         return;
     }
+
     if (c >= kFirstSampleChannel)
     {
         voices_[size_t(c & 7)] = Voice();
@@ -324,6 +327,7 @@ void Sequencer::EndChannel(int c)
             Write(kIoDma1Control, 2, 0);
             Write(kIoDma2Control, 2, 0);
         }
+
         r5_ = voices_[1].point;
         return;
     }
@@ -350,6 +354,7 @@ void Sequencer::EndChannel(int c)
             {
                 Write(kIoNr10, 2, music.sweep);
             }
+
             return;
         }
     }
@@ -370,6 +375,7 @@ void Sequencer::LoadWave(uint32_t wave)
     {
         Write(kIoWaveRam + i, 2, rom_.U16(wave + i));
     }
+
     Write(kIoNr30, 2, 0x80);
 }
 
@@ -387,6 +393,7 @@ void Sequencer::Resume()
     {
         ch.flags = (ch.flags & (kFlagOn | kFlagPaused)) ? kFlagOn : 0;
     }
+
     Write(kIoTimer0Control, 2, kTimerOn);
 
     const uint8_t at = Get8(kQueueWrite);
@@ -461,10 +468,10 @@ void Sequencer::FadeStep(int timer, int period, bool up)
     }
 }
 
-// The end of a fade out: the sound and the FIFOs stop, and each channel in use is marked to come back with E3.
-void Sequencer::StopAll()
+// The writes that the init and the end of a fade out share: the sound goes off and on, Timer 0 stops, the FIFOs reset,
+// and SOUNDCNT_H and SOUNDCNT_L take the driver's mix, with the driver's copy of SOUNDCNT_L.
+void Sequencer::ResetSound()
 {
-    Set8(kMaster, 0);
     Write(kIoNr52, 2, 0);
     Write(kIoNr52, 2, 0x8F);
     Write(kIoTimer0Control, 2, 0);
@@ -472,6 +479,13 @@ void Sequencer::StopAll()
     Write(kIoSoundcntH, 2, 0x210E);
     Write(kIoSoundcntL, 2, 0x77);
     Set16(kSoundcntLCopy, 0x77);
+}
+
+// The end of a fade out: the sound and the FIFOs stop, and each channel in use is marked to come back with E3.
+void Sequencer::StopAll()
+{
+    Set8(kMaster, 0);
+    ResetSound();
 
     // The driver clears the queue's indexes and first four requests with the last record's new flags.
     uint32_t flags = 0;
@@ -480,14 +494,15 @@ void Sequencer::StopAll()
         flags = (ch.flags & (kFlagOn | kFlagPaused)) ? kFlagPaused : 0;
         ch.flags = uint8_t(flags);
     }
+
     Set16(kQueueRead, flags);
     Set32(kQueue, flags);
     Set32(kQueue + 4, flags);
     Set32(kMaster, 0xFF);
 }
 
-// Starts the next request in the queue, if there is one. The Magical Vacation revision's queue holds 4 requests, and it
-// starts the next one if the queue's offsets differ, whatever it is.
+// Starts the next request in the queue, if there is one. The Magical Vacation revision's queue contains 4 requests, and
+// it starts the next one if the queue's offsets differ, whatever it is.
 void Sequencer::Requests()
 {
     const uint8_t read = Get8(kQueueRead);
@@ -512,6 +527,7 @@ void Sequencer::Requests()
         {
             Set32(kQueueRead, 0);
         }
+
         return;
     }
 
@@ -544,6 +560,7 @@ void Sequencer::StartSound(int sound)
         {
             return;
         }
+
         if (c >= uint32_t(layout_.records))
         {
             Warn("sound " + std::to_string(sound) + " lists channel " + std::to_string(c) + ", which doesn't exist");
@@ -575,9 +592,9 @@ void Sequencer::StartSound(int sound)
     Warn("sound " + std::to_string(sound) + " lists too many channels");
 }
 
-// The DMA 1 or DMA 2 interrupt in the Magical Vacation revision, which gives FIFO x the next 4 points of its sample,
-// scaled by its volume. At the end of the sample, it goes on from the loop, or at the end of one that doesn't loop, it
-// stops the timer and gives the FIFO nothing more.
+// The DMA 1 or DMA 2 interrupt in the Magical Vacation revision. It gives FIFO x the next 4 points of its sample,
+// scaled by its volume. At the end of the sample, it goes on from the loop. At the end of a sample that doesn't loop,
+// it stops the timer and gives the FIFO nothing more.
 void Sequencer::Interrupt(int x)
 {
     FifoVoice& v = fifo_voices_[size_t(x)];
@@ -590,12 +607,14 @@ void Sequencer::Interrupt(int x)
             Write(x ? kIoTimer1Control : kIoTimer0Control, 2, 0);
             return;
         }
+
         v.point = v.loop;
     }
 
     // The routine scales each pair of points by (volume + 1) / 256. FIFO A's routine reads the volume's low byte, and
     // FIFO B's its whole word. A positive point rounds to nearest, half up. A negative point's size rounds the same
-    // way, and comes out negative. That negative carries into the pair's second point, which comes out a step lower.
+    // way, and comes out negative. The borrow of that negative point reaches the pair's second point, and the second
+    // point comes out a step lower.
     const uint32_t scale = (x == 0 ? (v.volume & 0xFF) : v.volume) + 1;
     const auto pair = [scale](uint32_t points)
     {
@@ -611,7 +630,7 @@ void Sequencer::Interrupt(int x)
         return ((second >> 8) & 0xFF00) + (first >> 8);
     };
 
-    const uint32_t fifo = kIoFifoA + 4 * uint32_t(x);
+    const uint32_t fifo = agb::kRegFifoA + 4 * uint32_t(x);
     Write(fifo, 2, pair(word));
     Write(fifo + 2, 2, pair(word >> 16));
 }
@@ -677,21 +696,23 @@ void Sequencer::Write(uint32_t address, int size, uint32_t value)
                 restarted_ = uint8_t(restarted_ | (1 << c));
             }
         }
+
         if (address == kIoSoundcntH && size == 2)
         {
             if (value & 0x0800)
             {
                 fifos_[0].count = 0;
             }
+
             if (value & 0x8000)
             {
                 fifos_[1].count = 0;
             }
         }
     }
-    else if (address >= kIoFifoA && address < kIoFifoA + 8)
+    else if (address >= agb::kRegFifoA && address < agb::kRegFifoA + 8)
     {
-        const int x = int((address - kIoFifoA) / 4);
+        const int x = int((address - agb::kRegFifoA) / 4);
         Fifo& f = fifos_[size_t(x)];
         for (int i = 0; i < size && f.count < kFifoBytes; i++)
         {
@@ -701,13 +722,14 @@ void Sequencer::Write(uint32_t address, int size, uint32_t value)
     }
     else if (address == kIoTimer0Control || address == kIoTimer1Control)
     {
-        // A timer that starts runs from its reload value, so that its first overflow comes a period later.
+        // A timer that starts runs from its reload value. Its first overflow therefore comes a period later.
         const int x = address == kIoTimer1Control ? 1 : 0;
         Fifo& f = fifos_[size_t(x)];
         if (x == 0)
         {
             timer_control_ = uint16_t(value);
         }
+
         const uint64_t frame_start = uint64_t(frame_) * kFrameCycles;
         if ((value & kTimerOn) && !f.running)
         {
@@ -722,6 +744,7 @@ void Sequencer::Write(uint32_t address, int size, uint32_t value)
             {
                 timer_changes_.push_back({uint32_t(now_ - frame_start), x, 0, 0});
             }
+
             f.running = false;
         }
     }
@@ -735,6 +758,7 @@ void Sequencer::Write(uint32_t address, int size, uint32_t value)
         {
             dma_control_ = uint16_t(value);
         }
+
         fifos_[address == kIoDma2Control ? 1 : 0].dma = (value & 0x8000) != 0;
     }
 }

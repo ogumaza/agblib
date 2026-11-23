@@ -24,12 +24,14 @@
 #include <tuple>
 #include <vector>
 
+#include "ntdlib/wave/blep.h"
 #include "seqlib/midi/reader.h"
 #include "seqlib/testing/check.h"
 #include "xsflib/binary.h"
 #include "xsflib/bytes.h"
 #include "xsflib/player/archive_source.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/files.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
@@ -49,10 +51,11 @@
 #include "agblib/testing/agb_cart.h"
 #include "agblib/testing/agb_files.h"
 #include "agblib/testing/mp2k_cart.h"
-#include "ntdlib/wave/blep.h"
 
 namespace agblib::sequence_export::mp2k
 {
+
+using agblib::testing::agb_tests::Throws;
 using enum agblib::mp2k::Command;
 using enum agblib::mp2k::Xcommand;
 namespace cc = seqlib::midi::cc;
@@ -142,6 +145,25 @@ inline DriverInfo Detect(const Rom& rom)
     SEQLIB_CHECK(DetectDriver(rom, DriverOverrides(), info, error));
 
     return info;
+}
+
+// Returns the instrument that the preset of header record `p` of a SoundFont file plays: the instrument generator's
+// amount in the preset's first zone.
+inline size_t RecordedInstrument(const Sf2Records& sf, size_t p)
+{
+    const uint8_t* h = sf.Record("phdr", 38, p);
+    return Le16(sf.Record("pgen", 4, Le16(sf.Record("pbag", 4, Le16(h + 24)))) + 2);
+}
+
+// Puts the mono mixer's volume code into a test cartridge. Detection then finds a mixer that plays every channel on
+// both sides.
+inline void PutMonoMixer(Cart& cart)
+{
+    constexpr std::array<uint8_t, 12> kMono = {0xA0, 0x78, 0xE1, 0x78, 0x40, 0x18, 0x68, 0x43, 0x40, 0x0A, 0xA0, 0x72};
+    for (size_t i = 0; i < kMono.size(); i++)
+    {
+        cart.Put8(kMonoVolume + uint32_t(i), kMono[i]);
+    }
 }
 
 // Returns true if `seconds` is the length of `frames` frames.
@@ -294,23 +316,6 @@ inline int32_t Peak(const std::vector<int16_t>& samples, size_t side)
     }
 
     return peak;
-}
-
-// Returns whether `f` throws an exception of type E.
-template <typename E, typename F>
-
-inline bool Throws(F f)
-{
-    try
-    {
-        f();
-    }
-    catch (const E&)
-    {
-        return true;
-    }
-
-    return false;
 }
 
 // A song of two tracks: a saw that loops on a DirectSound channel, and a square. A rest takes the place of either.

@@ -9,6 +9,8 @@
 #include <string_view>
 #include <vector>
 
+#include "ntdlib/arm/alu.h"
+#include "ntdlib/arm/shifter.h"
 #include "xsflib/bytes.h"
 
 #include "agblib/agb/rom.h"
@@ -18,7 +20,7 @@ namespace agblib::agb
 namespace
 {
 
-// The return address the routine gets in lr. It isn't in any memory, so reaching it means the routine has returned.
+// The return address the routine gets in lr. It isn't in any memory. Reaching it means that the routine has returned.
 constexpr uint32_t kReturnAddress = 0xFFFFFFF0;
 
 // The stack: a block of IWRAM below the address sp starts at, the only RAM the routine may use.
@@ -112,7 +114,7 @@ private:
         return ok;
     }
 
-    // Runs a format 2 instruction, which adds or subtracts a register or a 3-bit immediate.
+    // Runs a format 2 instruction: an add or a subtract of a register or a 3-bit immediate.
     bool AddSubtract(uint16_t op)
     {
         const uint32_t operand = op & 0x0400 ? (op >> 6) & 7 : r_[(op >> 6) & 7];
@@ -274,6 +276,7 @@ private:
         {
             return Read(((pc_ + 4) & ~3u) + (op & 0xFF) * 4, 4, false, r_[(op >> 8) & 7]);
         }
+
         if ((op & 0xF200) == 0x5000)
         {
             // Format 7: str, strb, ldr and ldrb with a register offset.
@@ -281,6 +284,7 @@ private:
             const int size = op & 0x0400 ? 1 : 4;
             return op & 0x0800 ? Read(address, size, false, r_[rd]) : Write(address, size, r_[rd]);
         }
+
         if ((op & 0xF200) == 0x5200)
         {
             // Format 8: strh, ldsb, ldrh and ldsh with a register offset.
@@ -297,6 +301,7 @@ private:
                 return Read(address, 2, true, r_[rd]);
             }
         }
+
         if ((op & 0xE000) == 0x6000)
         {
             // Format 9: str, ldr, strb and ldrb with an immediate offset.
@@ -304,28 +309,33 @@ private:
             const uint32_t address = r_[rb] + offset5 * uint32_t(size);
             return op & 0x0800 ? Read(address, size, false, r_[rd]) : Write(address, size, r_[rd]);
         }
+
         if ((op & 0xF000) == 0x8000)
         {
             const uint32_t address = r_[rb] + offset5 * 2;
             return op & 0x0800 ? Read(address, 2, false, r_[rd]) : Write(address, 2, r_[rd]);
         }
+
         if ((op & 0xF000) == 0x9000)
         {
             const uint32_t address = r_[13] + (op & 0xFF) * 4;
             uint32_t& reg = r_[(op >> 8) & 7];
             return op & 0x0800 ? Read(address, 4, false, reg) : Write(address, 4, reg);
         }
+
         if ((op & 0xF000) == 0xA000)
         {
             r_[(op >> 8) & 7] = (op & 0x0800 ? r_[13] : (pc_ + 4) & ~3u) + (op & 0xFF) * 4;
             return true;
         }
+
         if ((op & 0xFF00) == 0xB000)
         {
             const uint32_t amount = (op & 0x7F) * 4;
             r_[13] = op & 0x80 ? r_[13] - amount : r_[13] + amount;
             return true;
         }
+
         if ((op & 0xF600) == 0xB400)
         {
             return op & 0x0800 ? Pop(op) : Push(op);
@@ -356,16 +366,19 @@ private:
 
             return true;
         }
+
         if ((op & 0xF800) == 0xE000)
         {
             next_ = pc_ + 4 + uint32_t(SignExtend(op, 11) * 2);
             return true;
         }
+
         if ((op & 0xF800) == 0xF000)
         {
             r_[14] = pc_ + 4 + uint32_t(SignExtend(op, 11) << 12);
             return true;
         }
+
         if ((op & 0xF800) == 0xF800)
         {
             const uint32_t target = r_[14] + (op & 0x7FF) * 2;
@@ -390,6 +403,7 @@ private:
                 {
                     return false;
                 }
+
                 address += 4;
             }
         }
@@ -409,6 +423,7 @@ private:
                 {
                     return false;
                 }
+
                 address += 4;
             }
         }
@@ -433,6 +448,7 @@ private:
                 {
                     return false;
                 }
+
                 address += 4;
             }
         }
@@ -457,7 +473,7 @@ private:
         return n;
     }
 
-    // Returns register `n`, which for the pc is the instruction's address + 4.
+    // Returns register `n`. For the pc, that is the instruction's address + 4.
     uint32_t Register(int n) const
     {
         return n == 15 ? pc_ + 4 : r_[size_t(n)];
@@ -476,8 +492,8 @@ private:
         return true;
     }
 
-    // Branches to `target`. With `exchange` (bx), bit 0 clear would switch to ARM code, which the interpreter doesn't
-    // run.
+    // Branches to `target`. With `exchange` (bx), bit 0 clear would switch to ARM code. The interpreter doesn't run ARM
+    // code.
     bool Jump(uint32_t target, bool exchange)
     {
         if ((target & ~1u) == kReturnAddress)
@@ -485,6 +501,7 @@ private:
             returned_ = true;
             return true;
         }
+
         if (exchange && !(target & 1))
         {
             return false;
@@ -498,37 +515,8 @@ private:
     // Returns true if condition code `condition` (0-13) passes.
     bool Passes(int condition) const
     {
-        switch (condition)
-        {
-        case 0:
-            return z_;
-        case 1:
-            return !z_;
-        case 2:
-            return c_;
-        case 3:
-            return !c_;
-        case 4:
-            return n_;
-        case 5:
-            return !n_;
-        case 6:
-            return v_;
-        case 7:
-            return !v_;
-        case 8:
-            return c_ && !z_;
-        case 9:
-            return !c_ || z_;
-        case 10:
-            return n_ == v_;
-        case 11:
-            return n_ != v_;
-        case 12:
-            return !z_ && n_ == v_;
-        default:
-            return z_ || n_ != v_;
-        }
+        const uint32_t nzcv = (n_ ? 8u : 0u) | (z_ ? 4u : 0u) | (c_ ? 2u : 0u) | (v_ ? 1u : 0u);
+        return ntdlib::arm::ConditionPassed(uint32_t(condition), nzcv);
     }
 
     // Reads `size` bytes at `address` from the ROM or the stack, sign-extending them with `sign`.
@@ -561,7 +549,7 @@ private:
         return true;
     }
 
-    // Writes `size` bytes of `value` at `address`, which has to be on the stack.
+    // Writes `size` bytes of `value` at `address`. The address has to be on the stack.
     bool Write(uint32_t address, int size, uint32_t value)
     {
         if (address % uint32_t(size) != 0 || !OnStack(address, size))
@@ -585,10 +573,11 @@ private:
     // Returns a + b + carry, setting the flags.
     uint32_t Add(uint32_t a, uint32_t b, uint32_t carry)
     {
-        const uint64_t sum = uint64_t(a) + b + carry;
-        const uint32_t result = uint32_t(sum);
-        c_ = (sum >> 32) != 0;
-        v_ = ((~(a ^ b) & (a ^ result)) >> 31) != 0;
+        uint32_t carry_out = 0;
+        uint32_t overflow = 0;
+        const uint32_t result = ntdlib::arm::AddWithCarry(a, b, carry, carry_out, overflow);
+        c_ = carry_out != 0;
+        v_ = overflow != 0;
         SetNz(result);
 
         return result;
@@ -604,36 +593,9 @@ private:
     // leaves the carry alone.
     uint32_t Shift(int kind, uint32_t value, uint32_t amount)
     {
-        uint32_t result = value;
-        if (amount != 0)
-        {
-            switch (kind)
-            {
-            case 0:
-                c_ = amount <= 32 && ((value >> (32 - amount)) & 1);
-                result = amount < 32 ? value << amount : 0;
-                break;
-
-            case 1:
-                c_ = amount <= 32 && ((value >> (amount - 1)) & 1);
-                result = amount < 32 ? value >> amount : 0;
-                break;
-
-            case 2:
-                c_ = amount < 32 ? ((value >> (amount - 1)) & 1) != 0 : (value >> 31) != 0;
-                result = amount < 32 ? uint32_t(int32_t(value) >> amount) : (value >> 31 ? 0xFFFFFFFF : 0);
-                break;
-
-            default:
-                {
-                    const uint32_t r = amount & 31;
-                    result = r ? (value >> r) | (value << (32 - r)) : value;
-                    c_ = (result >> 31) != 0;
-                    break;
-                }
-            }
-        }
-
+        uint32_t carry = c_ ? 1 : 0;
+        const uint32_t result = ntdlib::arm::ShiftByRegister(value, uint32_t(kind), amount, carry);
+        c_ = carry != 0;
         SetNz(result);
 
         return result;

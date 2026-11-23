@@ -42,8 +42,8 @@ constexpr uint32_t QuarterMicros(uint64_t quarter, uint64_t per_frame)
     return uint32_t((numerator + denominator / 2) / denominator);
 }
 
-// Returns the seconds from a song's start to MIDI tick `tick`. `starts` holds the tick at which each frame starts, from
-// 0, and then the tick after the last frame. Within a frame, the time goes on in a straight line.
+// Returns the seconds from a song's start to MIDI tick `tick`. `starts` contains the tick at which each frame starts,
+// from 0, and then the tick after the last frame. Within a frame, the time goes on in a straight line.
 template <typename Tick>
 double TickSeconds(const std::vector<Tick>& starts, Tick tick)
 {
@@ -58,9 +58,9 @@ constexpr uint32_t kRegSound1CntL = 0x04000060;
 constexpr uint32_t kRegFifoA = 0x040000A0;
 constexpr uint32_t kSoundRegisterBytes = kRegFifoA - kRegSound1CntL;
 
-// The registers of the PSG units that a driver grows in the enhanced mixing mode (mp2k::Sequencer::GrowChannels). Unit
-// u's lie at kGrownPsgRegisters + (u - 1) * kGrownPsgBytes, laid out as the registers from kRegSound1CntL. The console
-// has no such registers, and has one unit: unit 0.
+// The registers of the PSG units that a driver grows in the enhanced mixing mode (mp2k::Sequencer::GrowChannels). The
+// registers of unit u start at kGrownPsgRegisters + (u - 1) * kGrownPsgBytes, laid out as the registers from
+// kRegSound1CntL. The console has no such registers, and has one unit: unit 0.
 constexpr uint32_t kGrownPsgRegisters = 0x04F00000;
 constexpr uint32_t kGrownPsgBytes = kSoundRegisterBytes;
 constexpr int kMostPsgUnits = 1024;
@@ -85,6 +85,7 @@ inline void PrintWrite(std::FILE* out, long long frame, const RegisterWrite& w, 
     {
         std::fprintf(out, "%lld ", frame);
     }
+
     std::fprintf(out, "%08x %d %0*x\n", unsigned(w.address), int(w.size), 2 * int(w.size), unsigned(w.value));
 }
 

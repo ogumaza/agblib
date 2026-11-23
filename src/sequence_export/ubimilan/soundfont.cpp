@@ -42,8 +42,8 @@ using agblib::ubimilan::ReadSample;
 namespace
 {
 
-// The rate of the noise's drums: the PSG's under SOUNDBIAS. The sound init sets its bit 14, which plays the PSG at
-// 65536 Hz.
+// The rate of the noise's drums: the PSG's under SOUNDBIAS. The sound init sets its bit 14. The PSG then plays at 65536
+// Hz.
 constexpr uint32_t kNoiseRate = 65536;
 
 // The entries of the frequency table in both games with the driver. The wave table follows it.
@@ -106,6 +106,7 @@ public:
             s.loop_start = game.loop_start;
             s.loop_end = points;
         }
+
         for (uint32_t i = 0; i < points; i++)
         {
             const uint32_t at = game.data + i;
@@ -123,7 +124,7 @@ public:
         return kit_[address] = int(file_.samples.size()) - 1;
     }
 
-    // Returns the PSG's samples, which the cache makes on first use.
+    // Returns the PSG's samples. The cache makes them on first use.
     PsgSamples& Psg()
     {
         return psg_;
@@ -149,10 +150,12 @@ sf2::Zone InstantReleaseZone(int lo, int hi, int sample, int root, int cents, bo
     {
         z.generators.push_back(sf2::Generator::Value(sf2::kCoarseTune, cents / 100));
     }
+
     if (cents % 100)
     {
         z.generators.push_back(sf2::Generator::Value(sf2::kFineTune, cents % 100));
     }
+
     z.generators.push_back(sf2::Generator::Value(sf2::kSampleModes, loop ? 1 : 0));
     z.generators.push_back(sf2::Generator::Value(sf2::kOverridingRootKey, root));
     z.generators.push_back(sf2::Generator::Value(sf2::kSampleId, sample));
@@ -242,6 +245,7 @@ std::vector<std::string> InstrumentSet::Build(const Rom& rom, const DriverInfo& 
                     {sf2::Generator::Value(sf2::kStartAddrsOffset, int(source.second % 32768)),
                      sf2::Generator::Value(sf2::kStartAddrsCoarseOffset, int(source.second / 32768))});
             }
+
             si.zones.push_back(zone);
         }
 
@@ -274,19 +278,23 @@ std::vector<std::string> InstrumentSet::Build(const Rom& rom, const DriverInfo& 
             const int root = file.samples[size_t(sample)].original_key;
             si.zones.push_back(InstantReleaseZone(lo, hi, sample, root, tuning[size_t(lo)], true));
         }
+
         file.instruments.push_back(si);
         file.presets.push_back(
             MakePreset(name, uint16_t(PresetBank(channel)), uint16_t(program), int(file.instruments.size()) - 1));
     };
+
     KeyTuning square_tuning;
     for (int key = 0; key < int(square_tuning.size()); key++)
     {
         square_tuning[size_t(key)] = SquareCents(rom, info, key);
     }
+
     for (const auto& [which, duty] : squares_)
     {
         add_psg(which.first, which.second, samples.Psg().Square(file, (duty >> 6) & 3), square_tuning);
     }
+
     for (int program : waves_)
     {
         const uint32_t address = info.wave_table + 32 * uint32_t(program);
@@ -302,6 +310,7 @@ std::vector<std::string> InstrumentSet::Build(const Rom& rom, const DriverInfo& 
         {
             tuning[size_t(key)] = WaveCents(rom, info, key, WaveKeyOffset(shape));
         }
+
         add_psg(kWaveChannel, program, samples.Psg().Wave(file, shape), tuning);
     }
 
@@ -311,6 +320,7 @@ std::vector<std::string> InstrumentSet::Build(const Rom& rom, const DriverInfo& 
     {
         drums[size_t(number)] = &sound;
     }
+
     for (size_t first = 0; first < drums.size(); first += kKitDrums)
     {
         const int program = int(first) / kKitDrums;
@@ -323,6 +333,7 @@ std::vector<std::string> InstrumentSet::Build(const Rom& rom, const DriverInfo& 
             const int key = kFirstDrumKey + int(i - first);
             si.zones.push_back(InstantReleaseZone(key, key, sample, key, 0, Looped(file.samples[size_t(sample)])));
         }
+
         file.instruments.push_back(si);
         file.presets.push_back(
             MakePreset(name, uint16_t(kNoiseBank), uint16_t(program), int(file.instruments.size()) - 1));

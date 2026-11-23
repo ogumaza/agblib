@@ -1,27 +1,25 @@
 // SPDX-License-Identifier: MIT
 
-// Unit tests for Krawall. They build small synthetic cartridges in memory, so no game ROM is needed.
+// Unit tests for Krawall. They build small synthetic cartridges in memory. No game ROM is needed.
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <filesystem>
 #include <initializer_list>
 #include <map>
-#include <memory>
 #include <set>
 #include <string>
 #include <system_error>
 #include <tuple>
-#include <utility>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
 #include "seqlib/midi/reader.h"
 #include "seqlib/testing/check.h"
 
+#include "agb_conversion_test_util.h"
 #include "agblib/agb/rom.h"
 #include "agblib/krawall/archive_player.h"
 #include "agblib/krawall/commands.h"
@@ -38,78 +36,14 @@
 #include "agblib/testing/agb_cart.h"
 #include "agblib/testing/agb_files.h"
 #include "agblib/testing/krawall_cart.h"
-#include "ntdlib/commands/sequence.h"
+#include "krawall_test_util.h"
 
 namespace agblib::sequence_export::krawall
 {
 namespace
 {
 
-using agblib::agb::kRomBase;
-using agblib::agb::Rom;
-using agblib::krawall::Build;
-using agblib::krawall::DetectDriver;
-using agblib::krawall::DriverInfo;
-using agblib::krawall::DriverOverrides;
-using agblib::krawall::DumpSong;
-using agblib::krawall::kModeJingle;
-using agblib::krawall::kModeLoop;
-using agblib::krawall::kModeSong;
-using agblib::krawall::kSampleEnd;
-using agblib::krawall::kSampleLoop;
-using agblib::krawall::kSampleLoopLength;
-using agblib::krawall::kSamplePoints;
-using agblib::krawall::MixChannel;
-using agblib::krawall::ModuleSong;
-using agblib::krawall::Player;
-using agblib::sequence_export::agb::ConvertSettings;
-using agblib::sequence_export::agb::LevelsToControllers;
-using agblib::sequence_export::agb::Sf2File;
-using agblib::sequence_export::agb::SongReport;
-using agblib::testing::agb_files::HasGlobalZoneModulators;
-using agblib::testing::agb_files::Le32;
-using agblib::testing::agb_files::ReadAll;
-using agblib::testing::agb_files::ReadMidi;
-using agblib::testing::agb_files::ReadSf2;
-using agblib::testing::krawall_cart::Cart;
-using agblib::testing::krawall_cart::Cell;
-using agblib::testing::krawall_cart::kBidiLoop;
-using agblib::testing::krawall_cart::kBidiPoints;
-using agblib::testing::krawall_cart::kBreak;
-using agblib::testing::krawall_cart::kC4Rate;
-using agblib::testing::krawall_cart::kForwardLoop;
-using agblib::testing::krawall_cart::kForwardPoints;
-using agblib::testing::krawall_cart::kGameInit;
-using agblib::testing::krawall_cart::kInit;
-using agblib::testing::krawall_cart::kInstrumentTable;
-using agblib::testing::krawall_cart::kJump;
-using agblib::testing::krawall_cart::kLinearTable;
-using agblib::testing::krawall_cart::kMaster;
-using agblib::testing::krawall_cart::kModuleTable;
-using agblib::testing::krawall_cart::kOneShotPoints;
-using agblib::testing::krawall_cart::kPan;
-using agblib::testing::krawall_cart::kPeriodTable;
-using agblib::testing::krawall_cart::kPlay;
-using agblib::testing::krawall_cart::kRampTable;
-using agblib::testing::krawall_cart::kSampleTable;
-using agblib::testing::krawall_cart::kSetSpeed;
-using agblib::testing::krawall_cart::kSineTable;
-using agblib::testing::krawall_cart::kSpeed;
-using agblib::testing::krawall_cart::kSquareTable;
-using agblib::testing::krawall_cart::kTickSamples;
-using agblib::testing::krawall_cart::kVersion;
-using agblib::testing::krawall_cart::LoopingCells;
-namespace cc = seqlib::midi::cc;
-namespace sf2 = seqlib::sf2;
-
-DriverInfo Detect(const Rom& rom)
-{
-    DriverInfo info;
-    std::string error;
-    DetectDriver(rom, DriverOverrides(), info, error);
-
-    return info;
-}
+using agblib::testing::agb_tests::CheckFilesInMemory;
 
 // Detection finds the player by its code, its tables from the code and the values in them, the mixer's settings, the
 // game's calls of the library's settings and the modules, in the order of the game's table and then the one it doesn't
@@ -166,10 +100,12 @@ void TestDetection()
     {
         franklin.Put16(kRomBase + 0x800 + 2 * i, uint16_t(8 * i));
     }
+
     for (uint32_t i = 0; i < 6; i += 2)
     {
         franklin.Put16(kGameInit + i, 0);
     }
+
     franklin.Put32(kRomBase + 0x900, 0xE59F3008);
     franklin.Put32(kRomBase + 0x904, 0xE3A00000);
     franklin.Put32(kRomBase + 0x908, 0xE1A0E00F);
@@ -186,7 +122,7 @@ void TestDetection()
     // Harry Potter and the Prisoner of Azkaban gives the music 12 times its options' default level of 10.
     Cart potter;
     potter.Module(1, 4, {{0, 0, 49, 3, -1, -1, 0}});
-    potter.PutString(kRomBase + 0xAC, "BHTE");
+    potter.SetGameCode("BHTE");
 
     SEQLIB_CHECK_EQ(info.music_volume, 128);
     SEQLIB_CHECK_EQ(Detect(potter.ToRom()).music_volume, 120);
@@ -260,8 +196,8 @@ void TestPlayer()
 }
 
 // The mixer plays a sample to its end, or to its loop's end and back to the loop's start, or with a loop back and
-// forth, back to the loop's start and forwards again, and a silent channel moves on by its guess, which for a step of
-// less than a point is a point a sample.
+// forth, back to the loop's start and forwards again. A silent channel moves on by its guess. For a step of less than a
+// point, the guess is a point a sample.
 void TestMixer()
 {
     Cart cart;
@@ -356,6 +292,7 @@ void TestSongs()
         }
         keys.push_back(played);
     }
+
     SEQLIB_CHECK(keys[0].size() == 1 && keys[1].size() == 1);
     SEQLIB_CHECK(!keys[0].empty() && !keys[1].empty() && *keys[0].begin() + 12 == *keys[1].begin());
 }
@@ -402,6 +339,7 @@ void TestConversion()
         loop_start = loop_start || (bytes[1] == 0x06 && tick == 0);
         loop_end = loop_end || (bytes[1] == 0x06 && tick == 15);
     }
+
     SEQLIB_CHECK(tempo && loop_start && loop_end);
 
     // The notes: C-4 on key 60 at the start of each pass, and E-4 on key 64, again 2 rows on from its point.
@@ -423,6 +361,7 @@ void TestConversion()
             expression.push_back(bytes[2]);
         }
     }
+
     int cc10 = 0, cc11_at_60 = 0, cc11_at_56 = 0;
     LevelsToControllers((60 * 64 * 64) >> 13, (60 * 64 * 64) >> 13, cc10, cc11_at_60);
     LevelsToControllers((56 * 64 * 64) >> 13, (56 * 64 * 64) >> 13, cc10, cc11_at_56);
@@ -434,6 +373,7 @@ void TestConversion()
     {
         bent_up = bent_up || (tick >= 9 && tick < 12 && (bytes[1] | (bytes[2] << 7)) > 8192);
     }
+
     SEQLIB_CHECK(bent_up);
 
     // The SoundFont: a preset for each sample and point, and the note from point 256 starting there.
@@ -445,6 +385,7 @@ void TestConversion()
         const auto gens = sf2.ZoneGens(z);
         offset_zone = offset_zone || (gens.count(sf2::kStartAddrsOffset) && gens.at(sf2::kStartAddrsOffset) == 256);
     }
+
     SEQLIB_CHECK(offset_zone);
     SEQLIB_CHECK_EQ(Le32(sf2.Record("shdr", 46, 0) + 36), kC4Rate);
     SEQLIB_CHECK_EQ(Le32(sf2.Record("shdr", 46, 0) + 28) - Le32(sf2.Record("shdr", 46, 0) + 20),
@@ -454,250 +395,6 @@ void TestConversion()
     const uint8_t* s = bidi_sf2.Record("shdr", 46, 0);
     SEQLIB_CHECK_EQ(Le32(s + 32) - Le32(s + 28), 2 * kBidiLoop);
     SEQLIB_CHECK_EQ(Le32(s + 32) - Le32(s + 20), kBidiPoints + kBidiLoop);
-}
-
-// Returns a MIDI file's time signatures, as the row each starts on, its numerator and its denominator's power of 2.
-std::vector<std::vector<uint32_t>> TimeSignatures(const std::string& path)
-{
-    std::vector<std::vector<uint32_t>> signatures;
-    for (const auto& [tick, bytes] : ReadMidi(path).Find(0xFF))
-    {
-        if (bytes[1] == 0x58)
-        {
-            signatures.push_back({uint32_t(tick / uint32_t(kSpeed)), bytes[3], bytes[4]});
-        }
-    }
-
-    return signatures;
-}
-
-// Bars follow pattern boundaries, with a short bar when an order ends partway through one. At eight rows per quarter
-// note, a 4/4 bar has 32 rows. A break ends the first order after 33 rows, so each pass starts with a one-row pickup.
-// The 48-row patterns use 12/8: two bars per pattern, at two rows per eighth note.
-void TestBars()
-{
-    Cart cart;
-    cart.Module(1, {{64, {{1, 0, 49, 1}, {32, 0, -1, 0, -1, kBreak, 0x00}}},
-                    {64, {{0, 0, 49, 1}, {32, 0, 49, 1}}},
-                    {40, {{0, 0, 49, 1}, {32, 0, 49, 1}}}});
-    cart.Module(1, 64, {{0, 0, 49, 1}});
-    cart.Module(1, {{48, {{0, 0, 49, 1}}}, {48, {{0, 0, 49, 1}}}});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt;
-    opt.out_dir = agblib::testing::agb_files::TempFolderPath().string();
-    opt.base_name = "krawall_bars";
-
-    const SongReport cut = ConvertSong(rom, info, 0, opt, nullptr);
-    const SongReport full = ConvertSong(rom, info, 1, opt, nullptr);
-    const SongReport compound = ConvertSong(rom, info, 2, opt, nullptr);
-
-    // Each pass starts with a one-row pickup, followed by full bars and a one-quarter-note bar at the end of the third
-    // pattern. The unbroken 64-row pattern stays in 4/4. The 48-row patterns use 12/8, with four rows per quarter note.
-    const std::vector<std::vector<uint32_t>> kPasses = {{0, 1, 5},   {1, 4, 2},   {129, 1, 2},
-                                                        {137, 1, 5}, {138, 4, 2}, {266, 1, 2}};
-    SEQLIB_CHECK(cut.ok && full.ok && compound.ok);
-    SEQLIB_CHECK(TimeSignatures(cut.midi_path) == kPasses);
-    SEQLIB_CHECK(TimeSignatures(full.midi_path) == std::vector<std::vector<uint32_t>>({{0, 4, 2}}));
-    SEQLIB_CHECK(TimeSignatures(compound.midi_path) == std::vector<std::vector<uint32_t>>({{0, 12, 3}}));
-    SEQLIB_CHECK_EQ(ReadMidi(compound.midi_path).division, 4 * kSpeed);
-}
-
-// The intro's row pans the channel to the left, and the loop plays a note on its first row and then pans the channel to
-// the right, which it keeps when the module jumps back. The first pass's note plays on the left and the later passes'
-// on the right, so the marked loop starts at the second pass, and the module plays the first pass once before it.
-void TestLoopStartsAtSecondPass()
-{
-    Cart cart;
-    cart.Module(1, {{1, {{0, 0, -1, 0, -1, kPan, 0x00}}},
-                    {4, {{0, 0, 49, 1, -1, -1, 0}, {2, 0, -1, 0, -1, kPan, 0x80}, {3, 0, -1, 0, -1, kJump, 0x01}}}});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt;
-    opt.out_dir = agblib::testing::agb_files::TempFolderPath().string();
-    opt.base_name = "krawall_second";
-
-    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-    // The loop runs from the second pass, after the intro's row and the first pass's four, for four rows. The file
-    // plays the note in the first pass and in the loop's two passes.
-    const double kRowSeconds = kSpeed * double(kTickSamples) / 16384;
-    SEQLIB_CHECK(sum.ok);
-    SEQLIB_CHECK(std::fabs(sum.loop_start - 5 * kRowSeconds) < 1e-9);
-    SEQLIB_CHECK(std::fabs(sum.loop_end - 9 * kRowSeconds) < 1e-9);
-    SEQLIB_CHECK(std::fabs(sum.seconds - 13 * kRowSeconds) < 1e-9);
-    SEQLIB_REQUIRE_EQ(ReadMidi(sum.midi_path).Find(0x90).size(), 3u);
-}
-
-// A module can have up to 32 channels, and --tracks can name each of them. In a module with more than 15, channels
-// share MIDI channels, and channels whose notes sound at once get MIDI channels of their own.
-void TestManyChannels()
-{
-    Cart cart;
-    cart.Module(18, 4, {{0, 0, 49, 1}, {0, 17, 53, 2}});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt;
-    opt.out_dir = agblib::testing::agb_files::TempFolderPath().string();
-    opt.base_name = "krawall_channels";
-    ConvertSettings first_only = opt;
-    first_only.track_mask = 1;
-    ConvertSettings last_only = opt;
-    last_only.track_mask = 1u << 17;
-    ConvertSettings first_sixteen = opt;
-    first_sixteen.track_mask = 0xFFFF;
-
-    const SongReport every = ConvertSong(rom, info, 0, opt, nullptr);
-    const SongReport chosen = InspectSong(rom, info, 0, first_only);
-    const SongReport last = InspectSong(rom, info, 0, last_only);
-    const SongReport sixteen = InspectSong(rom, info, 0, first_sixteen);
-
-    SEQLIB_CHECK(every.ok && chosen.ok && last.ok && sixteen.ok);
-    SEQLIB_CHECK_EQ(every.tracks, 2);
-    SEQLIB_CHECK_EQ(chosen.tracks, 1);
-    SEQLIB_CHECK_EQ(last.tracks, 1);
-    SEQLIB_CHECK_EQ(sixteen.tracks, 1);
-
-    // The 18th channel's E-4 sounds at once with the first channel's note. The 18th channel therefore takes a MIDI
-    // channel of its own: channel 16, after those of the first 14 channels. Its note is on key 64 in each of the
-    // loop's two passes.
-    const auto notes = ReadMidi(every.midi_path).Find(0x9F);
-    SEQLIB_CHECK(notes.size() == 2 && notes[0].bytes[1] == 64 && notes[1].bytes[1] == 64);
-    SEQLIB_CHECK_EQ(ReadMidi(every.midi_path).Find(0x90).size(), 2u);
-}
-
-// Two channels whose notes never sound at once share a MIDI channel. A MIDI channel's program and controllers act on
-// all its notes. Each note of a shared MIDI channel therefore sets them again, and the tracks don't set them at the
-// start.
-void TestSharedMidiChannel()
-{
-    // 14 channels hold looping notes. Channels 15 and 16 play the sample that doesn't loop, an octave up, at rows 0 and
-    // 3. Each note ends before the other starts.
-    std::vector<Cell> cells;
-    for (int c = 0; c < 14; c++)
-    {
-        cells.push_back({0, c, 49, 1});
-    }
-    cells.push_back({0, 14, 61, 2});
-    cells.push_back({3, 15, 61, 2, -1, kPan, 0x20});
-    Cart cart;
-    cart.Module(16, 6, cells);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt;
-    opt.out_dir = agblib::testing::agb_files::TempFolderPath().string();
-    opt.base_name = "krawall_shared";
-
-    const SongReport report = ConvertSong(rom, info, 0, opt, nullptr);
-
-    SEQLIB_CHECK(report.ok);
-    SEQLIB_CHECK(report.warnings.empty());
-    const agblib::testing::agb_files::MidiEvents midi = ReadMidi(report.midi_path);
-    const std::vector<std::string> names = seqlib::midi::TrackNames(midi);
-    SEQLIB_CHECK_EQ(midi.Find(0x9F).size(), 4u);
-    for (const char* name : {"Channel 15", "Channel 16"})
-    {
-        const size_t t = size_t(std::find(names.begin(), names.end(), name) - names.begin());
-        SEQLIB_REQUIRE(t < midi.tracks.size());
-        uint64_t note = 0;
-        uint64_t program = 0;
-        uint64_t expression = 0;
-        int programs = 0;
-        for (const seqlib::midi::Event& e : midi.tracks[t].events)
-        {
-            note = (e.bytes[0] == 0x9F && !note) ? e.tick : note;
-            programs += e.bytes[0] == 0xCF ? 1 : 0;
-            program = (e.bytes[0] == 0xCF && !program) ? e.tick : program;
-            expression = (e.bytes[0] == 0xBF && e.bytes[1] == 11 && !expression) ? e.tick : expression;
-        }
-        SEQLIB_CHECK(note > 0 && program == note && expression == note);
-        SEQLIB_CHECK_EQ(programs, 2);
-    }
-}
-
-// With more than 15 channels that play notes, the channels whose settings clash least share a MIDI channel, even if
-// their notes sound at once. A note ends where the mixer holds its levels at 0. Another track's expression could make
-// it sound again. A note whose levels stay 0 throughout goes. With fewer channels, a note runs on through that silence.
-void TestMidiChannelsFollowSettings()
-{
-    // Channels 1 to 14 hold notes on one key at full volume. Channels 15 and 16 hold notes on other keys at half
-    // volume. Channel 4's levels go to 0 at row 2 and channel 15's at row 4. Channel 17's stay at 0.
-    std::vector<Cell> cells;
-    for (int c = 0; c < 14; c++)
-    {
-        cells.push_back({0, c, 49, 1, 0x50});
-    }
-    cells.push_back({0, 14, 53, 1, 0x30});
-    cells.push_back({0, 15, 56, 1, 0x30});
-    cells.push_back({0, 16, 49, 1, 0x10});
-    cells.push_back({2, 3, -1, 0, 0x10});
-    cells.push_back({4, 14, -1, 0, 0x10});
-    Cart cart;
-    cart.Module(17, 6, cells);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt;
-    opt.out_dir = agblib::testing::agb_files::TempFolderPath().string();
-    opt.base_name = "krawall_settings";
-    Cart few;
-    few.Module(2, 6, {{0, 0, 49, 1}, {0, 1, 53, 1}, {2, 1, -1, 0, 0x10}});
-    const Rom few_rom = few.ToRom();
-    ConvertSettings few_opt = opt;
-    few_opt.base_name = "krawall_settings_few";
-
-    const SongReport report = ConvertSong(rom, info, 0, opt, nullptr);
-    const SongReport few_report = ConvertSong(few_rom, Detect(few_rom), 0, few_opt, nullptr);
-
-    SEQLIB_REQUIRE(report.ok && few_report.ok);
-    SEQLIB_CHECK(report.warnings.empty());
-    SEQLIB_CHECK_EQ(report.tracks, 16);
-    const auto note_of = [](const agblib::testing::agb_files::MidiEvents& midi, const std::string& name)
-    {
-        const std::vector<std::string> names = seqlib::midi::TrackNames(midi);
-        const size_t t = size_t(std::find(names.begin(), names.end(), name) - names.begin());
-        std::array<uint64_t, 3> note{0, 0, 0}; // the first note on's status, and the end of the first note
-        if (t >= midi.tracks.size())
-        {
-            return note;
-        }
-        for (const seqlib::midi::Event& e : midi.tracks[t].events)
-        {
-            if ((e.bytes[0] & 0xF0) == 0x90 && !note[0])
-            {
-                note[0] = e.bytes[0];
-            }
-            if ((e.bytes[0] & 0xF0) == 0x80 && !note[1])
-            {
-                note[1] = 1;
-                note[2] = e.tick;
-            }
-        }
-        return note;
-    };
-    const agblib::testing::agb_files::MidiEvents midi = ReadMidi(report.midi_path);
-    const auto first = note_of(midi, "Channel 1");
-    const auto faded = note_of(midi, "Channel 4");
-    const auto fifteenth = note_of(midi, "Channel 15");
-    const auto sixteenth = note_of(midi, "Channel 16");
-    SEQLIB_CHECK(fifteenth[0] != 0 && fifteenth[0] == sixteenth[0]);
-    SEQLIB_CHECK(first[0] != fifteenth[0]);
-    SEQLIB_CHECK_EQ(note_of(midi, "Channel 17")[0], 0u);
-    SEQLIB_CHECK(faded[2] > 0 && faded[2] < first[2]);
-
-    // Where channel 15's note ends, channel 16's note sets its expression again.
-    const std::vector<std::string> names = seqlib::midi::TrackNames(midi);
-    const size_t sharer = size_t(std::find(names.begin(), names.end(), "Channel 16") - names.begin());
-    SEQLIB_REQUIRE(sharer < midi.tracks.size());
-    int set_again = 0;
-    for (const seqlib::midi::Event& e : midi.tracks[sharer].events)
-    {
-        set_again += (e.bytes[0] & 0xF0) == 0xB0 && e.bytes[1] == 11 && e.tick == fifteenth[2] ? 1 : 0;
-    }
-    SEQLIB_CHECK(fifteenth[2] > 0 && fifteenth[2] < sixteenth[2]);
-    SEQLIB_CHECK_EQ(set_again, 1);
-
-    const agblib::testing::agb_files::MidiEvents few_midi = ReadMidi(few_report.midi_path);
-    SEQLIB_CHECK_EQ(note_of(few_midi, "Channel 2")[2], note_of(few_midi, "Channel 1")[2]);
 }
 
 // DumpSong lists the header, the orders and the rows.
@@ -722,352 +419,6 @@ void TestDump()
     SEQLIB_CHECK(dump_text.find("  4 | c0 jump 00\n") != std::string::npos);
 }
 
-// A whole module that the game plays once, through its routine for jingles, converts once and without loop markers. In
-// loop mode, the same module plays its pattern twice. The log names the routine and the jingle. A call of the routine
-// whose entry detection can't read gets a warning.
-void TestJingles()
-{
-    Cart cart;
-    const uint32_t looped = cart.Module(1, 4, {{0, 0, 49, 1}});
-    const uint32_t jingle = cart.Module(1, 4, {{0, 0, 49, 1}});
-    cart.Jingle(1);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt;
-    opt.out_dir = agblib::testing::agb_files::TempFolderPath().string();
-    opt.base_name = "krawall_jingles";
-
-    const SongReport loop = ConvertSong(rom, info, 0, opt, nullptr);
-    const SongReport once = ConvertSong(rom, info, 1, opt, nullptr);
-
-    SEQLIB_CHECK(info.songs == (std::vector<ModuleSong>{{looped, -1, false}, {jingle, -1, true}}));
-    const auto logged = [&info](const std::string& line)
-    {
-        return std::find(info.log.begin(), info.log.end(), line) != info.log.end();
-    };
-    SEQLIB_CHECK(logged("the game's routine that plays a module once, as a jingle: 0x08000300"));
-    SEQLIB_CHECK(logged("jingles, which play once: 1"));
-    SEQLIB_CHECK(info.warnings == std::vector<std::string>({"the game plays a module once from 0x08000348, by a number "
-                                                            "that detection can't read. That module converts as a "
-                                                            "loop"}));
-    SEQLIB_REQUIRE(loop.ok && once.ok);
-    SEQLIB_CHECK(loop.loop_end > 0 && once.loop_start < 0 && once.loop_end < 0);
-    SEQLIB_CHECK_EQ(ReadMidi(loop.midi_path).Find(0x90).size(), 2u);
-    SEQLIB_CHECK_EQ(ReadMidi(once.midi_path).Find(0x90).size(), 1u);
-    bool marker = false;
-    for (const auto& [tick, bytes] : ReadMidi(once.midi_path).Find(0xFF))
-    {
-        marker = marker || bytes[1] == 0x06;
-    }
-    SEQLIB_CHECK(!marker);
-}
-
-// In the jingle mode with the loop bit, krapPlay() loops the module. An entry that a routine plays in that mode isn't
-// a jingle. The entry's module converts as a loop, without a warning for the call that passes r5.
-void TestLoopingJingleMode()
-{
-    Cart cart;
-    const uint32_t module = cart.Module(1, 4, {{0, 0, 49, 1}});
-    cart.Jingle(0, kModeJingle | kModeLoop);
-    const Rom rom = cart.ToRom();
-
-    const DriverInfo info = Detect(rom);
-
-    SEQLIB_CHECK(info.songs == (std::vector<ModuleSong>{{module, -1, false}}));
-    SEQLIB_CHECK(info.warnings.empty());
-    SEQLIB_CHECK(std::none_of(info.log.begin(), info.log.end(),
-                              [](const std::string& line) { return line.find("jingle") != std::string::npos; }));
-}
-
-// The entries of the game's table of what it plays come first, each in its mode, without the entry that repeats one.
-// The module that no entry plays follows. The entry in song mode without the loop bit plays its module once and
-// converts without loop markers. The log names the table and the entry whose mode doesn't loop.
-void TestPlayTable()
-{
-    Cart cart;
-    const uint32_t looped = cart.Module(1, 4, {{0, 0, 49, 1}});
-    const uint32_t once = cart.Module(1, 4, {{0, 0, 49, 1}});
-    const uint32_t unplayed = cart.Module(1, 4, {{0, 0, 49, 1}});
-    cart.PlayTable({{once, kModeSong, 0}, {looped, kModeLoop, 0}, {once, kModeSong, 0}});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt;
-    opt.out_dir = agblib::testing::agb_files::TempFolderPath().string();
-    opt.base_name = "krawall_play_table";
-
-    const SongReport first = ConvertSong(rom, info, 0, opt, nullptr);
-    const SongReport second = ConvertSong(rom, info, 1, opt, nullptr);
-
-    SEQLIB_CHECK(
-        info.songs ==
-        (std::vector<ModuleSong>{{once, -1, false, kModeSong}, {looped, -1, false, kModeLoop}, {unplayed, -1, false}}));
-    const auto logged = [&info](const std::string& line)
-    {
-        return std::find(info.log.begin(), info.log.end(), line) != info.log.end();
-    };
-    SEQLIB_CHECK(logged("the game's table of what it plays: 0x08002800 (3 entries)"));
-    SEQLIB_CHECK(logged("songs whose mode doesn't loop: 0"));
-    SEQLIB_REQUIRE(first.ok && second.ok);
-    SEQLIB_CHECK(first.loop_start < 0 && first.loop_end < 0 && second.loop_end > 0);
-    SEQLIB_CHECK_EQ(ReadMidi(first.midi_path).Find(0x90).size(), 1u);
-}
-
-// krapPlay()'s mode 0 plays a module once. An entry in that mode doesn't end the game's table of what it plays.
-void TestPlayTableModeZero()
-{
-    Cart cart;
-    const uint32_t once = cart.Module(1, 4, {{0, 0, 49, 1}});
-    const uint32_t looped = cart.Module(1, 4, {{0, 0, 49, 1}});
-    cart.PlayTable({{once, 0, 0}, {looped, kModeLoop, 0}});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt;
-    opt.out_dir = agblib::testing::agb_files::TempFolderPath().string();
-    opt.base_name = "krawall_mode_zero";
-
-    const SongReport first = ConvertSong(rom, info, 0, opt, nullptr);
-    const SongReport second = ConvertSong(rom, info, 1, opt, nullptr);
-
-    SEQLIB_CHECK(info.songs == (std::vector<ModuleSong>{{once, -1, false, 0}, {looped, -1, false, kModeLoop}}));
-    SEQLIB_CHECK(std::find(info.log.begin(), info.log.end(), "songs whose mode doesn't loop: 0") != info.log.end());
-    SEQLIB_REQUIRE(first.ok && second.ok);
-    SEQLIB_CHECK(first.loop_start < 0 && first.loop_end < 0 && second.loop_end > 0);
-    SEQLIB_CHECK_EQ(ReadMidi(first.midi_path).Find(0x90).size(), 1u);
-}
-
-// Franklin's Great Adventures plays each entry of its table of modules in the mode and at the music volume of its
-// tables. Its start-up code copies the table of modules to RAM. The entry that repeats one is left out. The player
-// sets the music volume after it starts the module, as krapSetMusicVol() does.
-void TestModuleSettings()
-{
-    Cart cart;
-    const uint32_t looped = cart.Module(1, 4, {{0, 0, 49, 1}});
-    const uint32_t once = cart.Module(1, 4, {{0, 0, 49, 1}});
-    cart.Put32(kModuleTable + 8, looped);
-    cart.ModuleSettings(0x03006050, {kModeLoop, 0, kModeLoop}, {90, 70, 90});
-    Cart bad;
-    bad.Module(1, 4, {{0, 0, 49, 1}});
-    bad.ModuleSettings(kModuleTable, {8}, {90});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    const DriverInfo bad_info = Detect(bad.ToRom());
-    SEQLIB_REQUIRE(info.songs.size() == 2);
-    const Player player(rom, info, info.songs[0]);
-    const Player full(rom, info, looped);
-
-    SEQLIB_CHECK(info.songs == (std::vector<ModuleSong>{{looped, -1, false, kModeLoop, 90}, {once, -1, false, 0, 70}}));
-    SEQLIB_CHECK(std::find(info.log.begin(), info.log.end(),
-                           "the game's routine at 0x08000380 plays each module in the mode of the table at "
-                           "0x08002800 and at the music volume of the table at 0x08002900") != info.log.end());
-    SEQLIB_CHECK(std::find(info.log.begin(), info.log.end(), "songs whose mode doesn't loop: 1") != info.log.end());
-    SEQLIB_CHECK_EQ(player.Globals()[8], 90);
-    SEQLIB_CHECK_EQ(full.Globals()[8], 128);
-    SEQLIB_CHECK_EQ(player.Globals()[0] * 128, full.Globals()[0] * 90);
-    SEQLIB_CHECK(bad_info.songs == (std::vector<ModuleSong>{{bad_info.modules[0], -1, false}}));
-}
-
-// Care Bears: Care Quest plays song 1 of its module at 0x08360B0C at a music volume of 64, and song 2 once, in the song
-// mode. Franklin the Turtle plays its module at 0x08335F60 only as a jingle. The Koala Brothers plays its music at 64,
-// The Lord of the Rings: The Third Age at 153, Crash of the Titans at 96 and Digimon Racing at 180. A piece that no
-// row names keeps the mode that the song and jingle give and the game's music volume.
-void TestSongSettings()
-{
-    Cart bears;
-    bears.PutString(kRomBase + 0xAC, "BEAE");
-    const uint32_t module =
-        bears.Module(1, {{4, {{0, 0, 49, 1}}}, {4, {{0, 0, 49, 1}}}, {4, {{0, 0, 49, 1}}}}, true, 0x08360B0C);
-    bears.Songs(module, {{0}, {1}, {2}});
-    Cart franklin;
-    franklin.PutString(kRomBase + 0xAC, "BFKE");
-    const uint32_t piece = franklin.Module(1, 4, {{0, 0, 49, 1}}, true, 0x08334368);
-    const uint32_t jingle = franklin.Module(1, 4, {{0, 0, 49, 1}}, true, 0x08335F60);
-    const uint32_t other = franklin.Module(1, 4, {{0, 0, 49, 1}});
-    Cart koalas;
-    koalas.PutString(kRomBase + 0xAC, "BAKE");
-    koalas.Module(1, 4, {{0, 0, 49, 1}});
-    Cart third_age;
-    third_age.PutString(kRomBase + 0xAC, "B3AE");
-    third_age.Module(1, 4, {{0, 0, 49, 1}});
-    Cart crash;
-    crash.PutString(kRomBase + 0xAC, "BQCE");
-    crash.Module(1, 4, {{0, 0, 49, 1}});
-    Cart digimon;
-    digimon.PutString(kRomBase + 0xAC, "BDGE");
-    digimon.Module(1, 4, {{0, 0, 49, 1}});
-    Cart digimon_japan;
-    digimon_japan.PutString(kRomBase + 0xAC, "BDJJ");
-    digimon_japan.Module(1, 4, {{0, 0, 49, 1}});
-    const Rom rom = bears.ToRom();
-    const DriverInfo info = Detect(rom);
-    const DriverInfo franklin_info = Detect(franklin.ToRom());
-    SEQLIB_REQUIRE(info.songs.size() == 3);
-    const Player first(rom, info, info.songs[0]);
-    const Player second(rom, info, info.songs[1]);
-    ConvertSettings opt;
-    opt.out_dir = agblib::testing::agb_files::TempFolderPath().string();
-    opt.base_name = "krawall_song_settings";
-
-    const SongReport once = ConvertSong(rom, info, 2, opt, nullptr);
-
-    SEQLIB_CHECK(info.songs ==
-                 (std::vector<ModuleSong>{{module, 0}, {module, 1, false, -1, 64}, {module, 2, false, kModeSong}}));
-    const auto logged = [&info](const std::string& line)
-    {
-        return std::find(info.log.begin(), info.log.end(), line) != info.log.end();
-    };
-    SEQLIB_CHECK(logged("the game plays song 1 at a music volume of 64"));
-    SEQLIB_CHECK(logged("the game plays song 2 in mode 2"));
-    SEQLIB_CHECK_EQ(first.Globals()[8], 128);
-    SEQLIB_CHECK_EQ(second.Globals()[8], 64);
-    SEQLIB_CHECK_EQ(second.Globals()[0] * 128, first.Globals()[0] * 64);
-    SEQLIB_REQUIRE(once.ok);
-    SEQLIB_CHECK(once.loop_start < 0 && once.loop_end < 0);
-    SEQLIB_CHECK(
-        franklin_info.songs ==
-        (std::vector<ModuleSong>{{piece, -1, false, -1, 64}, {jingle, -1, false, kModeJingle}, {other, -1, false}}));
-    SEQLIB_CHECK_EQ(Detect(koalas.ToRom()).music_volume, 64);
-    SEQLIB_CHECK_EQ(Detect(third_age.ToRom()).music_volume, 153);
-    SEQLIB_CHECK_EQ(Detect(crash.ToRom()).music_volume, 96);
-    SEQLIB_CHECK_EQ(Detect(digimon.ToRom()).music_volume, 180);
-    SEQLIB_CHECK_EQ(Detect(digimon_japan.ToRom()).music_volume, 180);
-}
-
-// The other releases of the games with rows: their music volumes and mixers, and the songs of the European Care Bears
-// and of each revision of the European Franklin.
-void TestSongSettingsOfReleases()
-{
-    const auto release = [](const char* game_code)
-    {
-        Cart cart;
-        cart.PutString(kRomBase + 0xAC, game_code);
-        cart.Module(1, 4, {{0, 0, 49, 1}});
-        return Detect(cart.ToRom());
-    };
-    SEQLIB_CHECK_EQ(release("BENP").music_volume, 161);
-    SEQLIB_CHECK_EQ(release("BHTJ").music_volume, 120);
-    SEQLIB_CHECK_EQ(release("BJKP").music_volume, 128);
-    SEQLIB_CHECK_EQ(release("BJKP").music_fade_in, 2);
-    SEQLIB_CHECK_EQ(release("BAKP").music_volume, 64);
-    SEQLIB_CHECK_EQ(release("B3AJ").music_volume, 153);
-    SEQLIB_CHECK_EQ(release("BQCP").music_volume, 96);
-    SEQLIB_CHECK_EQ(release("BDGP").music_volume, 180);
-    for (const char* game_code : {"B63P", "BCZE"})
-    {
-        const DriverInfo modified = release(game_code);
-        SEQLIB_CHECK(modified.stereo);
-        SEQLIB_CHECK_EQ(modified.quality, 0x21);
-    }
-    SEQLIB_CHECK_EQ(release("B63P").music_volume, 100);
-    SEQLIB_CHECK_EQ(release("BCZE").music_volume, 64);
-    const std::pair<const char*, uint32_t> kEurope[] = {
-        {"B4MP", 64}, {"BBAP", 60}, {"BKFX", 64}, {"BU5P", 80}, {"BU7P", 85}, {"BUIP", 48}, {"BUQP", 80},
-    };
-    for (const auto& [code, volume] : kEurope)
-    {
-        SEQLIB_CHECK_EQ(release(code).music_volume, volume);
-    }
-    SEQLIB_CHECK_EQ(int(release("BU7P").quality), 1);
-
-    Cart bears_europe;
-    bears_europe.PutString(kRomBase + 0xAC, "BEAP");
-    const uint32_t bears_module = bears_europe.Module(
-        1, {{4, {{0, 0, 49, 1}}}, {4, {{0, 0, 49, 1}}}, {4, {{0, 0, 49, 1}}}, {4, {{0, 0, 49, 1}}}}, true, 0x08361B28);
-    bears_europe.Songs(bears_module, {{0}, {1}, {2}, {3}});
-    SEQLIB_CHECK(Detect(bears_europe.ToRom()).songs == (std::vector<ModuleSong>{{bears_module, 0},
-                                                                                {bears_module, 1, false, -1, 64},
-                                                                                {bears_module, 2},
-                                                                                {bears_module, 3, false, kModeSong}}));
-    for (const uint32_t revision_jingle : {0x08331178u, 0x08336D64u, 0x08335F60u})
-    {
-        Cart franklin_europe;
-        franklin_europe.PutString(kRomBase + 0xAC, "BFKP");
-        const uint32_t jingle_europe = franklin_europe.Module(1, 4, {{0, 0, 49, 1}}, true, revision_jingle);
-        SEQLIB_CHECK(Detect(franklin_europe.ToRom()).songs ==
-                     (std::vector<ModuleSong>{{jingle_europe, -1, false, kModeJingle}}));
-    }
-    for (const uint32_t revision_piece : {0x0832F580u, 0x0833516Cu, 0x08334368u})
-    {
-        Cart franklin_europe;
-        franklin_europe.PutString(kRomBase + 0xAC, "BFKP");
-        const uint32_t piece_europe = franklin_europe.Module(1, 4, {{0, 0, 49, 1}}, true, revision_piece);
-        SEQLIB_CHECK(Detect(franklin_europe.ToRom()).songs ==
-                     (std::vector<ModuleSong>{{piece_europe, -1, false, -1, 64}}));
-    }
-}
-
-// The music volumes and mixers that the games' code sets, The Bee Game's song mode and Postman Pat's table of music
-// volumes.
-void TestGameCodeSettings()
-{
-    const std::pair<const char*, uint32_t> volumes[] = {
-        {"B2WE", 254}, {"B3UE", 96}, {"B46E", 180}, {"B4ME", 64}, {"B8QE", 140}, {"BBAE", 60}, {"BC4E", 96},
-        {"BJXE", 80},  {"BKFE", 64}, {"BU5E", 80},  {"BU7E", 85}, {"BUIE", 48},  {"BUQE", 80}, {"BXPE", 77},
-    };
-    for (const auto& [code, volume] : volumes)
-    {
-        Cart game;
-        game.PutString(kRomBase + 0xAC, code);
-        game.Module(1, 4, {{0, 0, 49, 1}});
-        SEQLIB_CHECK_EQ(Detect(game.ToRom()).music_volume, volume);
-    }
-    Cart spyro;
-    spyro.PutString(kRomBase + 0xAC, "BU7E");
-    spyro.Module(1, 4, {{0, 0, 49, 1}});
-    SEQLIB_CHECK_EQ(int(Detect(spyro.ToRom()).quality), 1);
-
-    // The Bee Game plays its modules in the song mode.
-    Cart bee;
-    bee.PutString(kRomBase + 0xAC, "BKFE");
-    const uint32_t bee_module = bee.Module(1, 4, {{0, 0, 49, 1}}, true, 0x08380B3C);
-    SEQLIB_CHECK(Detect(bee.ToRom()).songs == (std::vector<ModuleSong>{{bee_module, -1, false, kModeSong}}));
-    Cart bee_europe;
-    bee_europe.PutString(kRomBase + 0xAC, "BKFX");
-    const uint32_t bee_europe_module = bee_europe.Module(1, 4, {{0, 0, 49, 1}}, true, 0x0837B0D4);
-    SEQLIB_CHECK(Detect(bee_europe.ToRom()).songs ==
-                 (std::vector<ModuleSong>{{bee_europe_module, -1, false, kModeSong}}));
-
-    // Postman Pat's table gives each entry of the game's table of modules a music volume.
-    Cart pat;
-    pat.PutString(kRomBase + 0xAC, "BROP");
-    const uint32_t pat_first = pat.Module(1, 4, {{0, 0, 49, 1}});
-    const uint32_t pat_second = pat.Module(1, 4, {{0, 0, 49, 1}});
-    pat.Resize(0x40000);
-    pat.Put8(0x08032C48, 128);
-    pat.Put8(0x08032C49, 90);
-    SEQLIB_CHECK(Detect(pat.ToRom()).songs ==
-                 (std::vector<ModuleSong>{{pat_first, -1, false, -1, 128}, {pat_second, -1, false, -1, 90}}));
-}
-
-// Cocoto Kart Racer plays its module at 0x0826181C at a music volume of 100. Cocoto Platform Jumper plays its module at
-// 0x0802DE90 at 73. A piece that no row names keeps the game's music volume, and a row counts only for its game.
-void TestCocotoSongSettings()
-{
-    Cart kart;
-    kart.PutString(kRomBase + 0xAC, "BC5P");
-    const uint32_t race = kart.Module(1, 4, {{0, 0, 49, 1}}, true, 0x0826181C);
-    const uint32_t menu = kart.Module(1, 4, {{0, 0, 49, 1}});
-    Cart jumper;
-    jumper.PutString(kRomBase + 0xAC, "BC8P");
-    const uint32_t level = jumper.Module(1, 4, {{0, 0, 49, 1}}, true, 0x0802DE90);
-    Cart other;
-    other.PutString(kRomBase + 0xAC, "ZZZZ");
-    const uint32_t same_place = other.Module(1, 4, {{0, 0, 49, 1}}, true, 0x0802DE90);
-    const Rom rom = kart.ToRom();
-    const DriverInfo info = Detect(rom);
-    SEQLIB_REQUIRE(info.songs.size() == 2);
-
-    SEQLIB_CHECK(info.songs == (std::vector<ModuleSong>{{race, -1, false, -1, 100}, {menu, -1, false}}));
-    SEQLIB_CHECK(Detect(jumper.ToRom()).songs == (std::vector<ModuleSong>{{level, -1, false, -1, 73}}));
-    SEQLIB_CHECK(Detect(other.ToRom()).songs == (std::vector<ModuleSong>{{same_place, -1, false}}));
-    SEQLIB_CHECK(std::find(info.log.begin(), info.log.end(), "the game plays song 0 at a music volume of 100") !=
-                 info.log.end());
-    const Player raced(rom, info, info.songs[0]);
-    const Player unlisted(rom, info, info.songs[1]);
-    SEQLIB_CHECK_EQ(raced.Globals()[8], 100);
-    SEQLIB_CHECK_EQ(unlisted.Globals()[8], 128);
-    SEQLIB_CHECK_EQ(raced.Globals()[0] * 128, unlisted.Globals()[0] * 100);
-}
-
 // A sample of 20 points that loops forwards over its last 6 gets its loop repeated 6 times: 36 points, the first length
 // of kMinLoop points or more.
 void TestShortLoop()
@@ -1082,6 +433,7 @@ void TestShortLoop()
     {
         cart.Put8(kHeader + kSamplePoints + i, uint8_t(i * 9));
     }
+
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
     InstrumentSet set;
@@ -1135,6 +487,7 @@ void TestAudition()
     {
         player.RunFrame(out);
     }
+
     const bool sounds = std::any_of(out.end() - 1000, out.end(), [&out](int16_t v) { return v != out.back(); });
     const bool busy = player.Busy();
     const auto& mixer = player.Driver().MixerOf(player.Driver().Channels()[0]);
@@ -1145,6 +498,7 @@ void TestAudition()
     {
         player.RunFrame(out);
     }
+
     std::vector<int16_t> after;
     player.RunFrame(after);
     const bool silent = std::all_of(after.begin(), after.end(), [&after](int16_t v) { return v == after.front(); });
@@ -1168,11 +522,7 @@ void TestSongFiles()
     const SongReport written = ConvertSong(rom, info, 0, opt, nullptr);
     const SongFiles files = ConvertSongFiles(rom, info, 0, opt);
 
-    SEQLIB_REQUIRE(written.ok && files.report.ok && !files.report.silent);
-    SEQLIB_CHECK(files.report.midi_path.empty() && files.report.sf2_path.empty());
-    SEQLIB_CHECK(!files.midi.empty() && files.midi == ReadAll(written.midi_path));
-    SEQLIB_CHECK(!files.sf2.empty() && files.sf2 == ReadAll(written.sf2_path));
-    SEQLIB_CHECK(files.report.warnings == written.warnings && files.report.seconds == written.seconds);
+    CheckFilesInMemory(written, files);
 }
 
 // The performance holds the notes of the MIDI file, each with its row's entry. The module plays its 5 rows, and the
@@ -1213,11 +563,13 @@ void TestPerformance()
             }
         }
     }
+
     std::vector<std::tuple<uint32_t, int, uint32_t>> midi;
     for (const seqlib::midi::Note& n : seqlib::midi::Notes(seqlib::midi::Read(files.midi)))
     {
         midi.emplace_back(uint32_t(n.on), int(n.key), uint32_t(n.off));
     }
+
     std::sort(notes.begin(), notes.end());
     std::sort(midi.begin(), midi.end());
 
@@ -1236,6 +588,7 @@ void TestPerformance()
                      stretches[i].first <= stretches[i].last);
         SEQLIB_CHECK(i == 0 || stretches[i].first > stretches[i - 1].last);
     }
+
     SEQLIB_CHECK(stretches[0].first == row_0 && stretches[4].last == end);
     SEQLIB_CHECK(stretches[5] == (ntdlib::sequence_export::Stretch{15, row_0, stretches[0].last,
                                                                    ntdlib::sequence_export::Entry::kLoop, 0, false}));
@@ -1283,6 +636,7 @@ void TestPerformanceAtTwoSpeeds()
             notes++;
         }
     }
+
     const size_t midi_notes = seqlib::midi::Notes(seqlib::midi::Read(files.midi)).size();
 
     const uint32_t fast = stretches[1].tick - stretches[0].tick;
@@ -1310,21 +664,7 @@ int RunTests()
     TestEnhancedAttack();
     TestSongs();
     TestConversion();
-    TestBars();
-    TestLoopStartsAtSecondPass();
-    TestManyChannels();
-    TestSharedMidiChannel();
-    TestMidiChannelsFollowSettings();
     TestDump();
-    TestJingles();
-    TestLoopingJingleMode();
-    TestPlayTable();
-    TestPlayTableModeZero();
-    TestModuleSettings();
-    TestSongSettings();
-    TestSongSettingsOfReleases();
-    TestGameCodeSettings();
-    TestCocotoSongSettings();
     TestShortLoop();
     TestInstruments();
     TestAudition();

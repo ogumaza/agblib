@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <map>
 #include <optional>
 #include <set>
@@ -14,8 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "xsflib/bytes.h"
-
+#include "agblib/agb/cut_steps.h"
 #include "agblib/rd1/commands.h"
 #include "agblib/rd1/instruments.h"
 #include "table_bytes.h"
@@ -42,14 +40,7 @@ constexpr uint32_t kWaveLevelBytes = 4;
 // The bytes of a bank: an instrument for each of 128 programs.
 constexpr uint32_t kBankBytes = 128 * 4;
 
-// The bytes of the instrument records of each kind.
-constexpr uint32_t kSampleRecordBytes = 32;
-constexpr uint32_t kPsgRecordBytes = 36;
-constexpr uint32_t kKitRecordBytes = 8;
-constexpr uint32_t kSplitRecordBytes = 12;
-
-// The bytes of a sample's header and of the wave channel's pattern.
-constexpr uint32_t kSampleHeaderBytes = 24;
+// The bytes of the wave channel's pattern.
 constexpr uint32_t kWaveBytes = 16;
 
 // The PSG channel that plays a pattern of the wave RAM.
@@ -116,6 +107,7 @@ private:
         {
             length++;
         }
+
         reached_.Mark(name, std::min(length + 1, kNameBytes));
     }
 
@@ -131,7 +123,7 @@ private:
         switch (r.kind)
         {
         case InstrumentKind::kDrums:
-            reached_.Mark(address, kKitRecordBytes);
+            reached_.Mark(address, RecordBytes(r.kind));
             if (!part)
             {
                 const uint32_t keys = 128 - uint32_t(r.key);
@@ -144,7 +136,7 @@ private:
             break;
 
         case InstrumentKind::kKeySplit:
-            reached_.Mark(address, kSplitRecordBytes);
+            reached_.Mark(address, RecordBytes(r.kind));
             if (!part)
             {
                 const uint32_t keys = 128 - uint32_t(r.key);
@@ -154,6 +146,7 @@ private:
                 {
                     parts = std::max<uint32_t>(parts, uint32_t(rom_.U8(r.table + k)) + 1);
                 }
+
                 reached_.Mark(r.parts, 4 * uint64_t(parts));
                 for (uint32_t p = 0; p < parts; p++)
                 {
@@ -163,7 +156,7 @@ private:
             break;
 
         case InstrumentKind::kPsg:
-            reached_.Mark(address, kPsgRecordBytes);
+            reached_.Mark(address, RecordBytes(r.kind));
             if (r.psg_channel == kWaveChannel)
             {
                 reached_.Mark(r.sample, kWaveBytes);
@@ -172,13 +165,13 @@ private:
 
         case InstrumentKind::kSample:
         case InstrumentKind::kFixed:
-            reached_.Mark(address, kSampleRecordBytes);
+            reached_.Mark(address, RecordBytes(r.kind));
             MarkSample(r.sample);
             break;
 
         default:
-            // A record past the ROM's end: the driver reads its first bytes.
-            reached_.Mark(address, kKitRecordBytes);
+            // A record past the ROM's end: the driver reads its first bytes, as many as a drum kit's record has.
+            reached_.Mark(address, RecordBytes(InstrumentKind::kDrums));
             break;
         }
     }
@@ -192,8 +185,8 @@ private:
         }
 
         reached_.Mark(header, kSampleHeaderBytes);
-        const uint32_t points = std::min(std::max(rom_.U32(header), rom_.U32(header + 16)), kMaxSamplePoints);
-        reached_.Mark(rom_.U32(header + 20), points);
+        const SamplePoints points = PointsOfSample(rom_, header);
+        reached_.Mark(points.address, points.count);
     }
 
     const Rom& rom_;
@@ -241,27 +234,17 @@ Reached ReachedBytes(const Reached& other, const std::map<uint32_t, CutFile>& fi
 void MarkUnmovable(std::map<uint32_t, CutFile>& files, const Reached& data)
 {
     // Each file once, in the order of the files' bytes. A file stays among the ROM's bytes when another file reads any
-    // of its bytes, or when it holds the driver's other data: the other reader would lose them when the file moved.
-    auto reader = files.end(); // the file that reads furthest
-    uint32_t read_to = 0;      // where that file's bytes end
-    for (auto it = files.begin(); it != files.end(); ++it)
+    // of its bytes, or when it contains the driver's other data: the other reader would lose them when the file moved.
+    const auto size = [](const CutFile& file)
     {
-        const uint32_t end = it->first + it->second.decoded.size;
-        if (data.Touches(it->first, it->second.decoded.size))
-        {
-            it->second.usable = false;
-        }
-        if (reader != files.end() && it->first < read_to)
-        {
-            it->second.usable = false;
-            reader->second.usable = false;
-        }
-        if (reader == files.end() || end > read_to)
-        {
-            reader = it;
-            read_to = end;
-        }
-    }
+        return file.decoded.size;
+    };
+
+    const auto stays = [&](uint32_t address, uint32_t bytes)
+    {
+        return data.Touches(address, bytes);
+    };
+    agb::MarkReadTwice(files, size, stays);
 }
 
 // Adds the runs between the usable files and a piece for each of them to `layout`. Returns the piece of each file, by
@@ -283,6 +266,7 @@ std::map<uint32_t, uint32_t> AddPieces(const Rom& rom, std::map<uint32_t, CutFil
         layout.sequences.push_back(std::move(file.decoded.sequence));
         at = address + file.decoded.size;
     }
+
     agb::AddRomRun(rom, at, rom.End(), layout.pieces);
 
     return pieces_of;
@@ -355,20 +339,10 @@ std::vector<uint8_t> Join(std::span<const ntdlib::commands::Sequence> sequences,
     {
         return EncodeSequence(sequences[sequence]);
     };
+
     agb::JoinedRom rom(pieces, sequences.size(), fields, free,
                        {.alignment = kFileAlignment, .filler = options.filler, .sequences = "MIDI files"}, encode);
-    for (const ntdlib::sar::Field& field : fields)
-    {
-        uint8_t* at = rom.FieldBytes(field, 4);
-        const uint64_t from = rom.Position(field.from);
-        const uint64_t to = rom.Position(field.to);
-        if (to < from || to - from + kRomBase > std::numeric_limits<uint32_t>::max())
-        {
-            throw std::invalid_argument("a field's address is outside the GBA's address space");
-        }
-
-        xsflib::StoreLe32(at, uint32_t(to - from + kRomBase));
-    }
+    agb::WriteAddressFields(rom, fields);
 
     return rom.TakeImage();
 }

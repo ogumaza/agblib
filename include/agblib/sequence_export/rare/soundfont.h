@@ -27,7 +27,7 @@ using agblib::sequence_export::agb::VolumeEnvelope;
 
 namespace sf2 = seqlib::sf2;
 
-// Returns `bank`, or the next bank if `bank` is the drum bank. The drum bank holds only the drum channel's presets.
+// Returns `bank`, or the next bank if `bank` is the drum bank. The drum bank contains only the drum channel's presets.
 constexpr int SkipDrumBank(int bank)
 {
     return bank == kDrumBank ? bank + 1 : bank;
@@ -38,12 +38,12 @@ constexpr int SkipDrumBank(int bank)
 // a SoundFont's fall in a straight line in decibels.
 VolumeEnvelope EnvelopeFor(const DriverInfo& info, const Instrument& inst, const EnvelopeSettings& settings = {});
 
-// A builder of SoundFont samples and instruments from the ROM, which reuses any already built. The conversion adds the
+// A builder of SoundFont samples and instruments from the ROM. It reuses any already built. The conversion adds the
 // presets.
 class SoundfontBuilder
 {
 public:
-    // Keeps references to `rom` and `info`, which have to outlive the builder. The presets for envelope settings go in
+    // Keeps references to `rom` and `info`. Both have to outlive the builder. The presets for envelope settings go in
     // banks from `first_free_bank` up.
     SoundfontBuilder(const Rom& rom, const DriverInfo& info, int first_free_bank = 1);
 

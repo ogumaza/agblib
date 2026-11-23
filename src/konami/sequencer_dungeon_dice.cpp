@@ -156,7 +156,7 @@ DungeonDiceSequencer::Next DungeonDiceSequencer::RunCommand(int track, const Com
         }
 
     case Op::kLoopPoint:
-        // The loop starts with FA's two bytes, a delay and a command, which the track skips until the song loops.
+        // The loop starts with FA's two bytes, a delay and a command. The track skips them until the song loops.
         t.start = uint16_t(t.start + pos - 2);
         pos = 2;
         PassLoopPoint(track, rom_.U8(header_.base + t.start));
@@ -164,8 +164,8 @@ DungeonDiceSequencer::Next DungeonDiceSequencer::RunCommand(int track, const Com
 
     case Op::kCall:
         // The call plays commands from the track's data, from its start in the song table, with the delay before each.
-        // F5 starts with the command in its last byte, which counts as the call's first, and the delay after the call
-        // is read from that byte too.
+        // F5 starts with the command in its last byte. That command counts as the call's first, and the delay after the
+        // call is read from that byte too.
         t.saved_start = t.start;
         t.ret = uint16_t(pos);
         t.start = header_.offsets[track];
@@ -188,8 +188,8 @@ DungeonDiceSequencer::Next DungeonDiceSequencer::RunCommand(int track, const Com
     case Op::kSampleBend:
         {
             // The bend is from the note's pitch, or from note 24, a sample's rate, after a sample map note. A note that
-            // starts this frame starts at the pitch, and otherwise the track's pitch becomes the period, which the
-            // output stage hands to the voice's FIFO at once.
+            // starts this frame starts at the pitch. Otherwise the track's pitch becomes the period, and the output
+            // stage hands it to the voice's FIFO at once.
             Track* u = c.opcode & 1 ? NextTrack(track, c) : &t;
             if (!u)
             {
@@ -240,7 +240,7 @@ DungeonDiceSequencer::Next DungeonDiceSequencer::RunCommand(int track, const Com
 
     case Op::kNextNote:
         {
-            // The next track has had its turn this frame, so the note goes straight into its record.
+            // The next track has had its turn this frame. The note therefore goes straight into its record.
             Track* u = NextTrack(track, c);
             if (u)
             {

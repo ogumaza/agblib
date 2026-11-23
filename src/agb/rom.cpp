@@ -16,11 +16,11 @@
 #include <utility>
 #include <vector>
 
+#include "ntdlib/inflate.h"
 #include "xsflib/bytes.h"
 #include "xsflib/psf/psf.h"
 
 #include "agblib/agb/files.h"
-#include "ntdlib/inflate.h"
 
 namespace agblib::agb
 {
@@ -80,6 +80,7 @@ std::string LibraryPath(const std::string& path, const std::string& name)
     {
         return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
     };
+
     for (std::filesystem::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
     {
         const std::string found = Utf8(it->path().filename());
@@ -99,6 +100,8 @@ bool Rom::Load(const std::string& path, std::string& error)
     data_.clear();
     from_gsf_ = false;
     library_.clear();
+    gsf_entry_.reset();
+    gsf_reserved_.clear();
 
     // Folders get dropped on the program too; some systems open them as empty files.
     std::error_code ec;
@@ -204,10 +207,18 @@ bool Rom::LoadGsf(const std::string& path, int depth, std::string& error)
         {
             library_ = lib_path;
         }
+
         if (!LoadGsf(lib_path, depth + 1, error))
         {
             return false;
         }
+    }
+
+    // Reserved areas go in the order of loading: those of the _lib chain first, then the one of this file, then those
+    // of _lib2 and on.
+    if (!psf.reserved.empty())
+    {
+        gsf_reserved_.push_back(psf.reserved);
     }
 
     if (psf.compressed_size > 0)
@@ -218,6 +229,7 @@ bool Rom::LoadGsf(const std::string& path, int depth, std::string& error)
             error = whose + " program: " + *program_error;
             return false;
         }
+
         if (!ApplyGsfProgram(psf.program, error))
         {
             error = whose + " program: " + error;
@@ -270,6 +282,12 @@ bool Rom::ApplyGsfProgram(const std::vector<uint8_t>& program, std::string& erro
         return false;
     }
 
+    // The first program loaded sets where the CPU starts.
+    if (!gsf_entry_)
+    {
+        gsf_entry_ = xsflib::LoadLe32(&program[0]);
+    }
+
     if (data_.size() < rom_offset + size)
     {
         data_.resize(rom_offset + size, 0);
@@ -307,6 +325,11 @@ std::string Rom::GameCode() const
     }
 
     return s;
+}
+
+uint8_t Rom::Version() const
+{
+    return U8(kRomBase + 0xBC);
 }
 
 std::string HexBytes(const Rom& rom, uint32_t address, uint32_t count)

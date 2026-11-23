@@ -27,9 +27,9 @@ enum Command : uint8_t
     kCmdLastWait = 0xB0, // the longest wait
     kCmdFine = 0xB1,     // the end of the track
     kCmdGoto = 0xB2,     // 4 bytes: an address to go on from
-    kCmdPatt = 0xB3,     // 4 bytes: the address of a pattern to play, which ends at a kCmdPend
+    kCmdPatt = 0xB3,     // 4 bytes: the address of a pattern to play. The pattern ends at a kCmdPend.
     kCmdPend = 0xB4,     // the end of a pattern
-    kCmdRept = 0xB5,     // a count and 4 bytes: an address to go back to, so that the part plays count times in all
+    kCmdRept = 0xB5,     // a count and 4 bytes: an address to go back to. The part plays count times in all.
     kCmdMemAcc = 0xB9,   // an operation, a byte of the memory area, a value, and an address for the conditional jumps
     kCmdPrio = 0xBA,     // the track's priority
     kCmdTempo = 0xBB,    // half the tempo, in quarter notes a minute
@@ -50,7 +50,7 @@ enum Command : uint8_t
     kCmdTie = 0xCF,   // a note that lasts until kCmdEot
 };
 
-// The extended commands that the driver knows.
+// The extended commands that the driver supports.
 enum Xcommand : uint8_t
 {
     kXcmdWave = 0x01,   // 4 bytes: the address of the track's sample
@@ -102,7 +102,7 @@ bool ReadSong(const Rom& rom, const DriverInfo& info, int song, SongHeader& head
 // driver's.
 int SongReverb(const DriverInfo& info, int song, const SongHeader& header);
 
-// Returns the number of a song's tracks that its music player plays: the first ones, as many as it has room for.
+// Returns the number of a song's tracks that its music player plays: the first ones as many as it has room for.
 int PlayedTracks(const Rom& rom, const DriverInfo& info, int song, const SongHeader& header);
 
 // The kinds of voice, in a voice's type byte.
@@ -151,9 +151,9 @@ inline constexpr uint32_t kVoiceSize = 12;
 // Reads the voice at `address`. Returns false if it isn't in the ROM.
 bool ReadVoice(const Rom& rom, uint32_t address, Voice& voice);
 
-// The voice that `bytes` hold, at `address`, as ReadVoice reads it. The bytes give the type, the key, the length and
-// the pan or the sweep, then the wave in 32 bits, then the envelope's 4 values. A key split holds its key table in
-// those last 4 bytes. The voice holds both readings of them.
+// The voice in `bytes`, at `address` as ReadVoice reads it. The bytes give the type, the key, the length and the pan
+// or the sweep, then the wave in 32 bits, then the envelope's 4 values. A key split keeps its key table in those last 4
+// bytes. The voice contains both readings of them.
 Voice VoiceOfBytes(std::span<const uint8_t, kVoiceSize> bytes, uint32_t address = 0);
 
 // The bytes of `voice`. A key split (kVoiceKeySplit) writes its key table into the last 4 bytes, and any other voice
@@ -182,12 +182,12 @@ struct Wave
 // Reads the sample at `address`. Returns false if its header or its data isn't in the ROM.
 bool ReadWave(const Rom& rom, uint32_t address, Wave& wave);
 
-// The first state of a sample of 4-bit steps, which a later version of Camelot's mixer plays for a fixed-pitch voice
-// whose sample has a negative size (0x03000c1c in Mario Tennis: Power Tour): a point of 0, and this index.
+// The first state of a sample of 4-bit steps: a point of 0, and this index. A later version of Camelot's mixer plays
+// such a sample for a fixed-pitch voice whose sample has a negative size (0x03000c1c in Mario Tennis: Power Tour).
 constexpr uint32_t kCamelotStepsStart = 56;
 
-// Moves on by one step of such a sample. The top 4 bits of `step` hold a signed value. The index gives the value's
-// shift to the right. A lower index therefore takes larger steps, and each step's size moves the index for the next.
+// Moves on by one step of such a sample. The top 4 bits of `step` are a signed value. The index gives the value's shift
+// to the right. A lower index therefore takes larger steps, and each step's size moves the index for the next.
 void CamelotStep(uint32_t step, int32_t& point, uint32_t& index);
 
 // Returns the points of a sample of 4-bit steps, a byte for each two points, with the high nibble first. The mixer

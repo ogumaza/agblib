@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of a piece of Krawall for an editor. ntdlib's model of the player (agblib::krawall::Player) plays the
-// piece as ConvertSong does. The performance holds the notes of ConvertSong's MIDI file, each with the row's entry that
-// started it. It also holds the stretches of rows that the module played, and the changes of each channel's volume and
-// pan.
+// The performance of a piece of Krawall for an editor. The agblib model of the player (agblib::krawall::Player) plays
+// the piece as ConvertSong does. The performance contains the notes of ConvertSong's MIDI file, each with the row's
+// entry that started it. It also contains the stretches of rows that the module played, and the changes of each
+// channel's volume and pan.
 
 #pragma once
 
@@ -11,38 +11,39 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/krawall/driver.h"
 #include "agblib/sequence_export/agb/settings.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::krawall
 {
 
 // A recorded piece: PerformanceBase, with the records for an editor.
 //
-// The ticks are the MIDI file's: a tick of the player's takes the MIDI ticks that the conversion's timing gives it.
-// The module's first 16 channels play on the tracks of the same numbers. A preset is the note's program in the
-// conversion: a sample and the point it starts from. Every note has the velocity 127. The channel's levels give its
-// loudness. Offsets count from `base`, the address of the module's first pattern. agblib::krawall::DecodeRomSequence
-// decodes the bytes from there, and agblib::krawall::SequenceOfSong gives the sequence. In the modified build, the
-// addresses lie in the unpacked modules (DriverInfo::unpacked).
+// The ticks are the MIDI file's: a tick of the player's takes the MIDI ticks that the conversion's timing gives it. The
+// module's first 16 channels play on the tracks of the same numbers. A preset is the note's program in the conversion:
+// a sample and the point it starts from. Every note has the velocity 127. The channel's levels give its loudness.
+// Offsets count from `base`, the address of the module's first pattern. agblib::krawall::DecodeRomSequence decodes the
+// bytes from there, and agblib::krawall::SequenceOfSong gives the sequence. In the modified build, the addresses are in
+// the unpacked modules (DriverInfo::unpacked).
 struct Performance : ntdlib::sequence_export::PerformanceBase
 {
     uint32_t base = 0;
 
     // Each track's stretches of rows, in the order that they played, and the entry of each note, at the note's ID less
-    // 1 (TrackEvent::note). Every channel plays the module's rows, so each track that the module's channels reach holds
-    // the same stretches. Each row that played is a stretch, at the row's tick. A row's speed sets its length, and a
-    // speed effect can change it within a pattern. A stretch then holds its row's entries and the wait that ends the
-    // row. A row that the rows reach out of turn (at an order's end, a break, a jump, a pattern loop or the module's
-    // restart) has Entry::kJump when it comes later than the row before, and Entry::kLoop when it doesn't. Every other
-    // row has Entry::kOpen. `first`
-    // gives the offset of the item that holds the row's first byte. `last` gives the offset of the item that holds the
-    // 0 that ends the row: a row's 0 lies in a wait. The player has no calls: each stretch's depth is 0. A note's
-    // offset is that of the byte of flags of its channel's entry, where an item starts. `note_commands[i].stretch`
-    // names the note's row in the stretches of the note's track.
+    // 1 (TrackEvent::note). Every channel plays the module's rows. Each track that the module's channels reach
+    // therefore contains the same stretches. Each row that played is a stretch, at the row's tick. A row's speed sets
+    // its length, and a speed effect can change it within a pattern. A stretch then contains its row's entries and the
+    // wait that ends the row. A row that the rows reach out of turn (at an order's end, a break, a jump, a pattern loop
+    // or the module's restart) has Entry::kJump when it comes later than the row before, and Entry::kLoop when it
+    // doesn't. Every other row has Entry::kOpen. `first` gives the offset of the item that contains the row's first
+    // byte. `last` gives the offset of the item that contains the 0 that ends the row: a row's 0 is in a wait. The
+    // player has no calls: each stretch's depth is 0. A note's offset is that of the byte of flags of its channel's
+    // entry, where an item starts. `note_commands[i].stretch` names the note's row in the stretches of the note's
+    // track.
     std::array<std::vector<ntdlib::sequence_export::Stretch>, 16> stretches;
     std::vector<ntdlib::sequence_export::NoteCommand> note_commands;
 

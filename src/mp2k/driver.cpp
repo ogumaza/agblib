@@ -43,8 +43,8 @@ constexpr int kMaxPlayers = 64;
 // A game whose code gives some songs another number of DirectSound channels. Before the game starts a song up to 127,
 // its routine at `routine` calls m4aSoundMode with `channels` for each of `songs`, and with the init's number for the
 // other songs. The songs above 127 keep the number that the last song left. `code` is the routine's code up to that
-// call, in ParseThumbPattern()'s form. Its comparisons hold the songs' numbers. A game whose routine differs keeps the
-// init's number for every song.
+// call, in ParseThumbPattern()'s form. Its comparisons contain the songs' numbers. A game whose routine differs keeps
+// the init's number for every song.
 struct ChannelSetting
 {
     std::string_view game_code;
@@ -97,8 +97,7 @@ constexpr uint8_t kSpecialTest[8] = {0x01, 0x00, 0xD4, 0xE5, 0x30, 0x00, 0x10, 0
 constexpr uint8_t kMonoVolume[12] = {0xA0, 0x78, 0xE1, 0x78, 0x40, 0x18, 0x68, 0x43, 0x40, 0x0A, 0xA0, 0x72};
 
 // Camelot's note start, in Thumb code, where it looks through the DirectSound channels for one to take: adds r4, #0x50;
-// movs r7, #0xc7; movs r2, #0; movs r6, #0; movs r0, #3; ldrb r1, [r4]. A movs r3 before it holds the count of
-// channels.
+// movs r7, #0xc7; movs r2, #0; movs r6, #0; movs r0, #3; ldrb r1, [r4]. A movs r3 before it sets the count of channels.
 constexpr uint8_t kCamelotChannelSearch[12] = {0x50, 0x34, 0xC7, 0x27, 0x00, 0x22, 0x00, 0x26, 0x03, 0x20, 0x21, 0x78};
 
 // Where a later version's SoundMain goes to its mixer with a count of 12 channels, whatever the driver's mode says:
@@ -138,7 +137,7 @@ constexpr uint8_t kMetroidTempo[14] = {0x4A, 0x6A, 0x53, 0x78, 0x02, 0x32, 0x4A,
 constexpr uint8_t kMetroidShortNote[18] = {0x4A, 0x78, 0x01, 0x20, 0x08, 0x56, 0x00, 0x28, 0x02,
                                            0xDB, 0xE2, 0x73, 0x58, 0x1C, 0x60, 0x62, 0x21, 0x78};
 
-// The distance, in bytes, that the literals of a Camelot mixer's echo can lie before kCamelotPulse.
+// The distance, in bytes, that the literals of a Camelot mixer's echo can be before kCamelotPulse.
 constexpr uint32_t kCamelotEchoReach = 0x400;
 
 // The greatest distance, in bytes, that the init's setting of the driver's mode can be before its literal pool.
@@ -160,8 +159,8 @@ bool InRam(uint32_t address)
 }
 
 // Finds the routine that starts a song, and reads the addresses of the music player table and the song table from its
-// literal pool. A copy of the routine whose pool doesn't hold the tables, such as an unused one whose pool is zeroed,
-// is passed over. Returns false if there's none.
+// literal pool. A copy of the routine whose pool doesn't contain the tables, such as an unused one whose pool is
+// zeroed, is passed over. Returns false if there's none.
 bool FindSongStart(const Rom& rom, DriverInfo& info)
 {
     // The matches of both forms, in address order.
@@ -171,6 +170,7 @@ bool FindSongStart(const Rom& rom, DriverInfo& info)
         const std::vector<uint32_t> found = FindThumb(rom, ParseThumbPattern(form));
         hits.insert(hits.end(), found.begin(), found.end());
     }
+
     std::sort(hits.begin(), hits.end());
 
     for (uint32_t at : hits)
@@ -208,8 +208,8 @@ bool IsSoundMode(uint32_t mode)
 }
 
 // Finds the init's setting of the driver's mode: `ldr r0, =mode; bl m4aSoundMode`, a little before a literal pool that
-// holds the music player table's address, which is the init's. Metroid Fusion's init keeps the mode for a later call
-// instead: `ldr r0, =mode; mov r8, r0`. Returns 0 if there's none.
+// contains the music player table's address. That pool is the init's. Metroid Fusion's init keeps the mode for a later
+// call instead: `ldr r0, =mode; mov r8, r0`. Returns 0 if there's none.
 uint32_t FindSoundMode(const Rom& rom, uint32_t player_table)
 {
     const uint8_t* data = rom.Ptr(kRomBase);
@@ -232,6 +232,7 @@ uint32_t FindSoundMode(const Rom& rom, uint32_t player_table)
                 mode = ThumbLiteral(rom, at);
             }
         }
+
         if (mode)
         {
             return mode;
@@ -241,7 +242,7 @@ uint32_t FindSoundMode(const Rom& rom, uint32_t player_table)
     return 0;
 }
 
-// The modes of games that work them out while they run, so that no literal holds them.
+// The modes of games that work them out while they run. No literal contains them.
 struct GameMode
 {
     const char* game_code;
@@ -354,6 +355,7 @@ std::vector<uint32_t> FindGameSoundModes(const Rom& rom, uint32_t init_mode)
             sound_mode = BlTarget(rom, at + 2);
         }
     }
+
     if (!init_call)
     {
         return {};
@@ -413,6 +415,7 @@ std::vector<uint32_t> FindGameSoundModes(const Rom& rom, uint32_t init_mode)
             modes.push_back(uint32_t(mode));
             next += length;
         }
+
         if (!modes.empty())
         {
             return modes;
@@ -422,32 +425,36 @@ std::vector<uint32_t> FindGameSoundModes(const Rom& rom, uint32_t init_mode)
     return {};
 }
 
-// Applies the driver's mode setting, as m4aSoundMode does: each field that isn't 0 replaces the driver's setting.
+// Applies the driver's mode setting in the way of m4aSoundMode: each field that isn't 0 replaces the driver's setting.
 void ApplySoundMode(uint32_t mode, DriverInfo& info)
 {
     if (mode & 0xFF)
     {
         info.reverb = int(mode & 0x7F);
     }
+
     if (mode & 0xF00)
     {
         info.max_channels = int((mode >> 8) & 0xF);
     }
+
     if (mode & 0xF000)
     {
         info.master_volume = int((mode >> 12) & 0xF);
     }
+
     if (mode & 0xB00000)
     {
         info.dac_bits = uint8_t((mode & 0x300000) >> 14);
     }
+
     if (mode & 0xF0000)
     {
         info.rate_index = int((mode >> 16) & 0xF);
     }
 }
 
-// Returns true if the ROM holds `code`.
+// Returns true if the ROM contains `code`.
 template <size_t N>
 bool HasCode(const Rom& rom, const uint8_t (&code)[N])
 {
@@ -456,11 +463,11 @@ bool HasCode(const Rom& rom, const uint8_t (&code)[N])
     return std::search(data, end, std::begin(code), std::end(code)) != end;
 }
 
-// Reads the echo of Camelot's mixer from the literals of its output stage, which lie before kCamelotPulse. Two words
-// multiply a side's old points. The low half of the first holds the level to the same side, and its high half the level
-// to the other side. The second holds the two the other way round, with a borrow into its high half. The word 8 bytes
-// before them gives the left side's distance to the right side's output. Keeps the defaults when no words of that shape
-// lie there, and a third of a frame for the distance when it wouldn't fit in a frame.
+// Reads the echo of Camelot's mixer from the literals of its output stage. They are before kCamelotPulse. Two words
+// multiply a side's old points. The low half of the first is the level to the same side, and its high half the level to
+// the other side. The second has the two the other way round, with a borrow into its high half. The word 8 bytes before
+// them gives the left side's distance to the right side's output. Keeps the defaults when no words of that shape are
+// there, and a third of a frame for the distance when it wouldn't fit in a frame.
 void ReadCamelotEcho(const Rom& rom, DriverInfo& info)
 {
     info.camelot_tap = (info.samples_per_frame / 3) & ~1;
@@ -493,21 +500,22 @@ void ReadCamelotEcho(const Rom& rom, DriverInfo& info)
             {
                 info.camelot_tap = int(tap);
             }
+
             return;
         }
     }
 }
 
-// Reads the music player table: 12 bytes a player, up to the first entry whose state or tracks aren't in RAM, or that
-// has no tracks. An entry of zeros is an unused player. It plays no tracks. Such entries after the last player don't
-// count.
+// Reads the music player table: kPlayerEntrySize bytes a player, up to the first entry whose state or tracks aren't in
+// RAM, or that has no tracks. An entry of zeros is an unused player. It plays no tracks. Such entries after the last
+// player don't count.
 void ReadPlayers(const Rom& rom, DriverInfo& info)
 {
     size_t used = 0;
     for (int p = 0; p < kMaxPlayers; p++)
     {
-        const uint32_t at = info.player_table + 12 * uint32_t(p);
-        if (!rom.Contains(at, 12))
+        const uint32_t at = info.player_table + kPlayerEntrySize * uint32_t(p);
+        if (!rom.Contains(at, kPlayerEntrySize))
         {
             break;
         }
@@ -524,13 +532,14 @@ void ReadPlayers(const Rom& rom, DriverInfo& info)
             player.track_count = rom.U8(at + 8) > kMaxTracks ? kMaxTracks : rom.U8(at + 8);
             used = size_t(p) + 1;
         }
+
         info.players.push_back(player);
     }
 
     info.players.resize(used);
 }
 
-// Returns true if the ROM holds the Thumb code that `text` gives in ParseThumbPattern()'s form at `at`.
+// Returns true if the ROM contains the Thumb code that `text` gives in ParseThumbPattern()'s form at `at`.
 bool HasThumbAt(const Rom& rom, uint32_t at, std::string_view text)
 {
     const std::vector<agb::ThumbPattern> pattern = ParseThumbPattern(text);
@@ -617,10 +626,12 @@ std::string SettingText(const SongSetting& setting)
     {
         parts.push_back(std::to_string((setting.mode >> 8) & 0xF) + " DirectSound channels");
     }
+
     if (setting.mode & 0xFF)
     {
         parts.push_back("reverb " + std::to_string(setting.mode & 0x7F));
     }
+
     if (setting.volume != kFullPlayerVolume)
     {
         char volume[16];
@@ -638,8 +649,8 @@ std::string SettingText(const SongSetting& setting)
 }
 
 // Returns how many songs the table at `table` has: entries up to the first that isn't a song, or names a music player
-// the table of players doesn't have, apart from all-zero entries. An all-zero entry is empty, since a GSF rip can zero
-// the entries of the songs it doesn't hold, and those after the last song don't count.
+// the table of players doesn't have, apart from all-zero entries. An all-zero entry is empty: a GSF rip can zero the
+// entries of the songs that it doesn't contain. The all-zero entries after the last song don't count.
 int CountSongs(const Rom& rom, const DriverInfo& info, uint32_t table)
 {
     int count = 0;
@@ -743,8 +754,8 @@ uint32_t FindMetroidPsgTable(const Rom& rom)
 // that the game's code gives songs.
 void FindDriverCode(const Rom& rom, DriverInfo& info)
 {
-    // Find the mixer's test for reversed and compressed samples, the mono mixer's volume and Camelot's changes, which a
-    // game given its song table can have too.
+    // Find the mixer's test for reversed and compressed samples, the mono mixer's volume and Camelot's changes. A game
+    // given its song table can have them too.
     info.special_samples = HasCode(rom, kSpecialTest);
     info.mono = HasCode(rom, kMonoVolume);
     info.camelot_sequencer = HasCode(rom, kCamelotChannelSearch);
@@ -774,6 +785,7 @@ void FindDriverCode(const Rom& rom, DriverInfo& info)
                     info.game_modes.push_back(row.mode);
                 }
             }
+
             for (const uint32_t mode : info.game_modes)
             {
                 ApplySoundMode(mode, info);
@@ -785,8 +797,10 @@ void FindDriverCode(const Rom& rom, DriverInfo& info)
                 "the driver's settings weren't found, so its defaults are assumed: 13379 Hz and "
                 "8 DirectSound channels");
         }
+
         FindSongChannels(rom, info);
     }
+
     FindSongSettings(rom, info);
 }
 
@@ -797,6 +811,7 @@ void LogDetection(DriverInfo& info)
     {
         info.log.push_back("song start routine at " + Hex(info.song_start));
     }
+
     if (info.song_start || info.metroid_sequencer)
     {
         // Camelot's mixer leaves out the master volume and the reverb, and has an echo instead.
@@ -814,6 +829,7 @@ void LogDetection(DriverInfo& info)
                 mixer += ", reverb " + std::to_string(info.reverb);
             }
         }
+
         if (info.mono)
         {
             mixer += ", mono";
@@ -839,6 +855,7 @@ void LogDetection(DriverInfo& info)
                 kinds.push_back(setting);
             }
         }
+
         for (const SongSetting& kind : kinds)
         {
             std::vector<int> list;
@@ -849,6 +866,7 @@ void LogDetection(DriverInfo& info)
                     list.push_back(setting.song);
                 }
             }
+
             info.log.push_back(SongList(list) + ": " + SettingText(kind) + " (the game's code)");
         }
 
@@ -856,6 +874,7 @@ void LogDetection(DriverInfo& info)
         {
             info.log.push_back("note start: Camelot's choice of channels, volumes and rates");
         }
+
         if (info.metroid_sequencer)
         {
             info.log.push_back("sequencer: the Metroid games' rework of the SDK's sequencer");
@@ -865,6 +884,7 @@ void LogDetection(DriverInfo& info)
             }
         }
     }
+
     info.log.push_back("song table at " + Hex(info.song_table) + ": " + std::to_string(info.song_count) + " song" +
                        (info.song_count == 1 ? "" : "s") +
                        (info.players.empty() ? ""
@@ -884,6 +904,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
     {
         info.song_table = overrides.song_table;
     }
+
     if (info.song_table == 0)
     {
         error.clear();
@@ -901,6 +922,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
     {
         info.max_channels = kMaxDirectChannels;
     }
+
     if (info.camelot_mixer && HasCode(rom, kCamelotTwelveChannels))
     {
         info.max_channels = kMaxDirectChannels;

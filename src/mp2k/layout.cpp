@@ -45,7 +45,7 @@ uint32_t HeaderSize(uint32_t tracks)
 
 using agb::AlignUp;
 
-// The bytes of a ROM that the driver reads, as FillerRuns finds them. A note reads up to `note_arguments` bytes.
+// The bytes of a ROM that the driver reads as FillerRuns finds them. A note reads up to `note_arguments` bytes.
 class Reached : public agb::Reached
 {
 public:
@@ -54,8 +54,8 @@ public:
     }
 
     // Marks the commands that a track from `start` reaches, with the patterns that it plays and the places that its
-    // jumps go to, and the samples that its extended commands name. A jump's target starts with the running status
-    // of the jump. Each command counts once in a song: `seen` holds the commands that the song's tracks have read.
+    // jumps go to, and the samples that its extended commands name. A jump's target starts with the running status of
+    // the jump. Each command counts once in a song: `seen` contains the commands that the song's tracks have read.
     void MarkTrack(uint32_t start, std::set<uint32_t>& seen)
     {
         std::vector<std::pair<uint32_t, uint8_t>> pending = {{start, 0}}; // each place, with its running status
@@ -83,10 +83,12 @@ public:
                 {
                     MarkWave(event.target);
                 }
+
                 if (command == kCmdGoto || EndsTrack(event))
                 {
                     break;
                 }
+
                 at += event.size;
             }
         }
@@ -109,10 +111,12 @@ public:
             {
                 return;
             }
+
             if (voice.type & kVoiceKeySplit)
             {
                 Mark(voice.key_table, 128);
             }
+
             for (int key = 0; key < 128; key++)
             {
                 const uint32_t played = SplitVoice(rom_, voice, key);
@@ -147,7 +151,7 @@ private:
     int note_arguments_ = 3;
 };
 
-// Whether `field` names where a track of a song starts: it lies in the run after a sequence piece, at the place of a
+// Whether `field` names where a track of a song starts: it is in the run after a sequence piece, at the place of a
 // track's address in a header, and names an item of the piece.
 bool IsTrackField(std::span<const ntdlib::sar::Piece> pieces, const ntdlib::sar::Field& field)
 {
@@ -188,6 +192,7 @@ std::vector<uint32_t> HeaderTracks(std::span<const ntdlib::sar::Piece> pieces,
             named[piece] = true;
             tracks[piece] = 0;
         }
+
         tracks[piece] = std::max(tracks[piece], (field.at.offset - 8) / 4 + 1);
     }
 
@@ -248,7 +253,7 @@ std::map<uint32_t, CutSong> ReadCutSongs(const agb::Rom& rom, const DriverInfo& 
     return songs;
 }
 
-// The songs that lie clear of one another and of the song table, in the order of their first bytes.
+// The songs that are clear of one another and of the song table, in the order of their first bytes.
 std::vector<CutSong*> ClearSongs(std::map<uint32_t, CutSong>& songs, const DriverInfo& info)
 {
     const uint32_t table_end = info.song_table + 8 * uint32_t(info.song_count);
@@ -269,7 +274,7 @@ std::vector<CutSong*> ClearSongs(std::map<uint32_t, CutSong>& songs, const Drive
     return kept;
 }
 
-// Adds the fields of the song table's entries. An entry's field lies in the run that holds the table: the songs lie
+// Adds the fields of the song table's entries. An entry's field is in the run that contains the table: the songs are
 // clear of it. `header_runs` gives each header's run, by the header's address.
 void AddTableFields(const DriverInfo& info, const std::multimap<uint32_t, int>& entries,
                     const std::map<uint32_t, uint32_t>& header_runs, Layout& layout)
@@ -330,6 +335,7 @@ Layout Cut(const agb::Rom& rom, const DriverInfo& info)
             layout.fields.push_back({{run, 8 + 4 * uint32_t(t)}, {0, 0}, {piece, song->decoded.entries[t], true}});
         }
     }
+
     agb::AddRomRun(rom, at, rom.End(), layout.pieces);
 
     AddTableFields(info, entries, header_runs, layout);
@@ -358,6 +364,7 @@ std::vector<Span> FillerRuns(const agb::Rom& rom, const DriverInfo& info)
         {
             reached.MarkTrack(track, seen);
         }
+
         if (groups.insert(header.voices).second)
         {
             for (uint32_t program = 0; program < 128; program++)
@@ -401,6 +408,7 @@ public:
                 {
                     throw std::invalid_argument("a song names a sequence that the layout lacks");
                 }
+
                 size_ += sequence->room;
             }
             else
@@ -423,8 +431,8 @@ public:
         }
     }
 
-    // Each song in its place. Each song keeps the places of its items, and where its header lies. A header in its
-    // place takes the count of its tracks, up to the count that the run holds. A header that gains tracks past that
+    // Each song in its place. Each song keeps the places of its items, and where its header is. A header in its place
+    // takes the count of its tracks, up to the count that the run has room for. A header that gains tracks past that
     // count goes with its song into the free space. Returns the songs that move.
     std::vector<std::size_t> PlaceSongs()
     {
@@ -467,7 +475,7 @@ public:
     // the first filler run with room.
     void MoveSongs(const std::vector<std::size_t>& moving)
     {
-        uint64_t free = moving.empty() ? 0 : FreeSpaceStart(image_);
+        uint64_t free = moving.empty() ? 0 : std::max(FreeSpaceStart(image_), AlignUp(options_.free_floor, 4));
         for (const std::size_t p : moving)
         {
             const std::vector<uint8_t>* header = HeaderAfter(p);
@@ -482,7 +490,7 @@ public:
             }
 
             // The free space at the ROM's end, or else the first filler run with room. A song's encoding takes the same
-            // size wherever it lies.
+            // size wherever it goes.
             const auto& sequence = std::get<ntdlib::sar::SequencePiece>(pieces_[p]);
             const uint64_t song_size =
                 EncodeSequence(sequences_[sequence.sequence], uint32_t(kRomBase + free), options_.note_arguments)
@@ -528,7 +536,7 @@ public:
                 xsflib::StoreLe32(&image_[starts_[field.at.piece] + field.at.offset], address);
             }
 
-            // The copy holds the tracks' addresses, and any other field that lies in the header that it keeps.
+            // The copy contains the tracks' addresses, and any other field that is in the header that it keeps.
             const auto copy = copies_.find(field.at.piece);
             if (copy != copies_.end() && (track || field.at.offset + 4 <= HeaderSize(std::min<uint32_t>(
                                                                               tracks_[field.at.piece - 1], (*run)[0]))))
@@ -541,14 +549,14 @@ public:
     }
 
 private:
-    // The run after song `p`, which holds its header, or nullptr.
+    // The run after song `p`, or nullptr. The run starts with the song's header.
     const std::vector<uint8_t>* HeaderAfter(std::size_t p) const
     {
         return p + 1 < pieces_.size() ? std::get_if<std::vector<uint8_t>>(&pieces_[p + 1]) : nullptr;
     }
 
-    // Each place's position from the ROM's start. A place at the end lies at the end of the pieces. A song that moves
-    // has its items once it has moved.
+    // Each place's position from the ROM's start. A place at the end is at the end of the pieces. A song that moves has
+    // its items once it has moved.
     uint64_t Position(const ntdlib::sar::Place& place) const
     {
         if (place.sequence || place.piece > pieces_.size())
@@ -568,25 +576,30 @@ private:
             {
                 throw std::invalid_argument("a field names an item that a song lacks");
             }
+
             return items_[place.piece][place.offset];
         }
+
         if (const auto* bytes = std::get_if<std::vector<uint8_t>>(&piece))
         {
             if (place.offset > bytes->size())
             {
                 throw std::invalid_argument("a field names a byte past its run");
             }
+
             const auto copy = copies_.find(place.piece);
             return place.offset == 0 && copy != copies_.end() ? copy->second : starts_[place.piece] + place.offset;
         }
+
         if (place.offset != 0)
         {
             throw std::invalid_argument("a field names a byte inside a song");
         }
+
         return items_[place.piece].front();
     }
 
-    // Finds the filler runs, once a song needs them, and the next free byte of each.
+    // Finds the filler runs, once a song requires them, and the next free byte of each.
     void FindFiller()
     {
         // The ROM with the songs that keep their places, and with their tracks' addresses in their headers.
@@ -601,6 +614,7 @@ private:
             {
                 continue;
             }
+
             try
             {
                 const uint64_t from = Position(field.from);
@@ -639,6 +653,7 @@ private:
         {
             throw std::invalid_argument("the songs that outgrow their places don't fit in a GBA ROM's 32 MiB");
         }
+
         if (!filler_)
         {
             FindFiller();
@@ -655,6 +670,7 @@ private:
             throw std::invalid_argument(
                 "the songs that outgrow their places don't fit in a GBA ROM's 32 MiB or in its filler runs");
         }
+
         const uint64_t at = AlignUp(filled_[run], 4);
         filled_[run] = AlignUp(at + song_size, 4) + header_size;
 
@@ -675,7 +691,7 @@ private:
             image_.resize(end, 0xFF);
         }
 
-        // Zeros fill the gap before the copy, as they fill the gap before a header in place.
+        // Zeros fill the gap before the copy. They fill the gap before a header in its place too.
         std::copy(encoded.bytes.begin(), encoded.bytes.end(), image_.begin() + std::ptrdiff_t(at));
         std::fill(image_.begin() + std::ptrdiff_t(at + encoded.bytes.size()), image_.begin() + std::ptrdiff_t(copy), 0);
 
@@ -688,6 +704,7 @@ private:
         {
             items_[p].push_back(at + offset);
         }
+
         copies_[p + 1] = copy;
 
         return end;
@@ -702,7 +719,8 @@ private:
     std::vector<uint8_t> image_;
     std::vector<uint32_t> tracks_;
     std::vector<std::vector<uint64_t>> items_;
-    std::map<std::size_t, uint64_t> copies_; // the copy of each moved song's header, by the run that holds the header
+    std::map<std::size_t, uint64_t>
+        copies_; // the copy of each moved song's header, by the run that contains the header
     std::optional<std::vector<Span>> filler_;
     std::vector<uint64_t> filled_;
 };

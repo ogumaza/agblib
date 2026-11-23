@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of a tune of Rare's GBA driver for an editor. ntdlib's model of the driver (agblib::rare::Sequencer)
-// plays the tune as ConvertSong does. The performance holds the notes of ConvertSong's MIDI file, each with the command
-// that started it. It also holds each track's stretches of commands, and each track's changes of the volume of its
-// channels.
+// The performance of a tune of Rare's GBA driver for an editor. The agblib model of the driver
+// (agblib::rare::Sequencer) plays the tune as ConvertSong does. The performance contains the notes of ConvertSong's
+// MIDI file, each with the command that started it. It also contains each track's stretches of commands, and each
+// track's changes of the volume of its channels.
 
 #pragma once
 
@@ -11,11 +11,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/rare/driver.h"
 #include "agblib/sequence_export/agb/settings.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::rare
 {
@@ -24,7 +25,7 @@ namespace agblib::sequence_export::rare
 //
 // A tick is one of the tune's ticks: a delay of n in a track's data is n ticks, and the tune's header gives the ticks
 // of a quarter note (`timebase`). With ConvertSettings::frame_timing, the notes move to the ticks at which their frames
-// start, as in the MIDI file. Each of the tune's first 16 tracks plays on the track of the same number. A preset is the
+// start as in the MIDI file. Each of the tune's first 16 tracks plays on the track of the same number. A preset is the
 // note's program. A note's velocity is the driver's, up to 127. Offsets count from `base`, the address of the tune's
 // first track. agblib::rare::DecodeRomSequence decodes the bytes from there. agblib::rare::SequenceOfSong gives the
 // sequence.

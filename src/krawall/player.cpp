@@ -3,13 +3,9 @@
 #include "agblib/krawall/player.h"
 
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <string>
-#include <utility>
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
@@ -23,6 +19,7 @@ namespace agblib::krawall
 
 using agblib::agb::Hex;
 using agblib::agb::WarnOnce;
+
 namespace
 {
 
@@ -30,77 +27,11 @@ namespace
 // The bytes are the same in every build from 1.4 to 2005-04-21.
 constexpr uint8_t kPlayExtStart[] = {0xF0, 0x47, 0x2D, 0xE9, 0x02, 0x50, 0xA0, 0xE1, 0xFF, 0x40, 0x05, 0xE2, 0x2C};
 
-// An effect's entry in the player's table of effects.
-struct EffectEntry
-{
-    bool between = false; // whether the effect runs on the ticks between rows as well as on the row's tick
-    int second = 0;       // the effect whose part for the ticks between rows runs after it, or 0
-};
-
-constexpr EffectEntry EntryOf(int effect)
-{
-    switch (effect)
-    {
-    case kVolumeSlideS3m:
-    case kVolumeSlideXm:
-    case kPortaDownXm:
-    case kPortaDownS3m:
-    case kPortaUpXm:
-    case kPortaUpS3m:
-    case kPortaNote:
-    case kVibrato:
-    case kTremor:
-    case kArpeggio:
-    case kChannelVolumeSlide:
-    case kPanSlide:
-    case kRetrig:
-    case kTremolo:
-    case kFineVibrato:
-    case kGlobalVolumeSlide:
-    case kPanbrello:
-    case kNoteCut:
-    case kNoteDelay:
-        return {.between = true};
-    case kVolumeSlideVibrato:
-    case kVolumeSlideVibratoXm:
-        return {.between = true, .second = kVibrato};
-    case kVolumeSlidePorta:
-    case kVolumeSlidePortaXm:
-        return {.between = true, .second = kPortaNote};
-    default:
-        return {};
-    }
-}
-
-// Returns whether a volume column's effect runs on the ticks between rows.
-constexpr bool ColumnBetween(int effect)
-{
-    switch (effect)
-    {
-    case kColumnVolumeSlideDown:
-    case kColumnVolumeSlideUp:
-    case kColumnVibrato:
-    case kColumnPanSlideLeft:
-    case kColumnPanSlideRight:
-    case kColumnPortaNote:
-        return true;
-    default:
-        return false;
-    }
-}
-
 // The slowest tempo the sound timer takes: 16 times 24 ticks a minute.
 constexpr int kMinTimerBpm = 16 * 24;
 
 // The samples that the timer's step divides: 15 seconds of the mix.
 constexpr int32_t kTimerSamples = 15 * 16384;
-
-// Returns `v` shifted right by the bottom byte of `amount`, as an ARM register shift does.
-uint32_t ShiftRight(uint32_t v, uint32_t amount)
-{
-    amount &= 0xFF;
-    return amount >= 32 ? 0 : v >> amount;
-}
 
 } // namespace
 
@@ -137,6 +68,7 @@ Player::Player(const Rom& rom, const DriverInfo& info, uint32_t module, int mode
         Warn("the module at " + Hex(module) + " can't be read");
         return;
     }
+
     if (module_.channels > kPlayerChannels)
     {
         Warn("the module has " + std::to_string(module_.channels) + " channels, more than the player's " +
@@ -154,6 +86,7 @@ Player::Player(const Rom& rom, const DriverInfo& info, uint32_t module, int mode
     {
         hq_ramp_ = (info.quality & 0x10) ? uint8_t(1) : uint8_t(0);
     }
+
     hq_mode_ = (info.quality & 0xF) > 2 ? uint8_t(0) : uint8_t(info.quality & 0xF);
     if (info.build < Build::kV1_4)
     {
@@ -171,6 +104,7 @@ Player::Player(const Rom& rom, const DriverInfo& info, uint32_t module, int mode
     {
         mode &= ~kModeJingle;
     }
+
     mode_ = uint32_t(mode);
     speed_ = tick_ = module_.speed;
     volume_ = 64;
@@ -184,12 +118,14 @@ Player::Player(const Rom& rom, const DriverInfo& info, uint32_t module, int mode
     {
         song = 0;
     }
+
     order_ = module_.song_starts[size_t(song)];
     song_start_ = order_;
     if (!(mode_ & kModeSong))
     {
         song_start_ = module_.restart;
     }
+
     row_ = 0;
     FindRow();
 
@@ -275,6 +211,7 @@ uint32_t Player::Play(uint32_t sample, int sample_index, int sfx, uint32_t handl
         {
             return 0;
         }
+
         m = &mixer_[channel];
     }
 
@@ -290,6 +227,7 @@ uint32_t Player::Play(uint32_t sample, int sample_index, int sfx, uint32_t handl
     {
         m->hq = hq_mode_ == 2 ? uint8_t(8) : uint8_t((m->hq_sample & hq_mode_) << 3);
     }
+
     m->handle = channel | (plays_ << 8);
     SetPanning(*m, pan);
     m->volume = uint8_t(volume);
@@ -450,6 +388,7 @@ void Player::SetPanning(MixChannel& m, int32_t pan) const
     {
         m.mix = uint8_t(pan > 0 ? (pan >> 6) + 2 : (-pan) >> 6);
     }
+
     m.pan = int8_t(pan);
 }
 
@@ -468,6 +407,7 @@ void Player::ResetChannels()
         {
             SetPanning(m, m.pan);
         }
+
         SetSides(m);
     }
 }
@@ -530,6 +470,7 @@ void Player::Frame()
         output_[0].clear();
         output_[1].clear();
     }
+
     enhanced_[0].clear();
     enhanced_[1].clear();
     peaks_ = {};
@@ -560,6 +501,7 @@ void Player::Frame()
         {
             on_tick_(elapsed_);
         }
+
         timer_count_ = timer_speed_;
     }
 }
@@ -577,6 +519,7 @@ void Player::Timer()
         {
             RunEnvelopes();
         }
+
         return;
     }
 
@@ -608,6 +551,7 @@ void Player::FindRow()
         StopModule();
         return;
     }
+
     if (row_ == 0)
     {
         return;
@@ -635,6 +579,7 @@ void Player::NextRow()
         OldNextRow();
         return;
     }
+
     if (info_.build < Build::k2003_09_01)
     {
         NextRowPlayer();
@@ -657,13 +602,7 @@ void Player::NextRow()
     }
 
     // The next order, past the markers between songs (+++).
-    order_++;
-    bool marker = false;
-    while (module_.orders[order_] == kOrderSkip && order_ < module_.order_count)
-    {
-        order_++;
-        marker = true;
-    }
+    const bool marker = NextOrder(module_, order_);
 
     // Past the last order, or at a marker in song mode, the module goes back to its restart or its song's start.
     if (order_ >= module_.order_count || (marker && (mode_ & kModeSong)))
@@ -675,6 +614,7 @@ void Player::NextRow()
             return;
         }
     }
+
     row_ = 0;
     FindRow();
 
@@ -684,690 +624,6 @@ void Player::NextRow()
         row_ = uint32_t(goto_row_) >= PatternRows(rom_, info_.build, pattern_) ? uint16_t(0) : uint16_t(goto_row_);
         FindRow();
         goto_row_ = -1;
-    }
-}
-
-void Player::PlayRow()
-{
-    row_order_ = order_;
-    row_number_ = row_;
-    row_data_ = data_;
-    row_loop_state_ =
-        uint32_t(uint8_t(loop_row_)) | (uint32_t(uint8_t(loop_count_)) << 8) | (uint32_t(uint8_t(loop_active_)) << 16);
-
-    while (status_ != 0)
-    {
-        const uint32_t at = data_;
-        const uint8_t flags = rom_.U8(data_++);
-        if (!flags)
-        {
-            break;
-        }
-
-        const RowEntry entry = ReadEntry(rom_, info_.build, flags, data_);
-        channels_[size_t(entry.channel)].entry = at;
-        PlayEntry(entry);
-    }
-    row_end_ = data_;
-
-    EndRow();
-    if (status_ != 0)
-    {
-        NextRow();
-    }
-}
-
-void Player::PlayEntry(const RowEntry& entry)
-{
-    // The channel's note and instrument, volume and effect, whichever the entry gives.
-    Channel& c = channels_[size_t(entry.channel)];
-    c.in_row = 1;
-    c.last_effect = c.effect;
-    c.effect = entry.effect;
-
-    bool sample_set = false;
-    const bool instrument_volume = EntryInstrument(c, entry, sample_set);
-    const bool set_volume = EntryVolume(c, entry) || instrument_volume;
-    EntryNote(c, entry, sample_set);
-
-    // The effect's part for the row, then the note or the volume.
-    c.effect_op = entry.effect_op;
-    if (entry.effect)
-    {
-        Effect(c, entry.effect, true);
-    }
-    if (c.play_note)
-    {
-        PlayNote(c);
-    }
-    else if (set_volume)
-    {
-        SetChannelVolume(c);
-    }
-}
-
-bool Player::EntryInstrument(Channel& c, const RowEntry& entry, bool& sample_set)
-{
-    // An instrument sets the sample and its volume, and in a module with instruments, its pan too.
-    if (!entry.instrument)
-    {
-        return false;
-    }
-
-    const uint32_t index = uint16_t(entry.instrument - 1);
-    if (!instrument_based_)
-    {
-        c.sample = rom_.U32(info_.samples + 4 * index);
-        c.sample_index = int(index);
-        c.volume = c.played_volume = int8_t(rom_.U8(c.sample + kSampleVolume));
-        return true;
-    }
-    if (!entry.note)
-    {
-        return false;
-    }
-
-    c.instrument = module_.instruments_at ? module_.instruments_at + kInstrumentSize * index
-                                          : rom_.U32(info_.instruments + 4 * index);
-    const uint32_t sample_index = rom_.U16(c.instrument + 2 * uint32_t(entry.note) - 2);
-    c.sample = rom_.U32(info_.samples + 4 * sample_index);
-    c.sample_index = int(sample_index);
-    if (info_.build >= Build::k2003_09_01)
-    {
-        c.panning = c.played_panning = int8_t(rom_.U8(c.sample + kSamplePan));
-    }
-    c.volume = c.played_volume = int8_t(rom_.U8(c.sample + kSampleVolume));
-    sample_set = true;
-
-    return true;
-}
-
-bool Player::EntryVolume(Channel& c, const RowEntry& entry)
-{
-    // The volume column: a volume, or from 0x61 on, an effect. The builds before 1.4 take a volume up to 0x50, and
-    // an effect from 0x51.
-    if (!entry.volume)
-    {
-        return false;
-    }
-    if (entry.volume > (info_.build >= Build::kV1_4 ? 0x60 : 0x50))
-    {
-        c.column_effect = uint8_t(entry.volume - 0x60);
-        VolumeColumnEffect(c, true);
-        return false;
-    }
-
-    c.volume = int8_t(entry.volume - 0x10);
-    if (c.volume > 64)
-    {
-        c.volume = 64;
-    }
-    c.played_volume = c.volume;
-
-    // The builds before 1.2.2.14 keep the column's last effect. It goes on between the rows.
-    if (info_.build >= Build::kV1_2_2_14)
-    {
-        c.column_effect = 0;
-    }
-
-    return true;
-}
-
-void Player::EntryNote(Channel& c, const RowEntry& entry, bool sample_set)
-{
-    // A note, unless the channel has no sample: a note off releases the note, a note with a slide to it sets the
-    // slide's goal, and any other starts a note.
-    c.play_note = 0;
-    if (!entry.note || !c.sample)
-    {
-        return;
-    }
-    if (entry.note == kNoteOff)
-    {
-        NoteOff(c);
-        return;
-    }
-
-    const uint8_t n = uint8_t(entry.note - 1 + rom_.U8(c.sample + kSampleRelativeNote));
-    if (entry.effect == kPortaNote || entry.effect == kVolumeSlidePorta)
-    {
-        c.porta_goal = int16_t(PeriodOf(n, c.sample));
-        return;
-    }
-
-    if (instrument_based_)
-    {
-        if (!sample_set)
-        {
-            const uint32_t sample_index = rom_.U16(c.instrument + 2 * uint32_t(n));
-            c.sample = rom_.U32(info_.samples + 4 * sample_index);
-            c.sample_index = int(sample_index);
-        }
-
-        // The builds before 2003/09/01 take the pan of the note's sample when the note starts.
-        if (info_.build < Build::k2003_09_01)
-        {
-            c.panning = int8_t(rom_.U8(c.sample + kSamplePan));
-        }
-
-        // Up to 2003/09/01, the row starts the envelopes. Later builds start them with the note.
-        if (!Since2004())
-        {
-            RestartEnvelopes(c);
-        }
-    }
-
-    c.gliss_note = c.note = n;
-    c.period = c.played_period = c.porta_goal = int16_t(PeriodOf(n, c.sample));
-    c.tremor_count = 0;
-    c.start_point = 0;
-    c.play_note = 1;
-}
-
-void Player::Audition(uint16_t instrument, uint8_t note)
-{
-    audition_ = true;
-    RowEntry entry;
-    entry.note = note;
-    entry.instrument = instrument;
-    PlayEntry(entry);
-    channels_[0].in_row = 0;
-}
-
-void Player::ReleaseAudition()
-{
-    RowEntry entry;
-    entry.note = kNoteOff;
-    PlayEntry(entry);
-    channels_[0].in_row = 0;
-}
-
-void Player::EndRow()
-{
-    for (int i = 0; i < module_.channels; i++)
-    {
-        Channel& c = channels_[size_t(i)];
-        if (!c.in_row)
-        {
-            c.effect_op = 0;
-            c.last_effect = c.effect;
-            c.effect = 0;
-            c.column_effect = 0;
-        }
-        else
-        {
-            c.in_row = 0;
-        }
-
-        if (c.restore_note && c.effect != c.last_effect)
-        {
-            SetChannelFreq(c);
-            SetChannelVolume(c);
-            SetChannelPan(c);
-            c.restore_note = 0;
-        }
-    }
-}
-
-void Player::NoteOff(Channel& c)
-{
-    if (c.volume_env_state)
-    {
-        c.fading = 1;
-        c.volume_env_state = c.volume_env_state == 2 ? uint8_t(3) : uint8_t(4);
-
-        // The builds before 2003/09/01 release a pan envelope that's off too. That envelope then runs.
-        if (c.pan_env_state || info_.build < Build::k2003_09_01)
-        {
-            c.pan_env_state = c.pan_env_state == 2 ? uint8_t(3) : uint8_t(4);
-        }
-    }
-    else
-    {
-        StopChannel(c);
-    }
-}
-
-void Player::RestartEnvelopes(Channel& c)
-{
-    c.envelopes_on = 0;
-    c.instrument_vibrato_pos = 0;
-    if (rom_.U8(c.instrument + kInstrumentVolumeEnvelope + kEnvelopeFlags) & kEnvelopeOn)
-    {
-        c.volume_env_state = 3;
-        c.volume_env_tick = c.volume_env_point = 0xFF;
-        c.volume_env_target = 0;
-        if (info_.build < Build::kV1_2_2_14)
-        {
-            c.volume_env_tick = 0;
-        }
-        c.fade = 0x7FFF;
-        c.fading = 0;
-        c.envelopes_on = 1;
-    }
-    else
-    {
-        c.envelope_volume = 64;
-        c.volume_env_state = 0;
-    }
-    if (rom_.U8(c.instrument + kInstrumentPanEnvelope + kEnvelopeFlags) & kEnvelopeOn)
-    {
-        c.pan_env_state = 3;
-        c.pan_env_tick = c.pan_env_point = 0xFF;
-        c.pan_env_target = 0;
-        if (info_.build < Build::kV1_2_2_14)
-        {
-            c.pan_env_tick = 0;
-        }
-        c.envelopes_on = 1;
-    }
-    else
-    {
-        c.envelope_pan = 0;
-        c.pan_env_state = 0;
-    }
-
-    // From 2004/09/17 on, an instrument's vibrato runs without envelopes too.
-    if (Since2004() && rom_.U8(c.instrument + kInstrumentVibratoRate))
-    {
-        c.envelopes_on = 1;
-    }
-}
-
-void Player::PlayTickBetweenRows()
-{
-    for (int i = 0; i < module_.channels; i++)
-    {
-        Channel& c = channels_[size_t(i)];
-        if (c.column_effect && ColumnBetween(c.column_effect >> 4))
-        {
-            VolumeColumnEffect(c, false);
-        }
-
-        if (!c.effect || c.effect >= kEffectCount)
-        {
-            continue;
-        }
-
-        const EffectEntry entry = EntryOf(c.effect);
-        if (entry.between)
-        {
-            Effect(c, c.effect, false);
-        }
-        if (entry.second)
-        {
-            Effect(c, entry.second, false);
-        }
-    }
-}
-
-void Player::RunEnvelopes()
-{
-    for (int i = 0; i < module_.channels; i++)
-    {
-        Channel& c = channels_[size_t(i)];
-        if (!c.envelopes_on)
-        {
-            continue;
-        }
-
-        // A note that an envelope stops goes no further.
-        const bool old = info_.build < Build::kV1_2_2_14;
-        if (c.volume_env_state && !(old ? OldRunVolumeEnvelope(c) : RunVolumeEnvelope(c)))
-        {
-            continue;
-        }
-        if (c.pan_env_state > 2 && !(old ? OldRunPanEnvelope(c) : RunPanEnvelope(c)))
-        {
-            continue;
-        }
-        RunInstrumentVibrato(c);
-    }
-}
-
-bool Player::RunVolumeEnvelope(Channel& c)
-{
-    // The volume envelope and the fade after the release.
-    const uint32_t ins = c.instrument;
-    bool set_volume = false;
-    if (c.fading)
-    {
-        set_volume = true;
-        c.fade = int16_t(c.fade - rom_.U16(ins + kInstrumentFade));
-        if (c.fade <= 0)
-        {
-            StopChannel(c);
-            return false;
-        }
-    }
-
-    if (c.volume_env_state > 2)
-    {
-        set_volume = true;
-        const uint32_t env = ins + kInstrumentVolumeEnvelope;
-        c.volume_env_level = uint16_t(c.volume_env_level + rom_.U16(env + 4 * uint32_t(c.volume_env_point) + 2));
-        c.volume_env_tick++;
-        if (c.volume_env_tick == c.volume_env_target)
-        {
-            // The next point: a sustain point holds until the release, and the last one loops or stops.
-            c.volume_env_point++;
-            if ((rom_.U8(env + kEnvelopeFlags) & kEnvelopeSustains) &&
-                c.volume_env_point == rom_.U8(env + kEnvelopeSustain) && c.volume_env_state != 4)
-            {
-                c.volume_env_state = 2;
-            }
-            if (c.volume_env_point == rom_.U8(env + kEnvelopeLast))
-            {
-                if (rom_.U8(env + kEnvelopeFlags) & kEnvelopeLoops)
-                {
-                    c.volume_env_point = rom_.U8(env + kEnvelopeLoopStart);
-                    c.volume_env_tick = uint8_t(rom_.U16(env + 4 * uint32_t(c.volume_env_point)));
-                }
-                else
-                {
-                    c.volume_env_state = 1;
-                    if ((rom_.U16(env + 4 * uint32_t(c.volume_env_point)) >> 9) == 0)
-                    {
-                        StopChannel(c);
-                        return false;
-                    }
-                }
-            }
-            c.volume_env_level = uint16_t((rom_.U16(env + 4 * uint32_t(c.volume_env_point)) >> 9) << 8);
-            c.volume_env_target = uint8_t(rom_.U8(env + 4 * uint32_t(c.volume_env_point) + 4) + 1);
-        }
-    }
-
-    if (set_volume)
-    {
-        c.envelope_volume = int8_t((int32_t(c.volume_env_level) * c.fade) >> 23);
-        if (!SetPlayedVolume(c))
-        {
-            StopChannel(c);
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool Player::RunPanEnvelope(Channel& c)
-{
-    const uint32_t env = c.instrument + kInstrumentPanEnvelope;
-    c.pan_env_level = uint16_t(c.pan_env_level + rom_.U16(env + 4 * uint32_t(c.pan_env_point) + 2));
-    c.pan_env_tick++;
-    if (c.pan_env_tick == c.pan_env_target)
-    {
-        c.pan_env_point++;
-        if ((rom_.U8(env + kEnvelopeFlags) & kEnvelopeSustains) && c.pan_env_point == rom_.U8(env + kEnvelopeSustain) &&
-            c.pan_env_state != 4)
-        {
-            c.pan_env_state = 2;
-        }
-        if (c.pan_env_point == rom_.U8(env + kEnvelopeLast))
-        {
-            if (rom_.U8(env + kEnvelopeFlags) & kEnvelopeLoops)
-            {
-                c.pan_env_point = rom_.U8(env + kEnvelopeLoopStart);
-                c.pan_env_tick = uint8_t(rom_.U8(env + 4 * uint32_t(c.pan_env_point)) + 1);
-            }
-            else
-            {
-                c.pan_env_state = 1;
-            }
-        }
-        c.pan_env_level = uint16_t((rom_.U16(env + 4 * uint32_t(c.pan_env_point)) >> 9) << 8);
-        c.pan_env_target = rom_.U8(env + 4 * uint32_t(c.pan_env_point) + 4);
-    }
-
-    c.envelope_pan = int8_t(((c.pan_env_level >> 8) - 32) << 1);
-    if (!SetPlayedPan(c))
-    {
-        StopChannel(c);
-        return false;
-    }
-
-    return true;
-}
-
-void Player::RunInstrumentVibrato(Channel& c)
-{
-    // The instrument's vibrato, on the pitch that the effects leave.
-    const uint32_t ins = c.instrument;
-    const uint8_t rate = rom_.U8(ins + kInstrumentVibratoRate);
-    if (rate)
-    {
-        const int32_t wave = Wave(c.vibrato_wave, uint32_t(c.instrument_vibrato_pos) >> 2);
-        const uint16_t period =
-            uint16_t(uint16_t(c.played_period) + ((wave * rom_.U8(ins + kInstrumentVibratoDepth)) >> 8));
-        SetFreq(c.handle, FrequencyOf(period));
-        c.instrument_vibrato_pos = uint8_t(c.instrument_vibrato_pos + rate);
-    }
-}
-
-void Player::PlayNote(Channel& c)
-{
-    c.restore_note = 0;
-    if (!c.sample)
-    {
-        Warn("a note plays on a channel that has no sample yet, so it's left out");
-        return;
-    }
-
-    // From 2004/09/17 on, a note in a module with instruments starts the envelopes.
-    if (Since2004() && instrument_based_)
-    {
-        RestartEnvelopes(c);
-    }
-
-    const uint32_t freq = FrequencyOf(c.period);
-    c.handle =
-        Play(c.sample, c.sample_index, 0, c.handle, freq, uint32_t((c.volume * c.channel_volume) >> 6), c.panning);
-    if (c.handle)
-    {
-        owners_[c.handle & 0x1F] = int8_t(&c - channels_.data());
-    }
-    if (info_.build == Build::kModified && c.handle)
-    {
-        MixChannel& m = mixer_[c.handle & 0xFF];
-        m.hq_sample = rom_.U8(c.instrument + kInstrumentInterpolate);
-        m.hq = hq_mode_ == 2 ? uint8_t(8) : uint8_t((m.hq_sample & hq_mode_) << 3);
-    }
-    if (c.start_point)
-    {
-        SetPos(c.handle, uint32_t(c.start_point) << 8);
-    }
-}
-
-void Player::StopModule()
-{
-    if (status_ == 0)
-    {
-        return;
-    }
-
-    status_ = 0;
-    SetTimer(false);
-    for (int i = 0; i < module_.channels; i++)
-    {
-        StopChannel(channels_[size_t(i)]);
-    }
-}
-
-void Player::SetGlobalVolume()
-{
-    SetMusicVolume((int32_t(module_.global_volume) * volume_ * music_volume_) >> 13);
-}
-
-bool Player::SetChannelVolume(Channel& c)
-{
-    c.played_volume = c.volume;
-    return SetVol(c.handle, uint32_t((c.channel_volume * c.volume * c.envelope_volume) >> 12));
-}
-
-bool Player::SetPlayedVolume(Channel& c)
-{
-    if (!Since2004())
-    {
-        return SetChannelVolume(c);
-    }
-
-    return SetVol(c.handle, uint32_t((c.channel_volume * c.played_volume * c.envelope_volume) >> 12));
-}
-
-bool Player::SetChannelPan(Channel& c)
-{
-    c.played_panning = c.panning;
-    const int pan = int8_t(uint8_t(c.panning + c.envelope_pan));
-    return SetPan(c.handle, std::clamp(pan, -64, 64));
-}
-
-bool Player::SetPlayedPan(Channel& c)
-{
-    if (!Since2004())
-    {
-        return SetChannelPan(c);
-    }
-
-    return SetPan(c.handle, std::clamp(c.played_panning + c.envelope_pan, -64, 64));
-}
-
-bool Player::Since2004() const
-{
-    return info_.build >= Build::k2004_09_17;
-}
-
-void Player::SetChannelFreq(Channel& c)
-{
-    c.played_period = c.period;
-    SetFreq(c.handle, FrequencyOf(c.period));
-}
-
-void Player::StopChannel(Channel& c)
-{
-    c.envelopes_on = 0;
-    Stop(c.handle);
-}
-
-uint16_t Player::PeriodOf(uint32_t note, uint32_t sample) const
-{
-    const int fine_tune = rom_.S8(sample + kSampleFineTune);
-    if (module_.linear)
-    {
-        return uint16_t(LinearPeriod(note, fine_tune));
-    }
-
-    return uint16_t(AmigaPeriod(rom_, info_, note, fine_tune));
-}
-
-uint32_t Player::FrequencyOf(int32_t period) const
-{
-    if (module_.linear)
-    {
-        return LinearFreq(uint32_t(period));
-    }
-
-    return uint32_t(Div(kAmigaClock, period).first);
-}
-
-uint32_t Player::LinearFreq(uint32_t period) const
-{
-    // The octave above the table's, and the step within it, of 768 to the octave.
-    const uint32_t octave = ((period >> 6) * 0xAAAB) >> 19;
-    const uint32_t step = period - octave * 768;
-    return ShiftRight(rom_.U32(info_.linear + 4 * step), 23 - octave);
-}
-
-int16_t Player::Wave(uint32_t table, uint32_t index) const
-{
-    return int16_t(rom_.U16(table + 2 * index));
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// The effects
-
-void Player::VolumeSlideS3m(Channel& c, bool on_row)
-{
-    // On the row, a fine slide (xF or Fx) slides once, and a normal one, in a module with fast slides, too.
-    if (on_row)
-    {
-        if (c.effect_op)
-        {
-            c.volume_slide = c.effect_op;
-        }
-
-        const int up = c.volume_slide >> 4, down = c.volume_slide & 0xF;
-        c.volume_slide_once = 0;
-        if (up && down == 0xF)
-        {
-            c.volume_slide_once = 1;
-            VolumeUp(c, up);
-        }
-        else if (down && up == 0xF)
-        {
-            c.volume_slide_once = 1;
-            VolumeDown(c, down);
-        }
-
-        if (c.effect == kVolumeSlideVibrato && c.restore_note && c.last_effect == kVibrato)
-        {
-            c.restore_note = 0;
-        }
-        if (!fast_slides_)
-        {
-            return;
-        }
-    }
-
-    if (!c.volume_slide_once)
-    {
-        SlideVolume(c);
-    }
-}
-
-void Player::PortaS3m(Channel& c, bool on_row, bool up)
-{
-    // On the row, Ex and Fx steps slide once, extra fine and fine; between rows, other steps slide by 4 times
-    // themselves. Up lowers the period, and a period that reaches 0 stops the note.
-    if (on_row)
-    {
-        if (c.effect_op)
-        {
-            c.porta = c.effect_op;
-        }
-        if (c.porta < 0xE0)
-        {
-            return;
-        }
-        if ((c.porta & 0xF0) == 0xF0)
-        {
-            c.period = int16_t(c.period + (up ? -1 : 1) * ((c.porta & 0xF) << 2));
-        }
-        else if ((c.porta & 0xF0) == 0xE0)
-        {
-            c.period = int16_t(c.period + (up ? -1 : 1) * (c.porta & 0xF));
-        }
-        if (up && c.period <= 0)
-        {
-            StopChannel(c);
-        }
-        SetChannelFreq(c);
-        return;
-    }
-
-    // A step of 0, or of 0xE0 or more, doesn't slide between rows.
-    if (uint8_t(c.porta - 1) > 0xDE)
-    {
-        return;
-    }
-
-    if (up)
-    {
-        LowerPeriod(c, c.porta << 2);
-    }
-    else
-    {
-        RaisePeriod(c, c.porta << 2);
     }
 }
 

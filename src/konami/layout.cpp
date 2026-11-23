@@ -14,6 +14,7 @@
 
 #include "xsflib/bytes.h"
 
+#include "agblib/agb/cut_steps.h"
 #include "agblib/konami/commands.h"
 
 namespace agblib::konami
@@ -23,16 +24,10 @@ namespace
 
 using agb::kRomBase;
 
-// The sample numbers that the driver's commands reach: 12 bits.
-constexpr int kSampleNumbers = 0x1000;
-
-// The invalid entries of a row that end a walk of a sample table.
-constexpr int kInvalidRow = 64;
-
 // The bytes that each of the driver's other tables takes up at most, by the indices that its commands can give it.
 constexpr uint32_t kVolumeTableBytes = 256 * 64;
-// The PSG's table holds 128 semitones, but a note's key byte reaches 255, and a pitch bend adds to it. Some songs play
-// such a key, and the driver reads the table's entry past its end. Bytes there change how the note sounds.
+// The PSG's table contains 128 semitones, but a note's key byte reaches 255, and a pitch bend adds to it. Some songs
+// play such a key, and the driver reads the table's entry past its end. Bytes there change how the note sounds.
 constexpr uint32_t kFrequencyTableBytes = (256 + 16) * 32 * 2;
 constexpr uint32_t kNoiseTableBytes = 256 * 2;
 constexpr uint32_t kWaveTableBytes = 128 * 16 * 16;
@@ -74,24 +69,13 @@ std::map<int, CutSong> ReadSongs(const Rom& rom, const DriverInfo& info)
         CutSong song;
         song.header = header;
         song.decoded = DecodeSong(rom, info, s);
-        for (const ntdlib::commands::Command& item : song.decoded.sequence.items)
+        const auto encode = [&]()
         {
-            if (item.kind == ntdlib::commands::Kind::kData)
-            {
-                song.size += uint32_t(item.bytes.size());
-            }
-        }
-        try
-        {
-            const Encoded encoded = EncodeSequence(song.decoded.sequence, song.decoded.entries, info.revision);
-            song.size = uint32_t(encoded.bytes.size());
-            song.usable = !song.decoded.opaque && rom.Contains(header.base, song.size) &&
-                          std::equal(encoded.bytes.begin(), encoded.bytes.end(), rom.Ptr(header.base));
-        }
-        catch (const std::invalid_argument&)
-        {
-            // The song stays among the ROM's bytes, up to the end of its data.
-        }
+            return EncodeSequence(song.decoded.sequence, song.decoded.entries, info.revision);
+        };
+        const agb::CutSize cut = agb::SizeOfCut(rom, header.base, song.decoded, encode);
+        song.size = cut.size;
+        song.usable = cut.usable;
         songs.emplace(s, std::move(song));
     }
 
@@ -103,7 +87,7 @@ void MarkSamples(Reached& reached, const Rom& rom, const DriverInfo& info, uint3
                  uint32_t entry_size)
 {
     int invalid = 0;
-    for (int n = 0; n < kSampleNumbers && invalid < kInvalidRow; n++)
+    for (int n = 0; n < kSampleNumbers && invalid < kInvalidSampleRun; n++)
     {
         const SampleInfo sample = info.Sample(rom, first + n);
         if (!sample.valid)
@@ -116,8 +100,9 @@ void MarkSamples(Reached& reached, const Rom& rom, const DriverInfo& info, uint3
         reached.Mark(table, uint64_t(n + 1) * entry_size);
         if (info.revision != Revision::kDungeonDiceMonsters)
         {
-            reached.Mark(rom.U32(table + uint32_t(n) * entry_size), 12);
+            reached.Mark(rom.U32(table + uint32_t(n) * entry_size), kSampleHeaderBytes);
         }
+
         reached.Mark(sample.data, sample.length);
         if (sample.packed)
         {
@@ -142,6 +127,7 @@ Reached ReachedBytes(const Rom& rom, const DriverInfo& info, const std::map<int,
     {
         MarkSamples(reached, rom, info, info.sample_table, 0, dungeon ? 8 : 4);
     }
+
     if (info.live_sample_table)
     {
         MarkSamples(reached, rom, info, info.live_sample_table, 0x8000, 4);
@@ -154,6 +140,7 @@ Reached ReachedBytes(const Rom& rom, const DriverInfo& info, const std::map<int,
             reached.Mark(address, size);
         }
     };
+
     mark_table(info.volume_table, kVolumeTableBytes);
     mark_table(info.psg_freq_table, kFrequencyTableBytes);
     mark_table(info.noise_table, kNoiseTableBytes);
@@ -179,6 +166,7 @@ std::vector<int> KeptSongs(std::map<int, CutSong>& songs, const DriverInfo& info
     {
         order.push_back(number);
     }
+
     std::stable_sort(order.begin(), order.end(),
                      [&songs](int a, int b) { return songs.at(a).header.base < songs.at(b).header.base; });
 
@@ -200,18 +188,22 @@ std::vector<int> KeptSongs(std::map<int, CutSong>& songs, const DriverInfo& info
         {
             song.usable = false;
         }
+
         if (reader >= 0 && song.header.base < read_to)
         {
             song.usable = false;
             songs.at(reader).usable = false;
         }
+
         if (reader < 0 || end > read_to)
         {
             reader = number;
             read_to = end;
         }
+
         kept.push_back(number);
     }
+
     std::erase_if(kept, [&songs](int number) { return !songs.at(number).usable; });
 
     return kept;
@@ -234,6 +226,7 @@ std::map<uint32_t, uint32_t> AddPieces(const Rom& rom, std::map<int, CutSong>& s
         layout.sequences.push_back(std::move(song.decoded.sequence));
         at = song.header.base + song.size;
     }
+
     agb::AddRomRun(rom, at, rom.End(), layout.pieces);
 
     return pieces_of;
@@ -243,7 +236,7 @@ std::map<uint32_t, uint32_t> AddPieces(const Rom& rom, std::map<int, CutSong>& s
 void AddEntryFields(const std::map<int, CutSong>& songs, const DriverInfo& info,
                     const std::map<uint32_t, uint32_t>& pieces_of, Layout& layout)
 {
-    // A song table entry's fields lie in the run that holds the table: the songs lie clear of it.
+    // A song table entry's fields are in the run that contains the table: the songs are clear of it.
     for (const auto& [number, song] : songs)
     {
         const auto piece = pieces_of.find(song.header.base);
@@ -314,6 +307,7 @@ std::vector<uint8_t> Join(Revision revision, std::span<const ntdlib::commands::S
     {
         return EncodeSequence(sequences[sequence], entries[piece], revision);
     };
+
     agb::JoinedRom rom(pieces, sequences.size(), fields, free, {.filler = options.filler, .sequences = "songs"},
                        encode);
     for (const ntdlib::sar::Field& field : fields)
@@ -327,6 +321,7 @@ std::vector<uint8_t> Join(Revision revision, std::span<const ntdlib::commands::S
             {
                 throw std::invalid_argument("a track starts past 0xFFFF bytes from its song's base");
             }
+
             xsflib::StoreLe16(at, uint16_t(to - from));
         }
         else

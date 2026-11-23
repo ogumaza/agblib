@@ -15,9 +15,13 @@
 #include <utility>
 #include <vector>
 
+#include "seqlib/midi/encoder.h"
+
 #include "agblib/agb/apu.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/output_peaks.h"
+#include "agblib/agb/player_steps.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/rd1/sequencer.h"
 #include "enhanced_mix.h"
 #include "table_bytes.h"
@@ -27,18 +31,15 @@ namespace agblib::rd1
 namespace
 {
 
-constexpr uint32_t kRegFifoVolumes = 0x04000082; // SOUNDCNT_H's low byte
-constexpr uint32_t kRegSoundCntHigh = 0x04000083;
-
 // A player's entry in the player setup table: +4 its channel records, +12 its track records.
 constexpr uint32_t kSetupChannels = 4;
 constexpr uint32_t kSetupTracks = 12;
 
-// A track's record: +0 bit 0 is set while the track plays, and +0xC holds the 256ths of a tick to its next event.
+// A track's record: +0 bit 0 is set while the track plays, and +0xC contains the 256ths of a tick to its next event.
 constexpr uint32_t kTrackBytes = 32;
 constexpr uint32_t kTrackWait = 0xC;
 
-// A voice's record: +0xC holds the address of the channel record that the voice plays.
+// A voice's record: +0xC contains the address of the channel record that the voice plays.
 constexpr uint32_t kVoiceChannel = 0xC;
 
 // The frames between a voice's mixing and its playing: the lead of the mixer in the rings.
@@ -49,7 +50,7 @@ constexpr uint32_t kAuditionRecord = agb::kEwramBase + agb::kEwramSize - 0x100;
 constexpr uint32_t kAuditionMidi = kAuditionRecord + 0x20;
 
 // The audition note's wait before its note-off: 0x7FFFFF ticks, the longest that the track's wait of 256ths of a tick
-// holds.
+// contains.
 constexpr std::array<uint8_t, 4> kLongestDelta = {0x83, 0xFF, 0xFF, 0x7F};
 
 GameRoutines Routines(const Rom& rom, const DriverInfo& info)
@@ -107,7 +108,7 @@ void ArchivePlayer::Arm(int player, const ArchivePlayerOptions& options)
     }
 
     apu.SetSequencer(options.sequencer_step, options.sequencer_cycles);
-    apu.SetTimer(apu.Register(kRegSoundCntHigh) >> 2 & 1, period_, period_);
+    apu.SetTimer(apu.Register(agb::kRegSoundCntHHigh) >> 2 & 1, period_, period_);
     const std::vector<int8_t> pending_a = driver_.PendingA();
     enhanced_.reset();
     if (options.enhanced)
@@ -175,6 +176,7 @@ void ArchivePlayer::StartNote(int song, uint8_t program, uint8_t key, uint8_t ve
     {
         gba.Store(kAuditionRecord + i, 1, rom_.U8(record.address + i));
     }
+
     gba.Store(kAuditionRecord, 4, kAuditionMidi);
 
     std::vector<uint8_t> track = {0x00, uint8_t(0xC0), program, 0x00, uint8_t(0x90), key, velocity};
@@ -182,11 +184,10 @@ void ArchivePlayer::StartNote(int song, uint8_t program, uint8_t key, uint8_t ve
     track.insert(track.end(), {uint8_t(0x80), key, 0x00, 0x00, 0xFF, 0x2F, 0x00});
 
     // The header: format 0, one track and the song's division. Then the track's chunk.
-    std::vector<uint8_t> file = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1};
-    file.push_back(rom_.U8(record.midi + 12));
-    file.push_back(rom_.U8(record.midi + 13));
-    file.insert(file.end(), {'M', 'T', 'r', 'k', 0, 0, 0, uint8_t(track.size())});
-    file.insert(file.end(), track.begin(), track.end());
+    const uint16_t division = uint16_t(rom_.U8(record.midi + 12) << 8 | rom_.U8(record.midi + 13));
+    std::vector<uint8_t> file;
+    seqlib::midi::AppendHeader(file, 0, 1, division);
+    seqlib::midi::AppendTrack(file, track);
     for (size_t i = 0; i < file.size(); i++)
     {
         gba.Store(kAuditionMidi + uint32_t(i), 1, file[i]);
@@ -214,20 +215,14 @@ GameDriver& ArchivePlayer::Driver()
 
 void ArchivePlayer::RunFrame(std::vector<int16_t>& out)
 {
-    if (enhanced_)
-    {
-        throw std::logic_error("the song plays in the enhanced mode");
-    }
+    agb::CheckPlainFrame(bool(enhanced_));
 
     Frame(&out, nullptr);
 }
 
 void ArchivePlayer::RunFrame(std::vector<float>& out)
 {
-    if (started_ && !enhanced_)
-    {
-        throw std::logic_error("the song doesn't play in the enhanced mode");
-    }
+    agb::CheckEnhancedFrame(started_, bool(enhanced_));
 
     Frame(nullptr, &out);
 }
@@ -239,7 +234,7 @@ void ArchivePlayer::RunFrame()
 
 uint32_t ArchivePlayer::SilentTracks() const
 {
-    return muted_ | (soloed_ ? ~soloed_ : 0);
+    return agb::SilentTracksOf(muted_, soloed_);
 }
 
 int ArchivePlayer::VoiceTrack(uint32_t record)
@@ -308,6 +303,7 @@ void ArchivePlayer::BeforeMix()
             silenced_.emplace_back(at, uint16_t(gba.Load(at + 2, 2)));
             gba.Store(at + 2, 2, 0);
         }
+
         if (keep)
         {
             MixVoice voice;
@@ -318,6 +314,7 @@ void ArchivePlayer::BeforeMix()
             {
                 voice.record[i] = uint8_t(gba.Load(at + i, 1));
             }
+
             mixed_voices_.push_back(voice);
         }
     }
@@ -325,18 +322,7 @@ void ArchivePlayer::BeforeMix()
 
 void ArchivePlayer::RunHardware(uint64_t cycles, std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (out)
-    {
-        apu_.Run(cycles, *out);
-    }
-    else if (enhanced_out)
-    {
-        apu_.Run(cycles, *enhanced_out);
-    }
-    else
-    {
-        apu_.Run(cycles);
-    }
+    agb::RunApu(apu_, cycles, out, enhanced_out);
 }
 
 void ArchivePlayer::RunTransfers()
@@ -392,18 +378,15 @@ bool ArchivePlayer::Sounding()
         }
     }
 
-    // A FIFO's output holds the byte that the timer took last. The last byte that wasn't 0 sounds until the timer takes
-    // the byte after it.
+    // A FIFO's output contains the byte that the timer took last. The last byte that wasn't 0 sounds until the timer
+    // takes the byte after it.
     const uint64_t taken = queued_ - apu_.Queued(0);
     return !apu_.PsgSilent() || (last_sound_ && taken <= *last_sound_ + 1);
 }
 
 void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (!started_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(started_);
 
     metering_ = metered_ && (out || enhanced_out);
     const size_t first_sample = out ? out->size() : enhanced_out ? enhanced_out->size() : 0;
@@ -418,6 +401,7 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
     {
         driver_.Gba().Store(at + 2, 2, gains);
     }
+
     for (const agb::RegisterWrite& write : driver_.SoundWrites())
     {
         apu_.Store(write.address, write.size, write.value);
@@ -458,8 +442,8 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
 ArchivePlayer::TrackParts ArchivePlayer::EnhancedParts() const
 {
     // A FIFO's sample counts 4 or 2 times in the output's 10 bits, and 64 times that on the scale of 16-bit samples.
-    const uint8_t volumes = apu_.Register(kRegFifoVolumes);
-    const uint8_t sides = apu_.Register(kRegSoundCntHigh);
+    const uint8_t volumes = apu_.Register(agb::kRegSoundCntH);
+    const uint8_t sides = apu_.Register(agb::kRegSoundCntHHigh);
     TrackParts parts = {};
     for (size_t t = 0; t < parts.size(); t++)
     {
@@ -471,6 +455,7 @@ ArchivePlayer::TrackParts ArchivePlayer::EnhancedParts() const
             {
                 parts[t][1] = std::max(parts[t][1], value);
             }
+
             if (sides >> (4 * f + 1) & 1)
             {
                 parts[t][0] = std::max(parts[t][0], value);
@@ -486,8 +471,8 @@ ArchivePlayer::TrackParts ArchivePlayer::VoiceParts(size_t samples) const
     // A voice's sample adds sample * gain to the mix. The output's byte takes the mix's bits from bit 7 on, and plays
     // at 4 or 2 times in the output's 10 bits: the FIFO's volume at 100% or 50%. SOUNDCNT_H's high byte puts each FIFO
     // on its sides, the right in the low bit.
-    const uint8_t volumes = apu_.Register(kRegFifoVolumes);
-    const uint8_t sides = apu_.Register(kRegSoundCntHigh);
+    const uint8_t volumes = apu_.Register(agb::kRegSoundCntH);
+    const uint8_t sides = apu_.Register(agb::kRegSoundCntHHigh);
     TrackParts parts = {};
     for (const MixVoice& voice : mixed_voices_)
     {
@@ -517,6 +502,7 @@ ArchivePlayer::TrackParts ArchivePlayer::VoiceParts(size_t samples) const
             {
                 sample += (rom_.S8(at + 1) - sample) * int32_t(place & 0x3FC0) >> 14;
             }
+
             peak = std::max(peak, std::abs(sample));
             place += step;
             if (place >= end)
@@ -541,6 +527,7 @@ ArchivePlayer::TrackParts ArchivePlayer::VoiceParts(size_t samples) const
             {
                 part[1] = std::max(part[1], value);
             }
+
             if (sides >> (4 * f + 1) & 1)
             {
                 part[0] = std::max(part[0], value);
@@ -566,9 +553,7 @@ void ArchivePlayer::TakePeaks(const TrackParts& parts)
         }
 
         const std::array<int32_t, 2> part = apu_.ChannelPeaks(c);
-        std::array<int32_t, 2>& peak = peaks_[size_t(track)];
-        peak[0] = std::max(peak[0], part[0]);
-        peak[1] = std::max(peak[1], part[1]);
+        agb::KeepPeak(peaks_[size_t(track)], part);
     }
 }
 
@@ -579,22 +564,12 @@ bool ArchivePlayer::Busy() const
 
 void ArchivePlayer::MuteTrack(int track, bool mute)
 {
-    if (track < 0 || track >= kMaxChannels)
-    {
-        throw std::out_of_range("a song has at most " + std::to_string(kMaxChannels) + " tracks");
-    }
-
-    muted_ = mute ? muted_ | 1u << track : muted_ & ~(1u << track);
+    agb::SetTrackBit(muted_, track, mute, kMaxChannels);
 }
 
 void ArchivePlayer::SoloTrack(int track, bool solo)
 {
-    if (track < 0 || track >= kMaxChannels)
-    {
-        throw std::out_of_range("a song has at most " + std::to_string(kMaxChannels) + " tracks");
-    }
-
-    soloed_ = solo ? soloed_ | 1u << track : soloed_ & ~(1u << track);
+    agb::SetTrackBit(soloed_, track, solo, kMaxChannels);
 }
 
 void ArchivePlayer::MeterTracks(bool on)
@@ -610,10 +585,7 @@ void ArchivePlayer::MeterTracks(bool on)
 
 ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot* previous) const
 {
-    if (!started_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(started_);
 
     Snapshot snapshot;
     snapshot.owner_ = this;
@@ -640,10 +612,7 @@ ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot* previous) const
 
 void ArchivePlayer::Restore(const Snapshot& snapshot)
 {
-    if (snapshot.owner_ != this)
-    {
-        throw std::invalid_argument("the snapshot is another player's");
-    }
+    agb::CheckSnapshotOwner(snapshot.owner_ == this);
 
     driver_.Gba().Restore(snapshot.system_);
     apu_ = snapshot.apu_;

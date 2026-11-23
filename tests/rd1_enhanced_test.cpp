@@ -6,12 +6,12 @@
 // volume over 2^14.
 
 #include <array>
-#include <cmath>
 #include <cstdint>
 #include <vector>
 
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/rd1/driver.h"
@@ -19,6 +19,7 @@
 #include "agblib/testing/agb_cart.h"
 #include "rd1/enhanced_mix.h"
 
+using agblib::testing::agb_tests::NearLevel;
 using xsflib::testing::Check;
 
 namespace
@@ -90,11 +91,6 @@ rd1::MixVoice Voice(uint32_t place, int volume, bool filtered = false)
     return voice;
 }
 
-bool Near(float value, double expected)
-{
-    return std::fabs(double(value) - expected) <= 0.005 * std::fabs(expected) + 1e-6;
-}
-
 // The lead and the frames' lengths follow the console's samples. The first sample plays from the timer's first
 // overflow.
 void TestLengths()
@@ -124,11 +120,11 @@ void TestLevels()
     bool flat = true;
     for (size_t i = 0; i < mix.Out()[0].size(); i++)
     {
-        flat = flat && Near(mix.Out()[0][i], 32.0) && Near(mix.Out()[1][i], 16.0);
+        flat = flat && NearLevel(mix.Out()[0][i], 32.0) && NearLevel(mix.Out()[1][i], 16.0);
     }
 
     Check(flat, "a voice that wasn't on takes its levels at once");
-    Check(Near(mix.Parts()[2][0], 32.0) && Near(mix.Parts()[2][1], 16.0) && mix.Parts()[0][0] == 0.0f,
+    Check(NearLevel(mix.Parts()[2][0], 32.0) && NearLevel(mix.Parts()[2][1], 16.0) && mix.Parts()[0][0] == 0.0f,
           "the voice's part goes to its track");
 
     // The frame ends at point 32 + 200: past the end, 40 into the loop.
@@ -139,12 +135,13 @@ void TestLevels()
     const std::vector<float>& a = mix.Out()[0];
     const size_t n = a.size();
     const double half = 32.0 - 16.0 * double(n / 2) / double(n);
-    Check(Near(a[0], 32.0) && Near(a[n / 2], half) && Near(a[n - 1], 32.0 - 16.0 * double(n - 1) / double(n)),
+    Check(NearLevel(a[0], 32.0) && NearLevel(a[n / 2], half) &&
+              NearLevel(a[n - 1], 32.0 - 16.0 * double(n - 1) / double(n)),
           "a voice that goes on moves to its levels across the frame");
 
     mix.Frame({Voice(33, 128)}, {}, kFrameSamples, true);
 
-    Check(Near(mix.Out()[0][0], 32.0), "a voice from another place takes its levels at once");
+    Check(NearLevel(mix.Out()[0][0], 32.0), "a voice from another place takes its levels at once");
 
     const uint32_t kAfter = (33 + 2 * kFrameSamples) % kSamplePoints;
 
@@ -160,7 +157,7 @@ void TestLevels()
 
     mix.Frame({Voice(kAfter, 64)}, {}, kFrameSamples, true);
 
-    Check(Near(mix.Out()[0][0], 16.0), "after a frame without samples, a voice takes its levels at once");
+    Check(NearLevel(mix.Out()[0][0], 16.0), "after a frame without samples, a voice takes its levels at once");
 }
 
 // The filter of CC72 is a one-pole filter. At the console's rate, its coefficient k is c / 256, where c is the low 7
@@ -179,8 +176,9 @@ void TestFilter()
 
     low.Frame({Voice(32, 128, true)}, settings, kFrameSamples, true);
 
-    Check(Near(low.Out()[0][0], 32.0 * (1.0 - kCoefficient)), "the low-pass takes the voice through its coefficient");
-    Check(Near(low.Out()[0][1], 32.0 * (1.0 - kCoefficient * kCoefficient)), "the low-pass's state moves on");
+    Check(NearLevel(low.Out()[0][0], 32.0 * (1.0 - kCoefficient)),
+          "the low-pass takes the voice through its coefficient");
+    Check(NearLevel(low.Out()[0][1], 32.0 * (1.0 - kCoefficient * kCoefficient)), "the low-pass's state moves on");
 
     settings.filter = 0xC0;
     settings.filter_gain = 2;
@@ -188,13 +186,13 @@ void TestFilter()
 
     high.Frame({Voice(32, 128, true)}, settings, kFrameSamples, true);
 
-    Check(Near(high.Out()[0][0], 64.0 * kCoefficient), "the high-pass takes the voice and its gain");
+    Check(NearLevel(high.Out()[0][0], 64.0 * kCoefficient), "the high-pass takes the voice and its gain");
 
     rd1::EnhancedMix past(rom, kPeriod, kLead);
 
     past.Frame({Voice(32, 128, false)}, settings, kFrameSamples, true);
 
-    Check(Near(past.Out()[0][0], 32.0), "a voice that isn't through the filter keeps its level");
+    Check(NearLevel(past.Out()[0][0], 32.0), "a voice that isn't through the filter keeps its level");
 }
 
 } // namespace

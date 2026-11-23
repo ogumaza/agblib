@@ -47,8 +47,8 @@ constexpr const char* kVolumeCall = "6879 1C28";
 constexpr uint32_t kVolumeCallAt = 0x22;
 
 // The routine that runs a command from the game (0x0819B33E in A88E): a jump through a table by the command's top 4
-// bits. Its literal at +8 is the table. Command 5 starts a sound effect through a call at +6. The first literal of
-// the routine that it calls is the table of sound effects, which follows the song table.
+// bits. Its literal at +8 is the table. Command 5 starts a sound effect through a call at +6. The first literal of the
+// routine that it calls is the table of sound effects. That table follows the song table.
 constexpr const char* kCommandRoutine = "0B18 28xx D8xx 0080 49xx 1840 6800 4687";
 constexpr uint32_t kCommandTableLiteral = 8;
 constexpr uint32_t kEffectCommand = 5;
@@ -155,6 +155,7 @@ bool DetectDriver(const Rom& rom, DriverInfo& info, std::string& error)
             info.start_routine = at;
         }
     }
+
     if (!info.start_routine)
     {
         return false;
@@ -227,6 +228,7 @@ bool DetectDriver(const Rom& rom, DriverInfo& info, std::string& error)
     {
         info.log.push_back("the older version of Tottoko Hamtaro 4: a note sets the track's volume");
     }
+
     info.log.push_back("song table at " + Hex(info.song_table) + ", " + std::to_string(info.song_count) + " songs");
     info.log.push_back("instruments at " + Hex(info.instrument_table) + ", " + std::to_string(info.instrument_count));
     info.log.push_back("samples at " + Hex(info.sample_table) + ", " + std::to_string(info.sample_count));
@@ -256,6 +258,7 @@ std::vector<Region> Regions(const Rom& rom, const DriverInfo& info, int instrume
         {
             r.envelope[i] = rom.U8(at + 4 + i);
         }
+
         out.push_back(r);
     }
 

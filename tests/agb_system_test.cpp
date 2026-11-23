@@ -28,7 +28,7 @@ using agblib::agb::kRomBase;
 using agblib::agb::Rom;
 using agblib::agb::System;
 
-// Where the cartridge holds each program and its data.
+// Where the cartridge contains each program and its data.
 constexpr uint32_t kCpuSet = kRomBase + 0x000;     // swi 0x0B; bx lr
 constexpr uint32_t kCpuFastSet = kRomBase + 0x010; // swi 0x0C; bx lr
 constexpr uint32_t kDiv = kRomBase + 0x020;        // swi 6; bx lr
@@ -220,6 +220,7 @@ void TestLz77()
         XSFLIB_CHECK(system.Load(kEwramBase + i, 1) == uint8_t(kExpected[i]));
         XSFLIB_CHECK(system.Load(kIwramBase + i, 1) == uint8_t(kExpected[i]));
     }
+
     XSFLIB_CHECK(system.Load(kEwramBase + 10, 1) == 0);
 
     const std::string error =
@@ -271,7 +272,7 @@ void TestDma()
     XSFLIB_CHECK(system.Load(kIwramBase, 4) == 0x1111);
 
     // DMA 0 reads only the internal memories. Its source loses its top bits, and the cartridge's address reads the
-    // BIOS's memory. That memory holds zeros here.
+    // BIOS's memory. That memory contains zeros here.
     CallThumb(system, kDma, {kData, kEwramBase + 0x20, 2 | 0x8400u << 16, kDma0});
     XSFLIB_CHECK(system.Load(kEwramBase + 0x20, 4) == 0);
 
@@ -313,6 +314,7 @@ void TestIo()
     {
         CallThumb(system, kLoad16, {kRegVcount});
     }
+
     XSFLIB_CHECK(CallThumb(system, kLoad16, {kRegVcount}) == 0);
 
     // A held count stays.
@@ -322,7 +324,7 @@ void TestIo()
     system.HoldVcount(std::nullopt);
     XSFLIB_CHECK(CallThumb(system, kLoad16, {kRegVcount}) == 161);
 
-    // The other registers hold what the code writes, and the callback sees each write.
+    // The other registers keep what the code writes, and the callback sees each write.
     std::vector<std::array<uint32_t, 3>> writes;
     system.on_io_write = [&](uint32_t address, int size, uint32_t value)
     {

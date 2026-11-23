@@ -9,11 +9,13 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/wave/sinc.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sinc_mix.h"
 #include "agblib/ubimilan/driver.h"
 #include "agblib/ubimilan/sequencer.h"
-#include "ntdlib/wave/sinc.h"
 
 namespace agblib::ubimilan
 {
@@ -178,30 +180,17 @@ float Output::PointOf(const EnhancedVoice& voice, int64_t n) const
 void Output::MixEnhancedVoice(EnhancedVoice& voice, uint64_t move)
 {
     const size_t samples = agb::kEnhancedFrameSamples;
-    constexpr double kUnit = 4294967296.0;
-    const ntdlib::wave::SincKernel& kernel =
-        ntdlib::wave::SincKernel::ForStep(double(move) / (double(samples) * kUnit));
+    const ntdlib::wave::SincKernel& kernel = agb::FrameKernel(move, samples);
     const int64_t width = kernel.HalfWidth();
     const uint64_t start = voice.position;
     voice.position += move;
     const bool heard = enhanced_frames_ && !voices_muted_;
     if (heard)
     {
-        const int64_t first = int64_t(start >> 32) - (width - 1);
-        const int64_t last = int64_t((start + move) >> 32) + width;
-        std::vector<float> input(size_t(last - first + 1));
-        for (int64_t n = first; n <= last; n++)
-        {
-            input[size_t(n - first)] = PointOf(voice, n);
-        }
-
+        const agb::SincPoints points(kernel, start, move, [&](int64_t n) { return PointOf(voice, n); });
         for (size_t i = 0; i < samples; i++)
         {
-            const uint64_t position = start + uint64_t(i) * move / samples;
-            const int64_t point = int64_t(position >> 32);
-            const float value =
-                kernel.At(&input[size_t(point - (width - 1) - first)], uint32_t(position >> 16) & 0xFFFF);
-            enhanced_samples_[i] += value * voice.level;
+            enhanced_samples_[i] += points.At(start + uint64_t(i) * move / samples) * voice.level;
         }
     }
 

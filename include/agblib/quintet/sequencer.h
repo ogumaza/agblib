@@ -84,7 +84,7 @@ struct Channel
     uint16_t lfo_delay = 0;                    // 0x50
     uint16_t lfo_period = 0;                   // 0x52
     uint16_t lfo_depth = 0;                    // 0x54
-    uint8_t slide_next = 0;                    // 0x56: D4, so the next note slides from the last
+    uint8_t slide_next = 0;                    // 0x56: D4: the next note slides from the last
     uint8_t sliding = 0;                       // 0x57
     uint16_t slide_frames = 2;                 // 0x58: E5
     uint16_t slide_time = 0;                   // 0x5A
@@ -92,8 +92,8 @@ struct Channel
     std::array<uint8_t, 8> repeat_count = {};  // 0x7C: D7's counters
     uint8_t repeat_depth = 0;                  // 0x84
     uint32_t macro = 0;                        // 0x88: the noise macro's next byte, or 0
-    uint32_t macro_start = 0;                  // 0x8C: DB's macro, which each note starts
-    uint8_t macro_hold = 0;                    // 0x90: frames to hold each setting, less 1
+    uint32_t macro_start = 0;                  // 0x8C: DB's macro, started by each note
+    uint8_t macro_hold = 0;                    // 0x90: frames to keep each setting, less 1
     uint8_t macro_count = 0;                   // 0x91
     uint8_t sample_bank = 0;                   // the bank of PCM samples: 0 for music, 1 for sound effects
     uint8_t macro_bank = 0;                    // the bank of noise macros: 0 for music, 1 for sound effects
@@ -113,7 +113,7 @@ struct Fifo
     uint32_t loop_position = 0; // 0x20: that count at the loop start
 };
 
-// A musical event on a channel, which the conversion follows.
+// A musical event on a channel, for the conversion.
 struct Event
 {
     enum Kind : uint8_t
@@ -143,8 +143,8 @@ struct Event
 // A stretch of a channel's commands that ran one after another (Sequencer::RecordPerformance). A stretch begins where
 // its channel starts, where FF goes back to the loop point, and where D7 goes back to the start of its repeat. A
 // stretch also begins after each note, rest and wait, and keeps `loop` from the stretch before it. A stretch therefore
-// holds at most one wait, at its end. Its commands run in the frame where it begins. The notes or rests that D4 ties to
-// that wait end the stretch.
+// contains at most one wait, at its end. Its commands run in the frame where it begins. The notes or rests that D4 ties
+// to that wait end the stretch.
 struct TrackStretch
 {
     uint8_t channel = 0;
@@ -157,12 +157,12 @@ struct TrackStretch
     bool split = false; // it began after a note, a rest or a wait
 };
 
-// The sound registers that the driver's register image holds, in order: SOUND1CNT_L to SOUNDCNT_H.
+// The sound registers that the driver's register image contains, in order: SOUND1CNT_L to SOUNDCNT_H.
 inline constexpr uint32_t kImageRegisters[12] = {0x04000060, 0x04000062, 0x04000064, 0x04000068,
                                                  0x0400006C, 0x04000070, 0x04000072, 0x04000074,
                                                  0x04000078, 0x0400007C, 0x04000080, 0x04000082};
 
-// The indexes of the image's halfwords. Hardware::registers holds the halfwords in the same order.
+// The indexes of the image's halfwords. Hardware::registers contains the halfwords in the same order.
 constexpr int kNr10 = 0;       // SOUND1CNT_L
 constexpr int kNr11 = 1;       // SOUND1CNT_H: NR11 and NR12
 constexpr int kNr13 = 2;       // SOUND1CNT_X: NR13 and NR14
@@ -184,7 +184,7 @@ inline constexpr int kPsgControl[4] = {kNr13, kNr23, kNr33, kNr43};
 // The bit of a PSG channel's control halfword that restarts the channel: bit 7 of NR14, NR24, NR34 or NR44.
 constexpr uint16_t kRestart = 0x8000;
 
-// The sound hardware after a frame, as the driver has left it.
+// The sound hardware after a frame as the driver has left it.
 struct Hardware
 {
     std::array<uint16_t, 12> registers = {};              // the last values written to the registers of kImageRegisters
@@ -192,7 +192,7 @@ struct Hardware
     std::array<std::array<uint8_t, 16>, 2> wave_ram = {}; // the wave RAM's two banks
 };
 
-// Returns the CPU cycles between the samples of a FIFO that the driver plays at `rate` Hz, as its timer setting gives
+// Returns the CPU cycles between the samples of a FIFO that the driver plays at `rate` Hz as its timer setting gives
 // them.
 uint32_t SampleCycles(uint32_t rate);
 
@@ -233,7 +233,7 @@ public:
     // index past the table.
     void Audition(int channel, uint8_t instrument, int index, uint8_t volume);
 
-    // Ends the audition's channel at the next Step(), as FF without a loop point does.
+    // Ends the audition's channel at the next Step() as FF without a loop point does.
     void ReleaseAudition();
 
     // Returns the channels' musical events in the last frame, in the order the driver ran them.
@@ -251,7 +251,7 @@ public:
     // Returns true once every channel has ended. A sound effect's channels whose data starts with FF never play.
     bool Ended() const;
 
-    // Returns the largest tick count of the channels, which counts every pass through a loop.
+    // Returns the largest tick count of the channels, with every pass through a loop.
     uint64_t Tick() const
     {
         return *std::max_element(ticks_.begin(), ticks_.end());
@@ -337,7 +337,7 @@ private:
     // the last dot or the last note that a tie adds, and leaves it alone without either.
     uint16_t NoteTicks(Channel& ch, uint8_t first, int value, uint32_t& last);
 
-    // Writes a hardware register, as the driver does.
+    // Writes a hardware register as the driver does.
     void Write(uint32_t address, int size, uint32_t value);
 
     // Plays the audition's note, or ends its channel after ReleaseAudition().
@@ -371,9 +371,9 @@ private:
     uint32_t random_seed_ = 1;
     uint8_t random_value_ = 0;
     uint8_t random_high_ = 0;
-    uint16_t soundcnt_h_ = 0; // the hardware's SOUNDCNT_H, as it reads
+    uint16_t soundcnt_h_ = 0; // the hardware's SOUNDCNT_H as it reads
     uint16_t soundbias_ = 0x0200;
-    uint8_t nr30_ = 0;      // the hardware's NR30, as it reads
+    uint8_t nr30_ = 0;      // the hardware's NR30 as it reads
     uint8_t wave_code_ = 0; // the wave channel's last NR32 volume code
     std::array<uint16_t, 2> dma_control_ = {};
     std::array<uint32_t, 2> pending_timers_ = {}; // the J revision's timer settings for the end of the frame
@@ -395,6 +395,7 @@ private:
         int index = 0;
         uint8_t volume = 0;
     };
+
     AuditionState audition_;
     bool record_ = false;
     std::vector<TrackStretch> stretches_;

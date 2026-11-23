@@ -66,6 +66,7 @@ std::string ListChannel(const Rom& rom, const DriverInfo& info, const SongChanne
             length = NoteLength(rom, info, b, length_set);
             note += Format(": %d frames", length ? length : 256);
         }
+
         std::snprintf(line, sizeof line, "%08X %7llu  %-6s %s\n", unsigned(address),
                       static_cast<unsigned long long>(frame), bytes.c_str(), note.c_str());
         text += line;
@@ -113,10 +114,12 @@ std::string ListChannel(const Rom& rom, const DriverInfo& info, const SongChanne
         default:
             break;
         }
+
         if (cmd.waits)
         {
             frame += uint64_t(length ? length : 256);
         }
+
         address = next;
 
         // A jump back to a command the channel has read is its loop.
@@ -184,8 +187,10 @@ Command DecodeCommand(const Rom& rom, const DriverInfo& info, uint32_t address, 
         {
             cmd.text = Format("note %d", b);
         }
+
         return cmd;
     }
+
     if (b < 0xE0)
     {
         cmd.text = vacation ? Format("length %d", b & 0x7F) : Format("length %d of the set", b & 0x7F);

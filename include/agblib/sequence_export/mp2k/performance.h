@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of an MP2K song for an editor. ntdlib's model of the driver (agblib::mp2k::Sequencer) plays the song
-// as ConvertSong does. The performance holds the notes of ConvertSong's MIDI file, each with the command that started
-// it. It also holds each track's stretches of commands, and each track's changes of its volume and pan.
+// The performance of an MP2K song for an editor. agblib's model of the driver (agblib::mp2k::Sequencer) plays the song
+// the way ConvertSong does. The performance contains the notes of ConvertSong's MIDI file, each with the command that
+// started it. It also contains each track's stretches of commands, and each track's changes of its volume and pan.
 
 #pragma once
 
@@ -11,11 +11,12 @@
 #include <optional>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/mp2k/driver.h"
 #include "agblib/sequence_export/agb/settings.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::mp2k
 {
@@ -63,7 +64,7 @@ struct Performance : ntdlib::sequence_export::PerformanceBase
     std::vector<ntdlib::sequence_export::NoteCommand> note_commands;
 
     // Each note's place on the driver's channels, at the note's ID less 1, and the notes that the driver never started,
-    // in the order of their ticks. The MIDI file holds none of those.
+    // in the order of their ticks. The MIDI file contains none of those.
     std::vector<NoteChannel> note_channels;
     std::vector<UnstartedNote> unstarted;
 

@@ -57,7 +57,7 @@ struct TestSong
 // The literal pool of the driver's init: DMA3SAD, then each copy's source, destination and control.
 constexpr uint32_t kPoolWords[] = {0x040000D4, 0x08000200, 0x03000A50, 0x84000030, 0x08000300, 0x030003F0, 0x8400003A};
 
-// Writes the driver's init, its pool and the game's call of it, which loads the bank's address into r1.
+// Writes the driver's init, its pool and the game's call of it. The call loads the bank's address into r1.
 void PutDriver(CartImage& cart, uint32_t bank, const uint32_t (&pool)[7] = kPoolWords)
 {
     cart.PutHalfwords(kInit, {0xB5F0, 0x4903, 0xBDF0}); // push {r4-r7, lr}; ldr r1, [pc, #12]; pop {r4-r7, pc}
@@ -287,7 +287,7 @@ void TestTwoChannels()
 
 void TestParameterCleared()
 {
-    // F06 clears the parameter byte after use, so a later F without a parameter byte reads 0 and ends the song.
+    // F06 clears the parameter byte after use. A later F without a parameter byte therefore reads 0 and ends the song.
     const std::vector<uint8_t> track = {
         0, kEventCommand | kEventParameter, kCommandSpeed, 0x06, 0, kEventCommand, kCommandSpeed};
 
@@ -315,8 +315,8 @@ void TestSpeedAndTempoLimit()
 
 void TestLoopRule()
 {
-    // B02 skips order 1. Order 2's B01 then goes down to order 1, which the song hasn't entered: no loop. Order 1 goes
-    // on to order 2 again, but above order 1: no loop either. Order 2's B01 then goes back to order 1: the loop.
+    // B02 skips order 1. Order 2's B01 then goes down to order 1. The song hasn't entered that order: no loop. Order 1
+    // goes on to order 2 again, but above order 1: no loop either. Order 2's B01 then goes back to order 1: the loop.
     const std::vector<uint8_t> to_two = {0, kEventCommand | kEventParameter, kCommandJump, 0x02};
     const std::vector<uint8_t> to_one = {0, kEventCommand | kEventParameter, kCommandJump, 0x01};
     const std::vector<uint8_t> note = {0, kEventNote | kEventCommand | kEventParameter, 0x30, 0x00, 0x00};

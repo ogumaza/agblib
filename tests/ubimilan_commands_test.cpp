@@ -10,14 +10,15 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+#include "seqlib/testing/check.h"
 #include "xsflib/testing/check.h"
 
 #include "agblib/testing/ubimilan_image.h"
 #include "agblib/ubimilan/commands.h"
 #include "agblib/ubimilan/driver.h"
 #include "agblib/ubimilan/song.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace
 {
@@ -29,6 +30,7 @@ using ntdlib::commands::Fixed;
 using ntdlib::commands::Kind;
 using ntdlib::commands::Scale;
 using ntdlib::commands::ToUnit;
+using seqlib::testing::Throws;
 using ubimilan::Decoded;
 using ubimilan::DecodeSequence;
 using ubimilan::EncodeSequence;
@@ -37,21 +39,6 @@ using ubimilan::EncodeSequence;
 Fixed Value(int64_t value)
 {
     return ToUnit(value, Scale{});
-}
-
-template <typename Function>
-bool Refuses(Function function)
-{
-    try
-    {
-        function();
-    }
-    catch (const std::invalid_argument&)
-    {
-        return true;
-    }
-
-    return false;
 }
 
 // A sequence of the driver's four kinds of command on several channels: a countdown of 3, square 2's program 5, a note
@@ -154,7 +141,7 @@ void TestKeptAsData()
         XSFLIB_CHECK(decoded.size == bytes.size());
     }
 
-    // A command's arguments and a countdown can end on the bytes' last byte. What's missing then lies after them.
+    // A command's arguments and a countdown can end on the bytes' last byte. What's missing is then after them.
     const std::vector<uint8_t> last_argument = {uint8_t(ubimilan::kSequence), 0xFF, 0xFF, 0xFF, 0, 0, 0x90, 60, 0x40};
     XSFLIB_CHECK(DecodeSequence(last_argument).reason == "a countdown runs past the bytes");
     const std::vector<uint8_t> last_countdown = {uint8_t(ubimilan::kSequence), 0xFF, 0xFF, 0xFF, 0, 0};
@@ -163,39 +150,40 @@ void TestKeptAsData()
 
 void TestRefusals()
 {
-    const auto changed = [](size_t item, void (*change)(Command&))
+    // Whether the encoder refuses the test sequence once `change` has changed item `item`.
+    const auto refused = [](size_t item, void (*change)(Command&))
     {
         Decoded decoded = DecodeSequence(kSequence);
         change(decoded.sequence.items[item]);
-        return decoded.sequence;
+        return Throws<std::invalid_argument>([&] { EncodeSequence(decoded.sequence); });
     };
 
     // A value that the driver's bytes can't hold.
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(changed(1, [](Command& c) { c.value.value = Value(0x10000); })); }));
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(changed(2, [](Command& c) { c.value.value = Value(256); })); }));
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(changed(4, [](Command& c) { c.velocity = Value(256); })); }));
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(changed(4, [](Command& c) { c.velocity = Value(-1); })); }));
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(changed(4, [](Command& c) { c.index = 16; })); }));
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(changed(6, [](Command& c) { c.encoding.opcode = 0xD0; })); }));
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(changed(6, [](Command& c) { c.kind = Kind::kCall; })); }));
+    XSFLIB_CHECK(refused(1, [](Command& c) { c.value.value = Value(0x10000); }));
+    XSFLIB_CHECK(refused(2, [](Command& c) { c.value.value = Value(256); }));
+    XSFLIB_CHECK(refused(4, [](Command& c) { c.velocity = Value(256); }));
+    XSFLIB_CHECK(refused(4, [](Command& c) { c.velocity = Value(-1); }));
+    XSFLIB_CHECK(refused(4, [](Command& c) { c.index = 16; }));
+    XSFLIB_CHECK(refused(6, [](Command& c) { c.encoding.opcode = 0xD0; }));
+    XSFLIB_CHECK(refused(6, [](Command& c) { c.kind = Kind::kCall; }));
 
     // A sequence that the driver wouldn't read as its items say.
     Decoded decoded = DecodeSequence(kSequence);
     ntdlib::commands::Sequence sequence = decoded.sequence;
     sequence.items.erase(sequence.items.begin());
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(sequence); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { EncodeSequence(sequence); }));
     sequence = decoded.sequence;
     sequence.items.erase(sequence.items.begin() + 3);
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(sequence); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { EncodeSequence(sequence); }));
     sequence = decoded.sequence;
     sequence.items.pop_back();
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(sequence); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { EncodeSequence(sequence); }));
     sequence = decoded.sequence;
     sequence.items.push_back(decoded.sequence.items[2]);
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(sequence); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { EncodeSequence(sequence); }));
     sequence = decoded.sequence;
     sequence.items[0].bytes[0] = uint8_t(ubimilan::kSample);
-    XSFLIB_CHECK(Refuses([&] { EncodeSequence(sequence); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { EncodeSequence(sequence); }));
 }
 
 void TestResources()
@@ -212,10 +200,10 @@ void TestResources()
     // The decoder takes the bytes up to the ROM's end, and stops at the end command.
     const Decoded decoded = ubimilan::DecodeResource(rom, info, sequence);
     XSFLIB_CHECK(!decoded.opaque && decoded.size == 7);
-    XSFLIB_CHECK(Refuses([&] { ubimilan::DecodeResource(rom, info, sample); }));
-    XSFLIB_CHECK(Refuses([&] { ubimilan::DecodeResource(rom, info, piece); }));
-    XSFLIB_CHECK(Refuses([&] { ubimilan::DecodeResource(rom, info, 1000); }));
-    XSFLIB_CHECK(Refuses([&] { ubimilan::DecodeResource(rom, info, -1); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::DecodeResource(rom, info, sample); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::DecodeResource(rom, info, piece); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::DecodeResource(rom, info, 1000); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::DecodeResource(rom, info, -1); }));
 }
 
 } // namespace

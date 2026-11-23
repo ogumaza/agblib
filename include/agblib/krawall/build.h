@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// The builds of Krawall that ntdlib reads.
+// The builds of Krawall that agblib reads.
 
 #pragma once
 

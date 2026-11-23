@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-// Definitions that the parts of Krawall's detection share (driver.cpp, driver_songs.cpp and driver_files.cpp): the
-// limit on the modules, the settings of games that detection can't read, and the functions of one part that another
-// calls. The three files build as one translation unit. The definitions therefore keep internal linkage. Only those
-// files include this header.
+// Definitions that the parts of Krawall's detection share (driver.cpp, driver_modules.cpp, driver_songs.h and
+// driver_files.h): the limit on the modules and the settings of games that detection can't read. Only those files
+// include this header. The definitions therefore keep internal linkage.
 
 #pragma once
 
@@ -36,7 +35,7 @@ using agblib::agb::ThumbPattern;
 namespace
 {
 
-// The most modules detection lists, so that unrelated ROM data can't make the list endless.
+// The most modules detection lists. Unrelated ROM data then can't make the list endless.
 constexpr size_t kMaxModules = 1024;
 
 // The settings of games whose code sets them in a way that detection can't read: from the game's options, in ARM code,
@@ -65,7 +64,7 @@ constexpr GameSettings kGameSettings[] = {
     // the level.
     {.game_code = "BHTJ", .music_volume = 120},
     // Juka and the Monophonic Menace: the routine at 0x08023A84 runs before the mixer's worker each frame. It sets the
-    // music volume, which it raises from 0 by 2 a frame after each start.
+    // music volume, and raises it from 0 by 2 a frame after each start.
     {.game_code = "BJKE", .music_fade_in = 2},
     // Its European release: the routine at 0x08023A38 does the same.
     {.game_code = "BJKP", .music_fade_in = 2},
@@ -76,7 +75,7 @@ constexpr GameSettings kGameSettings[] = {
     // sets that volume after its call of krapSetMusicVol() with 60 at 0x08024BF8.
     {.game_code = "BYXE", .music_volume = 64},
     // The Koala Brothers: Outback Adventures calls krapSetMusicVol() with 64 before its title's song, at 0x0800097C.
-    // Each level's routine starts its song at 0 and fades it to 64, as at 0x080019BA. The routine at 0x08003AAC fades
+    // Each level's routine starts its song at 0 and fades it to 64 as at 0x080019BA. The routine at 0x08003AAC fades
     // song 2 to 32 instead. Five other levels play song 2 at 64.
     {.game_code = "BAKE", .music_volume = 64},
     // Its European release makes the same call at the same address.
@@ -88,14 +87,14 @@ constexpr GameSettings kGameSettings[] = {
     // Its Japanese release: the routine at 0x0803DB28 does the same. The default, at 0x08054BF9, is 153.
     {.game_code = "B3AJ", .music_volume = 153},
     // Crash of the Titans: at boot, the routine at 0x08036A10 passes the music level of the game's settings to the
-    // routine at 0x08036AC0, which calls krapSetMusicVol() with the level's volume from the table at 0x08063DBC. The
-    // default level, at 0x08063A25, is 2, a volume of 96.
+    // routine at 0x08036AC0. That routine calls krapSetMusicVol() with the level's volume from the table at 0x08063DBC.
+    // The default level, at 0x08063A25, is 2, a volume of 96.
     {.game_code = "BQCE", .music_volume = 96},
     // Its European release: the routine at 0x08036A1C does the same, with the table at 0x08063E08. The default level,
     // at 0x08063A71, is 2, a volume of 96.
     {.game_code = "BQCP", .music_volume = 96},
     // Digimon Racing: after its language select, the game passes the music level of its settings to the routine at
-    // 0x0800806C, which calls krapSetMusicVol() through 0x08013134 with the level's volume from the table at
+    // 0x0800806C. That routine calls krapSetMusicVol() through 0x08013134 with the level's volume from the table at
     // 0x08040E88. The routine at 0x08007DB4 gives the level a default of 6, a volume of 180.
     {.game_code = "BDGE", .music_volume = 180},
     // Its European release has the same routines at 0x0800806C, 0x08013134 and 0x08007DB4, and the table at 0x08040EB8.
@@ -116,9 +115,9 @@ constexpr GameSettings kGameSettings[] = {
     {.game_code = "BEME", .stereo = 1, .music_volume = 48, .quality = 0x21},
     {.game_code = "BNPE", .stereo = 1, .music_volume = 64, .quality = 0x21},
     // Cocoto Platform Jumper plays its modules through its routine at 0x08008C1C, in the mode that the caller gives, or
-    // through its routine at 0x08008B88, which starts the module later in mode 1 or 0 by its third argument on the
-    // stack. Mode 0 plays four modules once: from 0x0801375A, 0x08016B80 and 0x0801357E through the first, and from
-    // 0x08013E4A through the second.
+    // through its routine at 0x08008B88. The second routine starts the module later, in mode 1 or 0 by its third
+    // argument on the stack. Mode 0 plays four modules once: from 0x0801375A, 0x08016B80 and 0x0801357E through the
+    // first, and from 0x08013E4A through the second.
     {.game_code = "BC8P", .once = {0x08032C94, 0x0803520C, 0x0804EC30, 0x080565D4}},
     // Games that call krapSetMusicVol() once at boot or before their first module, with no options behind it. The
     // addresses are those of the calls: The Game of Life, Yahtzee and Payday 96 at 0x0801F51C, Candy Land 96 at
@@ -169,13 +168,5 @@ constexpr GameSettings kGameSettings[] = {
     {.game_code = "B46E", .music_volume = 180},
 };
 
-// Lists the songs (driver_songs.cpp).
-void ListSongs(const Rom& rom, DriverInfo& info, const std::vector<uint32_t>& more_jingles = {});
-
-// Lists the modified build's modules (driver_files.cpp).
-bool ListMusicFiles(const Rom& rom, uint32_t loader_code, const std::string& program, DriverInfo& info,
-                    std::vector<uint32_t>& jingles, std::string& error);
-
 } // namespace
-
 } // namespace agblib::krawall

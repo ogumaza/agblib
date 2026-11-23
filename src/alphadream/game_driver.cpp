@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "agblib/agb/gba.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/thumb.h"
 #include "step_routine.h"
 
@@ -39,8 +40,6 @@ constexpr uint32_t kBufferBBytes = 2 * kFrameSamples;
 // DMA 1's control and its enable bit. The swap writes DMA 2's control in the same way.
 constexpr uint32_t kRegDma1Control = 0x040000C6;
 constexpr uint32_t kDmaEnable = 0x8000;
-
-constexpr uint32_t kRegTimer0Reload = 0x04000100;
 
 bool InRam(uint32_t address, uint32_t base, uint32_t size)
 {
@@ -92,6 +91,7 @@ bool FindInit(const Rom& rom, GameRoutines& r)
                 return true;
             }
         }
+
         if (call >= agb::kRomBase + 6)
         {
             const uint32_t state = StateLoad(rom, call - 6);
@@ -242,7 +242,7 @@ void GameDriver::Frame()
 
 uint32_t GameDriver::TimerPeriod()
 {
-    return 0x10000 - system_.Load(kRegTimer0Reload, 2);
+    return 0x10000 - system_.Load(agb::kRegTimer0Reload, 2);
 }
 
 const std::vector<agb::RegisterWrite>& GameDriver::SoundWrites() const

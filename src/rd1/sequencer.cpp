@@ -309,6 +309,7 @@ const std::vector<SeqEvent>& Sequencer::Step()
     {
         any = any || s.playing;
     }
+
     song_on_ = any;
 
     for (int t = 0; t < tracks; t++)
@@ -368,6 +369,7 @@ void Sequencer::RunTrack(int t)
         {
             FlushNotes(t);
         }
+
         s.wait += delta << 8;
         track_ticks_[size_t(t)] += delta;
     }
@@ -457,6 +459,7 @@ bool Sequencer::RunEvent(int t)
         {
             queue_.push_back({t & 0xF, rom_.U8(at) & 0x7F, (status & 0xF0) == 0x90 ? rom_.U8(at + 1) & 0x7F : 0, s.at});
         }
+
         at += 2;
         break;
 
@@ -525,6 +528,7 @@ void Sequencer::RunMeta(int t, uint32_t& at)
                 loop_start_tick_ = track_ticks_[size_t(t)];
             }
         }
+
         if (length == 1 && rom_.U8(data) == uint8_t(kLoopEndMarker) && loop_armed_)
         {
             loop_end_seen_ = true;
@@ -588,6 +592,7 @@ void Sequencer::Control(int t, int controller, int value)
             {
                 bank = (bank & 0x7F) | uint32_t(value);
             }
+
             c.SetField(0, 9, 14, bank & 0x3FFF);
             break;
         }
@@ -698,6 +703,7 @@ void Sequencer::RunLfo(ChannelRecord& c)
         {
             c.bytes[0x1E] = c.bytes[0x1D];
         }
+
         c.bytes[0x1E]--;
     }
 }

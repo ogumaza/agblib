@@ -3,8 +3,8 @@
 // A model of Ubisoft Milan's driver as it plays a piece of music: the sequencer, the mixer's voices that play the kit's
 // samples, and the PSG's notes.
 //
-// The model has two modes. A conversion's mode leaves out what a MIDI file can't hold or what no real song uses, each
-// with a warning. The strict mode follows the game's code on every path, for ubimilan::Output:
+// The model has two modes. A conversion's mode leaves out what a MIDI file can't contain or what no real song uses,
+// each with a warning. The strict mode follows the game's code on every path, for ubimilan::Output:
 //
 // - A kit's entry names whatever the resource table gives for it. The game checks nothing. The voice plays the bytes
 //   that the address gives, in any of the cartridge's mirrors.
@@ -207,7 +207,7 @@ private:
         int note = -1; // the note it plays, or -1
     };
 
-    // The modulation of an instrument, as the driver keeps it for a PSG channel: a triangle in cents after a delay.
+    // The modulation of an instrument as the driver keeps it for a PSG channel: a triangle in cents after a delay.
     // The value counts the delay down, then contains the triangle in 16.16 fixed point.
     struct Modulation
     {
@@ -217,7 +217,7 @@ private:
         int32_t depth = 0; // the cents at which the triangle turns
     };
 
-    // An instrument's pitch mode, as the driver keeps it for a PSG channel: a glide in cents from one note's pitch to
+    // An instrument's pitch mode as the driver keeps it for a PSG channel: a glide in cents from one note's pitch to
     // the next.
     struct PitchMode
     {
@@ -229,7 +229,7 @@ private:
         int32_t previous = 0; // the target before the last
     };
 
-    // A PSG channel's state, as the driver keeps it. The driver's init clears it. A piece's start doesn't.
+    // A PSG channel's state as the driver keeps it. The driver's init clears it. A piece's start doesn't.
     struct PsgChannel
     {
         int program = 0;
@@ -289,8 +289,8 @@ private:
     uint32_t wait_ = 0;
     uint32_t pointer_ = 0;
 
-    // The next sequence's countdown and commands, or 0. From an end command to the sound update, it holds the address
-    // of the resource that the game's callback gave the track.
+    // The next sequence's countdown and commands, or 0. From an end command to the sound update, it contains the
+    // address of the resource that the game's callback gave the track.
     uint32_t next_ = 0;
 
     bool active_ = false;

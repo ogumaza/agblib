@@ -18,68 +18,33 @@
 #include <utility>
 #include <vector>
 
+#include "ntdlib/wave/sinc.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/konami/driver.h"
 #include "agblib/konami/output.h"
 #include "agblib/konami/sequencer.h"
-#include "ntdlib/wave/sinc.h"
+
 namespace agblib::konami
 {
 
 // The echo's line and work buffer, the sound registers that the output stage writes, and the flags of the FIFO
 // revision's voices. output.cpp and output_stages.cpp use them.
 constexpr uint32_t kLineBytes = 0x2000; // an echo line: 256 blocks of 16 stereo samples
-
 constexpr uint32_t kWorkBytes = 2 * kLineBytes;
-
-// The PSG's registers.
-constexpr uint32_t kSound1CntH = 0x04000062;
-
-constexpr uint32_t kSound1CntX = 0x04000064;
-
-constexpr uint32_t kSound2CntL = 0x04000068;
-
-constexpr uint32_t kSound2CntH = 0x0400006C;
-
-constexpr uint32_t kSound3CntL = 0x04000070;
-
-constexpr uint32_t kSound3CntH = 0x04000072;
-
-constexpr uint32_t kSound3CntX = 0x04000074;
-
-constexpr uint32_t kSound4CntL = 0x04000078;
-
-constexpr uint32_t kSound4CntH = 0x0400007C;
-
-constexpr uint32_t kSound1CntL = 0x04000060;
-
-constexpr uint32_t kNr50 = 0x04000080;
-
-constexpr uint32_t kNr51 = 0x04000081;
-
-constexpr uint32_t kSoundCntHHigh = 0x04000083;
-
-constexpr uint32_t kSoundCntH = 0x04000082;
-
-constexpr uint32_t kSoundCntX = 0x04000084;
-
-constexpr uint32_t kSoundBias = 0x04000088;
-
-constexpr uint32_t kWaveRam = 0x04000090;
 
 // A voice of the revision without a mixer: a note waits for the frame's end, and a voice that plays at its sample's
 // rate keeps its FIFO's other voice playing.
 constexpr uint8_t kFifoVoicePending = 0x40;
-
 constexpr uint8_t kFifoVoiceSampleRate = 0x20;
 
 constexpr int kBlock = 16; // a block's samples
-
 constexpr int kEchoBuses = 3;
 
 // The ring that a ring mixer fills for each FIFO, and its voices for each FIFO.
 constexpr int kRingBytes = 704;
+constexpr int kRingVoices = 3;
 
 constexpr uint32_t kTimerOn = 0x0080;
 
@@ -152,7 +117,7 @@ struct EchoRules
     bool clears_routed = true;        // a bus whose feedback falls to 0 loses its routed voices
     bool runs_with_feedback = true;   // a bus with feedback and no routed voices still runs
     bool stop_clears_feedback = true; // the end of a song takes the buses' feedback to 0
-    bool delay_sets_present = true;   // a delay command sets the bus's present delay as well as its goal
+    bool delay_sets_present = true;   // a delay command sets the bus's current delay as well as its goal
     uint32_t bus0_voices = 0x00FFFFFF;
     uint8_t first_delay_blocks = 0;
 };
@@ -162,9 +127,11 @@ class SongHolder
 {
 public:
     SongHolder() = default;
+
     SongHolder(const SongHolder& other) : song_(other.song_ ? other.song_->Clone() : nullptr)
     {
     }
+
     SongHolder& operator=(std::unique_ptr<Sequencer> song)
     {
         song_ = std::move(song);
@@ -175,10 +142,12 @@ public:
     {
         return song_.get();
     }
+
     explicit operator bool() const
     {
         return song_ != nullptr;
     }
+
     const Sequencer* get() const
     {
         return song_.get();
@@ -260,10 +229,12 @@ struct Output::Impl
     void StorePsg(const std::array<TrackOutput, kTracks>& rec, bool wave_on_trigger);
     void StageUltimate();
     void StageWct();
+
     // StageWct's steps. LevelsAndPansWct sets the levels of the voices and the pans of the PSG channels in `rec`, and
     // returns the NR51 bits. UpdateVoicesWct starts, stops and sets the voices from `rec`.
     uint32_t LevelsAndPansWct(std::array<TrackOutput, kTracks>& rec);
     void UpdateVoicesWct(const std::array<TrackOutput, kTracks>& rec);
+
     void StageRing();
     void RunStage();
     void StageFifo();
@@ -307,6 +278,7 @@ struct Output::Impl
     {
         return muted_tracks >> (voice + 4) & 1;
     }
+
     void MeterPart(int voice, int fifo, float part);
 
     // The enhanced mixing mode.

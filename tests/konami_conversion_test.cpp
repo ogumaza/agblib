@@ -148,12 +148,14 @@ void TestSfzFiles()
             }
         }
     }
+
     std::set<std::string> wavs;
     for (const seqlib::sfz::Sample& sample : files.sfz.samples)
     {
         SEQLIB_CHECK(sample.wav.size() > 44 && sample.wav[0] == 'R');
         wavs.insert(sample.name);
     }
+
     SEQLIB_CHECK(!named.empty() && named == wavs);
 
     std::error_code ec;
@@ -180,7 +182,7 @@ void TestSilentSongs()
     opt.out_dir = Utf8(dir);
     opt.base_name = "silent";
 
-    // Song 1 plays no notes, so nothing is written for it.
+    // Song 1 plays no notes. Nothing is written for it.
     SongReport sum = ConvertSong(rom, info, 1, opt, nullptr);
 
     SEQLIB_CHECK(sum.ok && sum.silent);
@@ -231,14 +233,15 @@ void TestSharedSoundfont()
     {
         SEQLIB_CHECK(presets[i].bank == 0 && presets[i].program == int(i));
     }
+
     fs::remove_all(dir, ec);
 }
 
 void TestEchoRouting()
 {
     // Song 2 routes voice 0 to bus 0, then to bus 1 as well, then off both, then to bus 0 again, 5 frames apart. The
-    // mixer takes a voice routed to buses 0 and 1 as routed to bus 1 alone, so the echo is only sent while the voice is
-    // on bus 0 alone.
+    // mixer takes a voice routed to buses 0 and 1 as routed to bus 1 alone. The echo is therefore only sent while the
+    // voice is on bus 0 alone.
     Image m = SyntheticImage();
     constexpr uint32_t kBase = kRomBase + 0x600;
     m.Song(kSongTable, 2, kBase, 0x40, {{4, 0}});
@@ -310,6 +313,7 @@ void TestEchoFromVoice5()
                 voice = std::max(voice, int(e.data2));
             }
         }
+
         return most;
     };
 
@@ -319,8 +323,9 @@ void TestEchoFromVoice5()
 }
 
 // Song 2's sample track plays a note at volume 16, and then from its loop point a note at 16 and one at 8. The first
-// time through, the loop's first note has the level and program that the note before it left, but a player that jumps
-// back to the loop's start comes from the note at volume 8, so they're written again there, and so is the tempo.
+// time through, the loop's first note has the level and program that the note before it left. A player that jumps back
+// to the loop's start comes from the note at volume 8. The level and program are therefore written again there, and so
+// is the tempo.
 void TestLoopSettingsAgain()
 {
     Image m = SyntheticImage();
@@ -350,6 +355,7 @@ void TestLoopSettingsAgain()
         {
             levels.emplace_back(e.frame, e.data2);
         }
+
         if (e.track == "Voice 0" && (e.status & 0xF0) == 0xC0)
         {
             programs.emplace_back(e.frame, e.data1);
@@ -368,9 +374,10 @@ void TestLoopSettingsAgain()
     fs::remove_all(dir, ec);
 }
 
-// Song 2's sample track pans to the left before its loop point, plays a note and then pans to the right, which the
-// driver keeps when every track goes back to its loop point. The first pass's note plays on the left and the later
-// passes' on the right, so the marked loop starts at the second pass, and the song plays the first pass before it.
+// Song 2's sample track pans to the left before its loop point, plays a note and then pans to the right. The driver
+// keeps that pan when every track goes back to its loop point. The first pass's note plays on the left and the later
+// passes' on the right. The marked loop therefore starts at the second pass, and the song plays the first pass before
+// it.
 void TestLoopStartsAtSecondPass()
 {
     Image m = SyntheticImage();
@@ -393,7 +400,7 @@ void TestLoopStartsAtSecondPass()
 
     const SongReport sum = ConvertSong(rom, info, 2, opt, nullptr);
 
-    // The first pass runs from frame 0 to 20, so the loop runs from 20 to 40, and the song ends after its second pass
+    // The first pass runs from frame 0 to 20. The loop runs from 20 to 40, and the song ends after its second pass
     // through it.
     SEQLIB_CHECK(sum.ok);
     SEQLIB_CHECK(sum.loop_start == FrameSeconds(20));
@@ -415,6 +422,7 @@ void TestNoiseKeys()
     {
         track.insert(track.end(), {0xD8, 0x0F, uint8_t(n), 0x01}); // note n at volume 15, then wait a frame
     }
+
     track.insert(track.end(), {0xE0, 0x00, 0xFD});
     m.PutBytes(kBase, track);
     m.PutBytes(kBase + 0x400, {0x00, 0xFD});
@@ -440,6 +448,7 @@ void TestNoiseKeys()
         {
             program = e.data1;
         }
+
         if (e.track == "Noise" && (e.status & 0xF0) == 0x90)
         {
             sounds.emplace_back(program, e.data1);
@@ -460,7 +469,7 @@ void TestNoiseKeys()
 void TestPsgPastTable()
 {
     // Square 1 plays note 9, note FF, a rest and note FF again, 5 frames apart. The code at kFreqCode loads the address
-    // of the PSG frequency table, which has an entry for note 9. Note FF reads the word at 0x3FC0 past its start.
+    // of the PSG frequency table. The table has an entry for note 9. Note FF reads the word at 0x3FC0 past its start.
     Image m = SyntheticImage();
     m.Resize(0x6000);
     constexpr uint32_t kBase = kRomBase + 0x1000;
@@ -505,6 +514,7 @@ void TestPsgPastTable()
             {
                 square.notes.emplace_back(e.frame, e.data1);
             }
+
             if (e.track == "Square 1" && (e.status & 0xF0) == 0xE0 && e.frame > 0)
             {
                 square.bends.emplace_back(e.frame, e.data1 | (e.data2 << 7));
@@ -600,6 +610,7 @@ void TestPsgTuning()
             keys.push_back(e.data1);
         }
     }
+
     SEQLIB_CHECK((keys == std::vector<int>{36, 48}));
 
     const std::vector<std::array<int, 3>> zones = ReadZoneTuning(sum.sf2_path);
@@ -624,9 +635,9 @@ void TestPsgTuning()
 
 void TestSampleKeys()
 {
-    // Voice 0 plays samples 5 and 6 (the same data) at two pitches each, so each gets a zone that spans them. Voices 1
-    // and 2 play sample 5 at a single pitch, 50 semitones up and 128 down, and each of those gets a key of its own. The
-    // sample has no clear pitch, so it's laid out as if its own pitch were C4.
+    // Voice 0 plays samples 5 and 6 (the same data) at two pitches each. Each sample gets a zone that spans them.
+    // Voices 1 and 2 play sample 5 at a single pitch, 50 semitones up and 128 down, and each of those gets a key of its
+    // own. The sample has no clear pitch. It's laid out as if its pitch were C4.
     Image m = SyntheticImage();
     m.Put32(kSampleTable + 4 * 6, kSampleHeader);
     constexpr uint32_t kBase = kRomBase + 0x600;
@@ -652,7 +663,7 @@ void TestSampleKeys()
 
     // Voice 0's zones start out on keys 60-62 and 70-72. The keys between them are split halfway, and the outer ends
     // grow by an octave. Voice 1's key is one whose root key, 50 below it, is a MIDI key too. No key has a root key 128
-    // above it, so voice 2 gets the nearest: key 0, with root key 127.
+    // above it. Voice 2 gets the nearest: key 0, with root key 127.
     const std::vector<std::array<int, 3>> kExpected = {{48, 66, 60}, {67, 84, 60}, {50, 50, 0}, {0, 0, 127}};
     SEQLIB_CHECK(sum.ok);
     SEQLIB_CHECK(ReadZoneKeys(sum.sf2_path) == kExpected);
@@ -663,7 +674,7 @@ void TestSampleKeys()
 void TestLoopWithoutDelay()
 {
     // Song 2 loops before a frame has passed, and song 3 after a note of 20 frames. Neither waits a frame after its
-    // loop point, which would hang the driver. Each song stops there, with a warning that says why, however many times
+    // loop point: that would hang the driver. Each song stops there, with a warning that says why, however many times
     // the loop is to be played.
     Image m = SyntheticImage();
     constexpr uint32_t kBase = kRomBase + 0x600;
@@ -695,7 +706,7 @@ void TestLoopWithoutDelay()
         return s.warnings.size() == 1 && s.warnings[0].find("song loops without waiting a frame") != std::string::npos;
     };
 
-    // Song 2 plays nothing, so it's skipped. Song 3 plays its note for 20 frames and stops on the next, without a loop.
+    // Song 2 plays nothing, and is skipped. Song 3 plays its note for 20 frames and stops on the next, without a loop.
     SEQLIB_CHECK(at_start.ok && at_start.silent && hangs(at_start));
     SEQLIB_CHECK(at_start_looped.ok && at_start_looped.silent && hangs(at_start_looped));
     SEQLIB_CHECK(later.ok && !later.silent && hangs(later));
@@ -741,6 +752,7 @@ void TestSilentEndAfterLastSound()
         last = std::max(last, e.frame);
         ons += (e.status & 0xF0) == 0x90 && e.data2 > 0 ? 1 : 0;
     }
+
     SEQLIB_CHECK_EQ(ons, 1);
     SEQLIB_CHECK(last <= 12);
     fs::remove_all(dir, ec);
@@ -807,8 +819,8 @@ void TestTrackPastEnd()
 
 void TestManyPresets()
 {
-    // A song that needs 149 presets. The wave track plays 9 waves at 15 volumes, which makes 135 wave presets, and
-    // every other track plays a note, so the song uses all 16 MIDI channels, channel 10 included.
+    // A song that needs 149 presets. The wave track plays 9 waves at 15 volumes: 135 wave presets. Every other track
+    // plays a note. The song therefore uses all 16 MIDI channels, channel 10 included.
     Image m = SyntheticImage();
     m.Resize(0x2000);
     constexpr uint32_t kBase = kRomBase + 0x1000;
@@ -821,6 +833,7 @@ void TestManyPresets()
             waves.insert(waves.end(), {0xD8, uint8_t(v), 0x18, 0x01}); // note 24 at volume v, then wait a frame
         }
     }
+
     waves.insert(waves.end(), {0xE0, 0x00, 0xFD});
     m.PutBytes(kBase, waves);
     m.PutBytes(kBase + 0x300, {0x00, 0x81, 0x00, 0xD3, 0x18, 0x04, 0xE0, 0x00, 0xFD}); // the squares
@@ -840,7 +853,7 @@ void TestManyPresets()
     opt.out_dir = Utf8(dir);
 
     // In a SoundFont of its own, the presets go on into bank 1. Only the preset of the track on channel 10, the last
-    // one, gets a copy in the drum bank, so no two presets have the same bank and program.
+    // one, gets a copy in the drum bank. No two presets have the same bank and program.
     const SongReport own = ConvertSong(rom, info, 3, opt, nullptr);
 
     const std::vector<PresetHeader> presets = ReadPresets(own.sf2_path);
@@ -870,6 +883,7 @@ void TestManyPresets()
     {
         shared_ids.insert({p.bank, p.program});
     }
+
     SEQLIB_CHECK(in_shared.ok);
     SEQLIB_REQUIRE_EQ(shared_presets.size(), size_t(song0) + 149);
     SEQLIB_REQUIRE_EQ(shared_ids.size(), shared_presets.size());

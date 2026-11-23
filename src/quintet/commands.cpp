@@ -4,18 +4,16 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <map>
 #include <optional>
-#include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "agblib/agb/data_items.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sequence_codec.h"
 #include "agblib/quintet/song.h"
 
 namespace agblib::quintet
@@ -27,7 +25,6 @@ using ntdlib::commands::FromUnit;
 using ntdlib::commands::Kind;
 using ntdlib::commands::ToUnit;
 using Item = ntdlib::commands::Command;
-using agb::DataItem;
 
 // The size of each command with arguments, in the A revision's numbering. The others take a byte.
 uint32_t CommandSize(uint8_t command)
@@ -104,7 +101,7 @@ uint8_t ByteOfS(uint8_t command)
     return 0;
 }
 
-// The ticks of a note value, as the driver works them out.
+// The ticks of a note value as the driver works them out.
 int64_t TicksOf(uint8_t value)
 {
     return value == 0 ? 0 : kWholeNote / value;
@@ -123,6 +120,7 @@ uint8_t LengthCode(const Item& item, int64_t ticks, const Traits& traits)
         {
             throw std::invalid_argument("a note's length code gives another length");
         }
+
         return code;
     }
 
@@ -204,11 +202,13 @@ bool ReadNote(uint8_t first, const ByteReader& byte, const Traits& traits, uint3
             item.key = uint8_t(pitch == 12 ? 0 : pitch);
             item.index = pitch == 12 ? 1 : 0;
         }
+
         item.value.value = ticks;
         if (UsualCode(ticks, traits) != code)
         {
             item.encoding.length_code = code;
         }
+
         return true;
     }
 
@@ -225,6 +225,7 @@ Item ReadItem(std::span<const uint8_t> data, uint32_t at, const Traits& traits, 
             past = true;
             return 0;
         }
+
         return data[at + i];
     };
 
@@ -245,6 +246,7 @@ Item ReadItem(std::span<const uint8_t> data, uint32_t at, const Traits& traits, 
         {
             item.bytes.push_back(byte(1));
         }
+
         return item;
     }
 
@@ -374,9 +376,7 @@ private:
             }
 
             const uint32_t next = at + size;
-            const auto after = items_.lower_bound(at);
-            if ((after != items_.end() && after->first < next) ||
-                (after != items_.begin() && afters_.at(std::prev(after)->first) > at))
+            if (agb::OverlapsItems(items_, afters_, at, next))
             {
                 problem_ = "two commands overlap";
                 return;
@@ -389,6 +389,7 @@ private:
             {
                 return;
             }
+
             at = next;
         }
     }
@@ -400,71 +401,15 @@ private:
     std::string problem_;
 };
 
-// Keeps a song whose commands can't be read safely as data, split at the channels' starts.
-Decoded Opaque(std::span<const uint8_t> data, std::span<const uint32_t> starts, std::string reason)
-{
-    Decoded decoded;
-    decoded.opaque = true;
-    decoded.reason = std::move(reason);
-
-    const std::map<uint32_t, uint32_t> items =
-        agb::AppendDataItems(data, {starts.begin(), starts.end()}, decoded.sequence.items);
-    for (const uint32_t start : starts)
-    {
-        decoded.entries.push_back(items.at(start));
-    }
-
-    return decoded;
-}
-
-// Makes the items of the song in `data`, from what `flow` found.
+// Makes the items of the song in `data`, from what `flow` found. A song whose commands can't be read safely stays
+// data, split at the channels' starts.
 Decoded Build(std::span<const uint8_t> data, std::span<const uint32_t> starts, const Flow& flow)
 {
-    if (!flow.Problem().empty())
+    const auto finish = [](Item& item)
     {
-        return Opaque(data, starts, flow.Problem());
-    }
-
-    Decoded decoded;
-    std::vector<Item>& items = decoded.sequence.items;
-    std::map<uint32_t, uint32_t> item_at;
-    uint32_t at = 0;
-    for (const auto& [offset, read] : flow.Items())
-    {
-        if (offset > at)
-        {
-            items.push_back(DataItem(data.subspan(at, offset - at)));
-        }
-
-        Item item = read;
         item.value.value = ToUnit(item.value.value, ScaleOf(item.kind));
-        item_at[offset] = uint32_t(items.size());
-        items.push_back(std::move(item));
-        at = flow.After(offset);
-    }
-    if (data.size() > at)
-    {
-        items.push_back(DataItem(data.subspan(at)));
-    }
-
-    for (const uint32_t start : starts)
-    {
-        decoded.entries.push_back(item_at.at(start));
-    }
-
-    return decoded;
-}
-
-// A value from `low` to `high`. Throws std::invalid_argument outside them.
-int64_t ValueOf(int64_t value, int64_t low, int64_t high, Kind kind)
-{
-    if (value < low || value > high)
-    {
-        throw std::invalid_argument("a value of a " + std::string(ntdlib::commands::Name(kind)) +
-                                    " command doesn't fit in the driver's bytes");
-    }
-
-    return value;
+    };
+    return agb::BuildSequence<Decoded>(data, starts, flow, finish);
 }
 
 // The bytes of a command, in the console's values.
@@ -490,6 +435,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
                 throw std::invalid_argument("the S revision of the driver has no command " + std::to_string(number));
             }
         }
+
         if (arguments.size() + 1 != CommandSize(number))
         {
             throw std::invalid_argument("a command of the driver holds another number of arguments");
@@ -499,6 +445,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
         bytes.insert(bytes.end(), arguments.begin(), arguments.end());
         return bytes;
     };
+
     const auto only = [&](uint8_t index)
     {
         if (item.index != index)
@@ -534,6 +481,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
         {
             return note(traits.byte_notes ? kPlayAgainS : 12);
         }
+
         return note(item.key);
 
     case Kind::kNoteOff:
@@ -546,42 +494,46 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
         {
             throw std::invalid_argument("only the S revision's notes of a pitch from 12 to 7F wait");
         }
+
         return note(item.key);
 
     case Kind::kTempo:
         only(0);
-        return command(0x7F, {uint8_t(ValueOf(value, 0, 0xFF, item.kind))});
+        return command(0x7F, {uint8_t(agb::CommandValue(value, 0, 0xFF, item.kind))});
 
     case Kind::kVolume:
         if (item.index == 0)
         {
-            return command(0x5E, {uint8_t(ValueOf(value, 0, 0xFF, item.kind))});
+            return command(0x5E, {uint8_t(agb::CommandValue(value, 0, 0xFF, item.kind))});
         }
+
         only(1);
-        return command(0xF1, {uint8_t(ValueOf(value, -0x80, 0x7F, item.kind))});
+        return command(0xF1, {uint8_t(agb::CommandValue(value, -0x80, 0x7F, item.kind))});
 
     case Kind::kTranspose:
         if (item.index == 0)
         {
-            return command(0xE4, {uint8_t(ValueOf(value, -0x80, 0x7F, item.kind))});
+            return command(0xE4, {uint8_t(agb::CommandValue(value, -0x80, 0x7F, item.kind))});
         }
+
         only(1);
-        return command(0xE9, {uint8_t(ValueOf(value, -0x80, 0x7F, item.kind))});
+        return command(0xE9, {uint8_t(agb::CommandValue(value, -0x80, 0x7F, item.kind))});
 
     case Kind::kTune:
         if (item.index == 0)
         {
-            return command(0xD5, {uint8_t(ValueOf(value, -0x80, 0x7F, item.kind))});
+            return command(0xD5, {uint8_t(agb::CommandValue(value, -0x80, 0x7F, item.kind))});
         }
+
         {
             only(1);
-            const int64_t tune = ValueOf(value, -0x8000, 0x7FFF, item.kind);
+            const int64_t tune = agb::CommandValue(value, -0x8000, 0x7FFF, item.kind);
             return command(0xE6, {uint8_t(tune), uint8_t(tune >> 8)});
         }
 
     case Kind::kProgram:
         {
-            const uint8_t program = uint8_t(ValueOf(value, 0, 0xFF, item.kind));
+            const uint8_t program = uint8_t(agb::CommandValue(value, 0, 0xFF, item.kind));
             if (item.index == 0)
             {
                 return command(item.encoding.opcode == 0xDD ? 0xDD : 0xDC, {program});
@@ -590,6 +542,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
             {
                 return command(0xDB, {program});
             }
+
             only(2);
             return command(0xDA, {program});
         }
@@ -604,11 +557,12 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
         {
             throw std::invalid_argument("a repeat's start holds no passes");
         }
+
         return command(0xD6, {});
 
     case Kind::kLoopEnd:
         only(0);
-        return command(0xD7, {uint8_t(ValueOf(value, 1, 256, item.kind))});
+        return command(0xD7, {uint8_t(agb::CommandValue(value, 1, 256, item.kind))});
 
     case Kind::kEnd:
         only(0);
@@ -624,10 +578,12 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
             {
                 throw std::invalid_argument("the driver has no such byte");
             }
+
             bytes.push_back(uint8_t(byte));
             bytes.insert(bytes.end(), item.bytes.begin(), item.bytes.end());
             return bytes;
         }
+
         {
             const uint16_t number = item.encoding.opcode;
             if (number > 0xFE)
@@ -641,6 +597,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
             {
                 throw std::invalid_argument("the byte of a command reads as a note");
             }
+
             switch (number)
             {
             case 0x7F:
@@ -661,6 +618,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
             default:
                 break;
             }
+
             return command(uint8_t(number), item.bytes);
         }
 
@@ -740,17 +698,7 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence)
 
 std::vector<uint32_t> ItemOffsets(const ntdlib::commands::Sequence& sequence, const Traits& traits)
 {
-    std::vector<uint32_t> offsets;
-    offsets.reserve(sequence.items.size() + 1);
-    uint32_t at = 0;
-    for (const Item& item : sequence.items)
-    {
-        offsets.push_back(at);
-        at += uint32_t(item.kind == Kind::kData ? item.bytes.size() : ItemBytes(item, traits).size());
-    }
-    offsets.push_back(at);
-
-    return offsets;
+    return agb::ItemOffsets(sequence, [&](const Item& item) { return ItemBytes(item, traits); });
 }
 
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<const uint32_t> entries,
@@ -758,17 +706,11 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<con
 {
     const std::vector<Item>& items = sequence.items;
     Encoded encoded;
-    uint32_t at = 0;
-    bool any_command = false;
-    for (const Item& item : items)
+    const auto item_bytes = [&](const Item& item)
     {
-        const std::vector<uint8_t> bytes = item.kind == Kind::kData ? item.bytes : ItemBytes(item, traits);
-        encoded.offsets.push_back(at);
-        encoded.bytes.insert(encoded.bytes.end(), bytes.begin(), bytes.end());
-        at += uint32_t(bytes.size());
-        any_command = any_command || item.kind != Kind::kData;
-    }
-    encoded.offsets.push_back(at);
+        return ItemBytes(item, traits);
+    };
+    const bool any_command = agb::JoinItems(items, item_bytes, encoded);
 
     std::vector<uint32_t> starts;
     for (const uint32_t entry : entries)
@@ -777,10 +719,11 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<con
         {
             throw std::invalid_argument("a channel starts past the song's items");
         }
+
         starts.push_back(encoded.offsets[entry]);
     }
 
-    // The driver has to read the bytes as the items say. A song kept as data holds no commands.
+    // The driver has to read the bytes as the items say. A song kept as data contains no commands.
     if (!any_command)
     {
         return encoded;
@@ -792,26 +735,13 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<con
         throw std::invalid_argument("the song's items don't read back: " + flow.Problem());
     }
 
-    std::map<uint32_t, size_t> item_at;
-    for (size_t i = 0; i < items.size(); i++)
+    const auto same = [](Kind kind, Kind read)
     {
-        if (encoded.offsets[i + 1] > encoded.offsets[i])
-        {
-            item_at[encoded.offsets[i]] = i;
-        }
-    }
-    for (const auto& [offset, read] : flow.Items())
-    {
-        const auto found = item_at.find(offset);
-        if (found == item_at.end() || items[found->second].kind == Kind::kData)
-        {
-            throw std::invalid_argument("a channel reaches bytes that no item starts at");
-        }
-        if (items[found->second].kind != read.kind)
-        {
-            throw std::invalid_argument("a command's bytes read as a command of another kind");
-        }
-    }
+        return kind == read;
+    };
+
+    agb::CheckFlowItems(items, encoded, flow, "a channel reaches bytes that no item starts at",
+                        "a command's bytes read as a command of another kind", same);
 
     return encoded;
 }

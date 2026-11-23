@@ -11,6 +11,7 @@
 #include "agblib/krawall/build.h"
 #include "agblib/krawall/driver.h"
 #include "agblib/krawall/player.h"
+#include "player_shared.h"
 
 namespace agblib::krawall
 {
@@ -20,19 +21,7 @@ std::vector<uint8_t> Player::OldMixRecord(const MixChannel& m) const
     // The fields up to the sides are where the later builds keep them. The record has no ramp. The play's choice of
     // interpolation, the sound effects' flag and the mixing routine follow the sides.
     std::vector<uint8_t> r(0x28);
-    r[0x00] = m.volume;
-    r[0x01] = uint8_t(m.pan);
-    r[0x02] = m.status;
-    r[0x03] = m.loop;
-    xsflib::StoreLe32(&r[0x04], m.start);
-    xsflib::StoreLe32(&r[0x08], m.pos);
-    xsflib::StoreLe32(&r[0x0C], m.end);
-    xsflib::StoreLe32(&r[0x10], m.loop_length);
-    xsflib::StoreLe32(&r[0x14], uint32_t(m.inc));
-    xsflib::StoreLe32(&r[0x18], m.handle);
-    xsflib::StoreLe16(&r[0x1C], m.frac);
-    r[0x1E] = m.left;
-    r[0x1F] = m.right;
+    StoreMixFields(m, r);
     r[0x20] = m.hq;
     r[0x21] = m.hq_sample;
     r[0x22] = m.sfx;
@@ -82,6 +71,7 @@ void Player::OldFrame()
                 on_tick_(elapsed_);
             }
         }
+
         timer_count_ = timer_speed_;
     }
 }
@@ -106,14 +96,7 @@ void Player::NextRowPlayer()
     }
 
     // The next order, past the markers between songs (+++).
-    order_++;
-    bool marker = false;
-    while (module_.orders[order_] == kOrderSkip && order_ < module_.order_count)
-    {
-        order_++;
-        marker = true;
-    }
-
+    const bool marker = NextOrder(module_, order_);
     if ((order_ >= module_.order_count || (marker && (mode_ & kModeSong))) && !EndOfModule())
     {
         return;
@@ -131,6 +114,7 @@ void Player::OldPatternJump(uint8_t op)
     {
         goto_row_ = 0;
     }
+
     goto_order_ = int8_t(op);
 }
 
@@ -142,6 +126,7 @@ void Player::OldPatternBreak(uint8_t op)
     {
         goto_order_ = int8_t(uint8_t(order_ + 1));
     }
+
     goto_row_ = op > 0x3F ? 0 : op;
 }
 
@@ -179,14 +164,7 @@ void Player::OldNextRow()
     }
 
     // The next order, past the markers between songs (+++).
-    order_++;
-    bool marker = false;
-    while (module_.orders[order_] == kOrderSkip && order_ < module_.order_count)
-    {
-        order_++;
-        marker = true;
-    }
-
+    const bool marker = NextOrder(module_, order_);
     if ((order_ >= module_.order_count || (marker && (mode_ & kModeSong))) && !EndOfModule())
     {
         return;
@@ -222,6 +200,7 @@ bool Player::OldRunVolumeEnvelope(Channel& c)
             {
                 c.volume_env_state = 2;
             }
+
             if (c.volume_env_point == rom_.U8(env + kEnvelopeLast))
             {
                 if (rom_.U8(env + kEnvelopeFlags) & kEnvelopeLoops)
@@ -239,6 +218,7 @@ bool Player::OldRunVolumeEnvelope(Channel& c)
                     }
                 }
             }
+
             c.volume_env_level = uint16_t((rom_.U16(env + 4 * uint32_t(c.volume_env_point)) >> 9) << 8);
             c.volume_env_target = rom_.U8(env + 4 * uint32_t(c.volume_env_point) + 4);
         }
@@ -271,6 +251,7 @@ bool Player::OldRunPanEnvelope(Channel& c)
         {
             c.pan_env_state = 2;
         }
+
         if (c.pan_env_point == rom_.U8(env + kEnvelopeLast))
         {
             if (rom_.U8(env + kEnvelopeFlags) & kEnvelopeLoops)
@@ -283,6 +264,7 @@ bool Player::OldRunPanEnvelope(Channel& c)
                 c.pan_env_state = 1;
             }
         }
+
         c.pan_env_level = uint16_t((rom_.U16(env + 4 * uint32_t(c.pan_env_point)) >> 9) << 8);
         c.pan_env_target = rom_.U8(env + 4 * uint32_t(c.pan_env_point) + 4);
     }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-// Builds small MP2K cartridges for tests: a synthetic copy of the code patterns that the driver's detection reads,
-// with songs, voice groups and samples placed one after another. A Track holds a track's commands, and a Cart places
-// them as songs.
+// Builds small MP2K cartridges for tests: a synthetic copy of the code patterns that the driver's detection reads, with
+// songs, voice groups and samples placed one after another. A Track contains a track's commands, and a Cart places them
+// as songs.
 
 #pragma once
 
@@ -82,7 +82,7 @@ inline int LengthIndex(int ticks)
 // Appends a 32-bit word in little-endian byte order. The name stays in this namespace for the code that calls it here.
 using xsflib::AppendLe32;
 
-// A track's commands, with jumps to labels in the same track, which Bytes() turns into addresses.
+// A track's commands, with jumps to labels in the same track. Bytes() turns the labels into addresses.
 class Track
 {
 public:
@@ -111,7 +111,7 @@ public:
         return *this;
     }
 
-    // Adds a note of `ticks`, which has to be one of the driver's lengths, with the arguments that aren't -1.
+    // Adds a note of `ticks` with the arguments that aren't -1. `ticks` has to be one of the driver's lengths.
     Track& Note(int ticks, int key = -1, int velocity = -1, int extra = -1)
     {
         const int index = LengthIndex(ticks);
@@ -119,6 +119,7 @@ public:
         {
             throw std::invalid_argument("a note of a length that isn't one of the driver's");
         }
+
         bytes_.push_back(uint8_t(kCmdTie + std::max(index, 1)));
         for (int arg : {key, velocity, extra})
         {
@@ -131,8 +132,8 @@ public:
         return *this;
     }
 
-    // The commands below add their bytes one at a time, since GCC wrongly warns about a null memmove when a short list
-    // is inserted at -O3.
+    // The commands below add their bytes one at a time: GCC wrongly warns about a null memmove when a short list is
+    // inserted at -O3.
     Track& Tie(int key, int velocity)
     {
         bytes_.push_back(kCmdTie);
@@ -235,21 +236,30 @@ public:
 
     // Makes a cartridge whose init gives the driver `mode`, with music players of the given track counts. Without
     // `code`, it has neither the init nor the routine that starts a song, and without `special`, its mixer doesn't play
-    // reversed or compressed samples.
-    explicit Cart(uint32_t mode = kMode, std::vector<int> players = {10, 3}, bool code = true, bool special = true)
-        : CartImage(0x40000), next_(kData)
+    // reversed or compressed samples. The driver's parts and the data lie `origin` bytes past the addresses above (At),
+    // and the cartridge grows by `origin` bytes. A cartridge with an origin leaves room before it for another driver.
+    explicit Cart(uint32_t mode = kMode, std::vector<int> players = {10, 3}, bool code = true, bool special = true,
+                  uint32_t origin = 0)
+        : CartImage(0x40000 + std::size_t{origin}), next_(kData + origin), origin_(origin)
     {
         for (size_t p = 0; p < players.size(); p++)
         {
-            const uint32_t at = kPlayerTable + 12 * uint32_t(p);
+            const uint32_t at = At(kPlayerTable) + 12 * uint32_t(p);
             Put32(at, 0x03007420 + 0x40 * uint32_t(p));
             Put32(at + 4, 0x03001340 + 0x500 * uint32_t(p));
             Put8(at + 8, uint8_t(players[p]));
         }
+
         if (code)
         {
             WriteDriver(mode, special);
         }
+    }
+
+    // The address of the part that lies at `address` in a cartridge without an origin, such as kSongTable.
+    uint32_t At(uint32_t address) const
+    {
+        return address + origin_;
     }
 
     // Places `bytes` at the next free address, aligned to `align`. Returns the address.
@@ -296,7 +306,7 @@ public:
     {
         for (uint32_t i = 0; i < 18; i++)
         {
-            Put16(kUnusedSongStart + 2 * i, kSongStartCode[i]);
+            Put16(At(kUnusedSongStart) + 2 * i, kSongStartCode[i]);
         }
 
         const uint8_t kSearch[16] = {0x0A, 0x23, 0x50, 0x34, 0xC7, 0x27, 0x00, 0x22,
@@ -305,11 +315,12 @@ public:
                                     0xD3, 0xE5, 0x06, 0x6C, 0x92, 0xE0, 0x06, 0x60, 0xE0, 0x41};
         for (uint32_t i = 0; i < 16; i++)
         {
-            Put8(kCamelotSearch + i, kSearch[i]);
+            Put8(At(kCamelotSearch) + i, kSearch[i]);
         }
+
         for (uint32_t i = 0; i < 20; i++)
         {
-            Put8(kCamelotPulse + i, kPulse[i]);
+            Put8(At(kCamelotPulse) + i, kPulse[i]);
         }
     }
 
@@ -318,9 +329,9 @@ public:
     // 4-bit steps, and the priority of the note start.
     void WriteLaterCamelot(uint32_t tap, int echo, int cross_echo)
     {
-        Put32(kCamelotEchoWords, tap);
-        Put32(kCamelotEchoWords + 8, uint32_t(cross_echo) << 16 | uint32_t(echo));
-        Put32(kCamelotEchoWords + 12, (uint32_t(echo) << 16) + uint32_t(cross_echo));
+        Put32(At(kCamelotEchoWords), tap);
+        Put32(At(kCamelotEchoWords) + 8, uint32_t(cross_echo) << 16 | uint32_t(echo));
+        Put32(At(kCamelotEchoWords) + 12, (uint32_t(echo) << 16) + uint32_t(cross_echo));
 
         const uint8_t kCode[48] = {0xFF, 0x84, 0xA0, 0xE3, 0x28, 0x88, 0x88, 0xE1, 0x88, 0xE3, 0x08, 0xE0,
                                    0x63, 0x3E, 0xA0, 0xE3, 0x20, 0x00, 0x10, 0xE3, 0x1C, 0x70, 0x94, 0x15,
@@ -328,7 +339,7 @@ public:
                                    0x01, 0xD1, 0xFF, 0x20, 0x04, 0xE0, 0x68, 0x7F, 0x40, 0x18, 0xFE, 0x28};
         for (uint32_t i = 0; i < 48; i++)
         {
-            Put8(kLaterCamelot + i, kCode[i]);
+            Put8(At(kLaterCamelot) + i, kCode[i]);
         }
     }
 
@@ -348,17 +359,18 @@ public:
         const uint8_t kTempo[14] = {0x4A, 0x6A, 0x53, 0x78, 0x02, 0x32, 0x4A, 0x62, 0x5A, 0x00, 0x42, 0x81, 0x96, 0x2A};
         for (uint32_t i = 0; i < 14; i++)
         {
-            Put8(kMetroidTempo + i, kTempo[i]);
+            Put8(At(kMetroidTempo) + i, kTempo[i]);
         }
 
         // ldr r3, =players; ldr r0, =songs; lsls r2, r4, #3; bx lr
         const uint16_t kTables[4] = {0x4B01, 0x4802, 0x00E2, 0x4770};
         for (uint32_t i = 0; i < 4; i++)
         {
-            Put16(kMetroidTables + 2 * i, kTables[i]);
+            Put16(At(kMetroidTables) + 2 * i, kTables[i]);
         }
-        Put32(kMetroidTables + 8, kPlayerTable);
-        Put32(kMetroidTables + 12, kSongTable);
+
+        Put32(At(kMetroidTables) + 8, At(kPlayerTable));
+        Put32(At(kMetroidTables) + 12, At(kSongTable));
 
         std::vector<uint8_t> table;
         for (uint16_t k = 0; k < 129; k++)
@@ -366,6 +378,7 @@ public:
             table.push_back(uint8_t(k * step));
             table.push_back(uint8_t((k * step) >> 8));
         }
+
         const uint32_t table_at = Place(table);
 
         // The test of the voice's PSG channel against 3, and the load of the table, indexed by the key times 2.
@@ -375,6 +388,7 @@ public:
             code.push_back(uint8_t(h));
             code.push_back(uint8_t(h >> 8));
         }
+
         AppendLe32(code, table_at);
         Place(code);
 
@@ -394,7 +408,7 @@ public:
         return Place(bytes);
     }
 
-    // Places a compressed sample of `points` points from its blocks of 33 bytes, which plays at 13379 Hz for key 60.
+    // Places a compressed sample of `points` points from its blocks of 33 bytes. It plays at 13379 Hz for key 60.
     uint32_t CompressedWave(const std::vector<uint8_t>& blocks, uint32_t points)
     {
         std::vector<uint8_t> bytes(16, 0);
@@ -468,43 +482,43 @@ public:
         }
 
         const uint32_t header_at = Place(header);
-        Put32(kSongTable + 8 * songs_, header_at);
-        Put16(kSongTable + 8 * songs_ + 4, uint16_t(player));
-        Put16(kSongTable + 8 * songs_ + 6, uint16_t(player));
+        Put32(At(kSongTable) + 8 * songs_, header_at);
+        Put16(At(kSongTable) + 8 * songs_ + 4, uint16_t(player));
+        Put16(At(kSongTable) + 8 * songs_ + 6, uint16_t(player));
         songs_++;
 
         return header_at;
     }
 
-    // Writes `code` as the header's game code, which a game's rows in the driver's detection go by.
+    // Another name of CartImage::SetGameCode(), for code written before it. It goes at the next major version.
     void GameCode(std::string_view code)
     {
-        PutBytes(kRomBase + 0xAC, std::vector<uint8_t>(code.begin(), code.end()));
+        SetGameCode(code);
     }
 
     // Writes a game's call of m4aSoundMode with `mode`: straight after its call of m4aSoundInit, or after another
     // routine's.
     void GameSoundMode(uint32_t mode, bool after_init)
     {
-        constexpr uint32_t kGameCall = kRomBase + 0x140;
-        constexpr uint32_t kGamePool = kRomBase + 0x14C;
-        PutBl(kGameCall, after_init ? kInit : kRomBase + 0x1F0);
-        Put16(kGameCall + 4, uint16_t(0x4800 | ((kGamePool - ((kGameCall + 8) & ~3u)) / 4)));
-        PutBl(kGameCall + 6, kInit + 6);
-        Put32(kGamePool, mode);
+        const uint32_t game_call = At(kRomBase + 0x140);
+        const uint32_t game_pool = At(kRomBase + 0x14C);
+        PutBl(game_call, after_init ? At(kInit) : At(kRomBase + 0x1F0));
+        Put16(game_call + 4, uint16_t(0x4800 | ((game_pool - ((game_call + 8) & ~3u)) / 4)));
+        PutBl(game_call + 6, At(kInit) + 6);
+        Put32(game_pool, mode);
     }
 
     // Writes a game's calls of m4aSoundMode straight after its call of m4aSoundInit, each with a mode from movs and
     // lsls. Before them, the game calls `other_calls` other routines.
     void GameShiftedSoundModes(const std::vector<ShiftedMode>& modes, int other_calls)
     {
-        uint32_t at = kRomBase + 0x160;
-        PutBl(at, kInit);
+        uint32_t at = At(kRomBase + 0x160);
+        PutBl(at, At(kInit));
         at += 4;
 
         for (int i = 0; i < other_calls; i++)
         {
-            PutBl(at, kRomBase + 0x1F0);
+            PutBl(at, At(kRomBase + 0x1F0));
             at += 4;
         }
 
@@ -512,7 +526,7 @@ public:
         {
             Put16(at, uint16_t(0x2000 | m.value));
             Put16(at + 2, uint16_t(m.shift << 6));
-            PutBl(at + 4, kInit + 6);
+            PutBl(at + 4, At(kInit) + 6);
             at += 8;
         }
     }
@@ -523,30 +537,32 @@ private:
     void WriteDriver(uint32_t mode, bool special)
     {
         // ldr r0, =mode; bl m4aSoundMode, with the music player table in the same literal pool.
-        Put16(kInit, uint16_t(0x4800 | ((kInitPool - ((kInit + 4) & ~3u)) / 4)));
-        Put16(kInit + 2, 0xF000);
-        Put16(kInit + 4, 0xF800);
-        Put32(kInitPool, mode);
-        Put32(kInitPool + 4, kPlayerTable);
+        Put16(At(kInit), uint16_t(0x4800 | ((At(kInitPool) - ((At(kInit) + 4) & ~3u)) / 4)));
+        Put16(At(kInit) + 2, 0xF000);
+        Put16(At(kInit) + 4, 0xF800);
+        Put32(At(kInitPool), mode);
+        Put32(At(kInitPool) + 4, At(kPlayerTable));
 
         for (uint32_t i = 0; i < 18; i++)
         {
-            Put16(kSongStart + 2 * i, kSongStartCode[i]);
+            Put16(At(kSongStart) + 2 * i, kSongStartCode[i]);
         }
-        Put32(kSongStartPool, kPlayerTable);
-        Put32(kSongStartPool + 4, kSongTable);
+
+        Put32(At(kSongStartPool), At(kPlayerTable));
+        Put32(At(kSongStartPool) + 4, At(kSongTable));
 
         if (special)
         {
             const uint8_t kTest[] = {0x01, 0x00, 0xD4, 0xE5, 0x30, 0x00, 0x10, 0xE3};
             for (uint32_t i = 0; i < 8; i++)
             {
-                Put8(kSpecialTest + i, kTest[i]);
+                Put8(At(kSpecialTest) + i, kTest[i]);
             }
         }
     }
 
     uint32_t next_;
+    uint32_t origin_;
     uint32_t songs_ = 0;
 };
 

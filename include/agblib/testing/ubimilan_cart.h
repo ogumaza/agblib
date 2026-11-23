@@ -36,6 +36,7 @@ using agblib::testing::ubimilan_image::kTakeBank;
 using agblib::testing::ubimilan_image::kWaveInstruments;
 using agblib::testing::ubimilan_image::kWaveTable;
 using agblib::testing::ubimilan_image::kWrapper;
+using agblib::testing::ubimilan_image::WriteBankCalls;
 using agblib::ubimilan::kKit;
 using agblib::ubimilan::kMusic;
 using agblib::ubimilan::kNoResource;
@@ -108,15 +109,15 @@ inline const std::vector<uint8_t> kPsgSequence = {
     0x90, 60,   0x70, 0x00, 0x00,       // square 1's key 60 at volume 7
     0xC1, 1,    0x00, 0x00,             // square 2's instrument 1, with the pitch mode
     0x91, 60,   0x50, 0x00, 0x00,       // square 2's key 60 at volume 5
-    0xC2, 1,    0x00, 0x00,             // the wave's program 1, which loads its wave
+    0xC2, 1,    0x00, 0x00,             // the wave's program 1: loads its wave
     0x92, 48,   0x20, 0x00, 0x00,       // the wave's key 48 at full volume
     0x99, 0,    0x00, 0x04, 0x00,       // noise key 0, then frame 5
-    0x91, 64,   0x50, 0x0E, 0x00,       // square 2's key 64, which glides from key 60, then frame 20
+    0x91, 64,   0x50, 0x0E, 0x00,       // square 2's key 64, a glide from key 60, then frame 20
     0x80, 60,   0,    0x00, 0x00,       // square 1's note-off
     0x81, 64,   0,    0x00, 0x00,       // square 2's note-off
     0xC1, 2,    0x00, 0x00,             // square 2's instrument 2, with legato
     0x91, 60,   0x50, 0x04, 0x00,       // key 60, then frame 25
-    0x91, 62,   0x50, 0x04, 0x00,       // key 62, which goes on from key 60, then frame 30
+    0x91, 62,   0x50, 0x04, 0x00,       // key 62, going on from key 60, then frame 30
     0x81, 62,   0,    0x00, 0x00,       // square 2's note-off
     0x82, 48,   0,    0x00, 0x00,       // the wave's note-off
     0xFC,
@@ -187,10 +188,12 @@ private:
         {
             Put16(kFrequencyTable + 2 * uint32_t(i), Setting(i));
         }
+
         for (int c = 0; c < 100 * kFineKeys; c++)
         {
             Put16(kFineTable + 2 * uint32_t(c), Setting(c / 100.0));
         }
+
         Put32(kNoiseTable, 0xC000F01E);
         for (uint32_t i = 0; i < 32; i++)
         {
@@ -213,6 +216,7 @@ private:
             {
                 Put8(next + uint32_t(i), bytes[i]);
             }
+
             Put32(kBank + 0x10 + 4 * uint32_t(id), next - kBank);
             next = (next + uint32_t(bytes.size()) + 3) & ~3u;
         };
@@ -230,6 +234,7 @@ private:
             kit.push_back(uint8_t(id));
             kit.push_back(uint8_t(id >> 8));
         }
+
         add(kKitId, kit);
         add(kShortId, Sample(64, false, 0, 0));
         add(kLoopId, Sample(100, true, 20, 90));
@@ -244,7 +249,7 @@ private:
         // Resources 103 to 108: the samples that play as music, and short samples up to them.
         if (tomb_raider_)
         {
-            PutBytes(kRomBase + 0xAC, {'A', 'L', '9', 'P'});
+            SetGameCode("AL9P");
             for (int id = kResourceCount; id <= kLastSampleId; id++)
             {
                 add(id, id == kLoopSampleId     ? Sample(4096, true, 0, 4096)
@@ -265,6 +270,7 @@ private:
                 b.push_back(uint8_t(v >> (8 * i)));
             }
         }
+
         for (uint32_t i = 0; i < length; i++)
         {
             b.push_back(uint8_t(int8_t((i * 7) % 200 - 100)));
@@ -298,14 +304,7 @@ inline agblib::testing::agb_files::CartImage OlderBuildCart()
     cart.PutHalfwords(kTakeBank, {0x4A06, 0x60D0, 0x8801, 0x8011, 0x8841, 0x8051, 0x6841, 0x1841, 0x6051, 0x6881,
                                   0x1840, 0x6090, 0x4770});
     cart.Put32(kTakeBank + 0x1C, 0x02003B00);
-    cart.Put16(kWrapper, 0xB500);
-    cart.PutBl(kWrapper + 2, kTakeBank);
-    cart.Put16(kWrapper + 6, 0xBD00);
-    cart.PutHalfwords(kFileLookup, {0x4801, 0x4770});
-    cart.Put32(kFileLookup + 8, kBank);
-    cart.Put16(kStart, 0x2002);
-    cart.PutBl(kStart + 2, kFileLookup);
-    cart.PutBl(kStart + 6, kWrapper);
+    WriteBankCalls(cart);
     cart.Put16(kBank + 2, 2);
     cart.Put32(kBank + 4, 0x10);
     cart.Put32(kBank + 8, 0x10);

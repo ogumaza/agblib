@@ -14,6 +14,9 @@
 #include <string>
 #include <vector>
 
+#include "agblib/agb/player_steps.h"
+#include "agblib/agb/sound_registers.h"
+
 namespace agblib::quintet
 {
 namespace
@@ -25,8 +28,6 @@ constexpr uint32_t kTimer0 = 0x04000100;
 constexpr uint32_t kTimerBytes = 4;
 constexpr uint32_t kDma1 = 0x040000BC;
 constexpr uint32_t kDmaBytes = 12;
-constexpr uint32_t kSoundCntHHigh = 0x04000083;
-constexpr uint32_t kSoundCntX = 0x04000084;
 
 // The frames that the player counts as busy after the channels have ended, while the driver's last stores take effect.
 constexpr int kTailFrames = 2;
@@ -34,7 +35,7 @@ constexpr int kTailFrames = 2;
 // A timer's prescaler, from bits 0 and 1 of its control.
 constexpr uint32_t kPrescale[4] = {1, 64, 256, 1024};
 constexpr uint8_t kTimerOn = 0x80; // bit 7 of the control, in its low byte
-constexpr uint8_t kDmaOn = 0x80; // bit 15 of the control, in its high byte
+constexpr uint8_t kDmaOn = 0x80;   // bit 15 of the control, in its high byte
 
 // The bytes that a note's start stores in its FIFO, and the bytes in a FIFO at which its DMA moves more.
 constexpr uint32_t kFifoFill = 32;
@@ -66,10 +67,11 @@ std::vector<uint8_t> InitRegisters(Revision revision)
             registers[address - agb::kRegSound1CntL + uint32_t(b)] = uint8_t(value >> (8 * b));
         }
     };
-    set(0x04000080, 2, 0xFF77);
-    set(0x04000082, 2, 0x730E);
-    set(kSoundCntX, 1, 0x80);
-    set(0x04000088, 2, 0x0200 | uint32_t(TraitsOf(revision).soundbias_resolution) << 14);
+
+    set(agb::kRegSoundCntL, 2, 0xFF77);
+    set(agb::kRegSoundCntH, 2, 0x730E);
+    set(agb::kRegSoundCntX, 1, 0x80);
+    set(agb::kRegSoundBias, 2, 0x0200 | uint32_t(TraitsOf(revision).soundbias_resolution) << 14);
 
     return registers;
 }
@@ -114,7 +116,7 @@ void SoundBus::ResetFifos(const agb::RegisterWrite& write)
     const uint32_t address = write.address;
     for (uint32_t b = 0; b < write.size; b++)
     {
-        if (address + b == kSoundCntHHigh)
+        if (address + b == agb::kRegSoundCntHHigh)
         {
             const uint8_t high = uint8_t(write.value >> (8 * b));
             for (int f = 0; f < 2; f++)
@@ -178,6 +180,7 @@ void SoundBus::StoreDma(int fifo, uint32_t offset, int size, uint32_t value)
             Fill(fifo, f.source - kFifoFill, kFifoFill);
         }
     }
+
     f.dma = on;
 }
 
@@ -194,7 +197,7 @@ void SoundBus::Fill(int fifo, uint32_t address, uint32_t count)
 
 int SoundBus::TimerOf(int fifo) const
 {
-    return apu_.Register(kSoundCntHHigh) >> (2 + 4 * fifo) & 1;
+    return apu_.Register(agb::kRegSoundCntHHigh) >> (2 + 4 * fifo) & 1;
 }
 
 bool SoundBus::FifoRunning(int fifo) const
@@ -226,6 +229,7 @@ void SoundBus::PlayFifo(int f, std::vector<float>& enhanced)
             fifo.output = fifo.bytes.front();
             fifo.bytes.pop_front();
         }
+
         played.push_back({at, fifo.output});
         if (fifo.dma && fifo.bytes.size() <= kDmaLevel)
         {
@@ -234,8 +238,8 @@ void SoundBus::PlayFifo(int f, std::vector<float>& enhanced)
         }
     }
 
-    // In the enhanced mode, each output sample lies between the byte that plays and the next, at its place between
-    // the two overflows. A stopped timer holds the byte.
+    // In the enhanced mode, each output sample is between the byte that plays and the next, at its place between the
+    // two overflows. A stopped timer contains the byte.
     if (enhanced_)
     {
         const int8_t next = fifo.bytes.empty() ? fifo.output : fifo.bytes.front();
@@ -286,21 +290,11 @@ void SoundBus::RunFrame(std::vector<int16_t>* out, std::vector<float>* enhanced_
         {
             t.next += t.period;
         }
+
         t.next -= t.period ? agb::kFrameCycles : 0;
     }
 
-    if (out)
-    {
-        apu_.Run(agb::kFrameCycles, *out);
-    }
-    else if (enhanced_out)
-    {
-        apu_.Run(agb::kFrameCycles, *enhanced_out);
-    }
-    else
-    {
-        apu_.Run(agb::kFrameCycles);
-    }
+    agb::RunApu(apu_, agb::kFrameCycles, out, enhanced_out);
 }
 
 ArchivePlayer::ArchivePlayer(const agb::Rom& rom, std::span<const DriverInfo> files)
@@ -327,10 +321,7 @@ void ArchivePlayer::StartNote(int song, int channel, uint8_t instrument, int ind
 
 void ArchivePlayer::ReleaseNote()
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(sequencer_));
 
     sequencer_->ReleaseAudition();
 }
@@ -364,10 +355,12 @@ void ArchivePlayer::Begin(int song, const Sequencer& sequencer, const ArchivePla
     {
         bus_.StartEnhanced();
     }
+
     for (const agb::RegisterWrite& write : sequencer_->StartWrites())
     {
         bus_.Store(write);
     }
+
     frames_ = 0;
     tail_ = kTailFrames;
     peaks_ = {};
@@ -381,10 +374,7 @@ const DriverInfo& ArchivePlayer::Info() const
 
 const Sequencer& ArchivePlayer::Driver() const
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(sequencer_));
 
     return *sequencer_;
 }
@@ -424,15 +414,13 @@ void ArchivePlayer::ApplyMutes()
             mask = uint8_t(mask | 1u << t);
         }
     }
+
     bus_.Apu().SetMuted(mask);
 }
 
 void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(sequencer_));
 
     for (const agb::RegisterWrite& write : sequencer_->Step())
     {
@@ -459,6 +447,7 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
     {
         peaks_[size_t(t)] = bus_.Apu().ChannelPeaks(t);
     }
+
     const size_t end = out ? out->size() : enhanced_out->size();
     for (size_t i = first; i < end; i++)
     {
@@ -519,10 +508,7 @@ std::array<int32_t, 2> ArchivePlayer::TrackPeaks(int track) const
 
 ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(sequencer_));
 
     Snapshot s;
     s.owner_ = this;
@@ -538,10 +524,7 @@ ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 
 void ArchivePlayer::Restore(const Snapshot& snapshot)
 {
-    if (snapshot.owner_ != this || !snapshot.sequencer_)
-    {
-        throw std::invalid_argument("the snapshot is another player's");
-    }
+    agb::CheckSnapshotOwner(snapshot.owner_ == this && snapshot.sequencer_);
 
     file_ = snapshot.file_;
     sequencer_.emplace(*snapshot.sequencer_);

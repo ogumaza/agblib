@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <map>
 #include <set>
 #include <span>
@@ -18,6 +17,7 @@
 
 #include "agblib/agb/data_items.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sequence_codec.h"
 #include "agblib/rd2/sequencer.h"
 
 namespace agblib::rd2
@@ -33,7 +33,7 @@ using ntdlib::commands::ToUnit;
 using Item = ntdlib::commands::Command;
 using agb::DataItem;
 
-// A track's settings for the notes and waits that give none, as the driver starts a track.
+// A track's settings for the notes and waits that give none as the driver starts a track.
 struct Running
 {
     uint16_t length = 0x7F;
@@ -42,24 +42,10 @@ struct Running
 };
 
 // Reads the bytes of a command. Past the bytes, it reads 0 and sets a flag.
-class Reader
+class Reader : public agb::ByteReader
 {
 public:
-    Reader(std::span<const uint8_t> bytes, uint32_t at) : bytes_(bytes), at_(at)
-    {
-    }
-
-    uint8_t Byte()
-    {
-        if (at_ >= bytes_.size())
-        {
-            past_ = true;
-            at_++;
-            return 0;
-        }
-
-        return bytes_[at_++];
-    }
+    using ByteReader::ByteReader;
 
     uint16_t Halfword()
     {
@@ -79,21 +65,6 @@ public:
         value_bytes = value < 0x80 ? 2 : 0;
         return value;
     }
-
-    bool Past() const
-    {
-        return past_;
-    }
-
-    uint32_t At() const
-    {
-        return at_;
-    }
-
-private:
-    std::span<const uint8_t> bytes_;
-    uint32_t at_;
-    bool past_ = false;
 };
 
 // Reads a command in the console's values. A target stays a byte offset, with `target_outside` set.
@@ -108,6 +79,7 @@ Item ReadItem(Reader& r, const RevisionTraits& traits, Running& running)
         item.value.value = value;
         item.index = index;
     };
+
     const auto target = [&item, &r]
     {
         item.target = r.Halfword();
@@ -122,6 +94,7 @@ Item ReadItem(Reader& r, const RevisionTraits& traits, Running& running)
         item.encoding.repeated = true;
         return item;
     }
+
     if (op <= 0xBF)
     {
         running.length = r.Length(item.encoding.value_bytes);
@@ -131,6 +104,7 @@ Item ReadItem(Reader& r, const RevisionTraits& traits, Running& running)
         item.velocity = running.velocity;
         return item;
     }
+
     if ((op & 0xF0) == 0xD0)
     {
         item.kind = Kind::kPortamentoFrom;
@@ -295,7 +269,7 @@ Header ReadHeader(std::span<const uint8_t> data, bool effects)
 
     if (effects)
     {
-        // The table ends where its first track starts, as the game's request for an effect reads it.
+        // The table ends where its first track starts as the game's request for an effect reads it.
         uint32_t end = 0x10000;
         for (uint32_t t = 0; 2 * t < end && 2 * t + 1 < data.size(); t++)
         {
@@ -306,6 +280,7 @@ Header ReadHeader(std::span<const uint8_t> data, bool effects)
                 end = std::min<uint32_t>(end, offset);
             }
         }
+
         if (end == 0x10000)
         {
             header.offsets.clear();
@@ -436,9 +411,7 @@ private:
             return nullptr;
         }
 
-        const auto after = items_.lower_bound(at);
-        if ((after != items_.end() && after->first < next) ||
-            (after != items_.begin() && afters_.at(std::prev(after)->first) > at))
+        if (agb::OverlapsItems(items_, afters_, at, next))
         {
             problem_ = "two commands overlap";
             return nullptr;
@@ -575,31 +548,16 @@ Decoded Build(std::span<const uint8_t> data, const Header& header, bool effects,
         items.push_back(std::move(item));
     }
 
-    std::map<uint32_t, uint32_t> item_at;
-    uint32_t at = header.bytes;
-    for (const auto& [offset, read] : flow.Items())
+    const auto finish = [](Item& item)
     {
-        if (offset > at)
-        {
-            items.push_back(DataItem(data.subspan(at, offset - at)));
-        }
-
-        Item item = read;
         item.velocity = ToUnit(item.velocity, ntdlib::commands::Scale{});
         item.value.value = ToUnit(item.value.value, ScaleOf(item.kind));
         if (HasTarget(item.kind))
         {
             item.target_outside = true; // until the items are known
         }
-
-        item_at[offset] = uint32_t(items.size());
-        items.push_back(std::move(item));
-        at = flow.After(offset);
-    }
-    if (data.size() > at)
-    {
-        items.push_back(DataItem(data.subspan(at)));
-    }
+    };
+    const std::map<uint32_t, uint32_t> item_at = agb::AppendFlowItems(data, header.bytes, flow, finish, items);
 
     for (Item& item : items)
     {
@@ -669,10 +627,12 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
     {
         return {opcode, ByteOf(value, 0, 0xFF, item.kind)};
     };
+
     const auto signed_command = [&](uint8_t opcode) -> std::vector<uint8_t>
     {
         return {opcode, ByteOf(value, -0x80, 0x7F, item.kind)};
     };
+
     const auto flag_command = [&](uint8_t on, uint8_t off) -> std::vector<uint8_t>
     {
         return {ByteOf(value, 0, 1, item.kind) ? on : off};
@@ -690,6 +650,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
         {
             return {item.key};
         }
+
         bytes.push_back(uint8_t(0x60 + item.key));
         AddLength(bytes, value, item.encoding.value_bytes, item.kind);
         bytes.push_back(ByteOf(velocity, 0, 0xFF, item.kind));
@@ -700,6 +661,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
         {
             return {0xC0};
         }
+
         bytes.push_back(0xC1);
         AddLength(bytes, value, item.encoding.value_bytes, item.kind);
         return bytes;
@@ -730,6 +692,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
         {
             throw std::invalid_argument("a slide's flags don't fit in the driver's bytes");
         }
+
         bytes = {uint8_t(0xD0 | item.index), item.key, ByteOf(value, 0, 0xFF, item.kind)};
         if (item.index & 1)
         {
@@ -739,6 +702,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
         {
             throw std::invalid_argument("a slide with even flags reads no delay");
         }
+
         return bytes;
 
     case Kind::kVolume:
@@ -755,6 +719,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
         {
             throw std::invalid_argument("the driver has one send");
         }
+
         return byte_command(0xE3);
 
     case Kind::kTempo:
@@ -762,6 +727,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
         {
             return byte_command(0xE4);
         }
+
         bytes.push_back(0xE4);
         AddLength(bytes, value, item.encoding.value_bytes, item.kind);
         return bytes;
@@ -786,6 +752,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
         {
             throw std::invalid_argument("this revision of the driver has no player's volume");
         }
+
         return byte_command(0xEA);
 
     case Kind::kJump:
@@ -799,6 +766,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
         {
             return {0, 0};
         }
+
         return {0xF8, item.index, 0, 0};
 
     case Kind::kEnd:
@@ -810,6 +778,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const RevisionTraits& traits)
         {
             throw std::invalid_argument("an opcode doesn't fit in the driver's bytes");
         }
+
         return {uint8_t(item.encoding.opcode)};
 
     default:
@@ -839,30 +808,16 @@ void CheckReadBack(const std::vector<Item>& items, const Encoded& encoded, const
         throw std::invalid_argument("the sequence's items don't read back: " + flow.Problem());
     }
 
-    std::map<uint32_t, size_t> item_at;
-    for (size_t i = 0; i < items.size(); i++)
+    // FF ends a track or returns from a call: either kind reads back as either.
+    const auto same = [](Kind kind, Kind read)
     {
-        if (encoded.offsets[i + 1] > encoded.offsets[i])
-        {
-            item_at[encoded.offsets[i]] = i;
-        }
-    }
-    for (const auto& [offset, read] : flow.Items())
-    {
-        const auto found = item_at.find(offset);
-        if (found == item_at.end() || items[found->second].kind == Kind::kData)
-        {
-            throw std::invalid_argument("a track reaches bytes that no item starts at");
-        }
-
-        const Kind kind = items[found->second].kind;
         const bool both_end =
-            (kind == Kind::kEnd || kind == Kind::kReturn) && (read.kind == Kind::kEnd || read.kind == Kind::kReturn);
-        if (kind != read.kind && !both_end)
-        {
-            throw std::invalid_argument("a command's opcode reads as a command of another kind");
-        }
-    }
+            (kind == Kind::kEnd || kind == Kind::kReturn) && (read == Kind::kEnd || read == Kind::kReturn);
+        return kind == read || both_end;
+    };
+
+    agb::CheckFlowItems(items, encoded, flow, "a track reaches bytes that no item starts at",
+                        "a command's opcode reads as a command of another kind", same);
 }
 
 } // namespace
@@ -925,7 +880,7 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence)
     const Header header = ReadHeader(data, effects);
     const Flow flow(data, TraitsOf(info.revision), header);
 
-    // The sequence ends with the last byte that a track reads, or at the next sequence where that lies close after it.
+    // The sequence ends with the last byte that a track reads, or at the next sequence where that is close after it.
     uint32_t size = std::max<uint32_t>(flow.End(), 1);
     uint32_t next = rom.End();
     for (int s = 0; s < SequenceCount(info); s++)
@@ -936,6 +891,7 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence)
             next = other;
         }
     }
+
     if (next - (address + size) < kSequenceGap && next < rom.End())
     {
         size = next - address;
@@ -947,17 +903,7 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence)
 std::vector<uint32_t> ItemOffsets(const ntdlib::commands::Sequence& sequence, Revision revision)
 {
     const RevisionTraits& traits = TraitsOf(revision);
-    std::vector<uint32_t> offsets;
-    offsets.reserve(sequence.items.size() + 1);
-    uint32_t at = 0;
-    for (const Item& item : sequence.items)
-    {
-        offsets.push_back(at);
-        at += uint32_t(item.kind == Kind::kData ? item.bytes.size() : ItemBytes(item, traits).size());
-    }
-    offsets.push_back(at);
-
-    return offsets;
+    return agb::ItemOffsets(sequence, [&](const Item& item) { return ItemBytes(item, traits); });
 }
 
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Revision revision)
@@ -966,17 +912,11 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Revision revi
     const std::vector<Item>& items = sequence.items;
 
     Encoded encoded;
-    uint32_t at = 0;
-    bool any_command = false;
-    for (const Item& item : items)
+    const auto item_bytes = [&](const Item& item)
     {
-        const std::vector<uint8_t> bytes = item.kind == Kind::kData ? item.bytes : ItemBytes(item, traits);
-        encoded.offsets.push_back(at);
-        encoded.bytes.insert(encoded.bytes.end(), bytes.begin(), bytes.end());
-        at += uint32_t(bytes.size());
-        any_command = any_command || item.kind != Kind::kData;
-    }
-    encoded.offsets.push_back(at);
+        return ItemBytes(item, traits);
+    };
+    const bool any_command = agb::JoinItems(items, item_bytes, encoded);
 
     std::vector<uint16_t> starts;
     for (size_t i = 0; i < items.size(); i++)
@@ -1006,7 +946,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Revision revi
         }
     }
 
-    // The driver has to read the bytes as the items say. A sequence kept as data holds no commands.
+    // The driver has to read the bytes as the items say. A sequence kept as data contains no commands.
     if (any_command)
     {
         CheckReadBack(items, encoded, traits, starts);

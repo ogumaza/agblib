@@ -57,6 +57,7 @@ void WriteBeatConductor(MidiTrack& conductor, const std::string& title, const st
         conductor.Meta(ticks.Marker(plan.loop_end), 0x06, "loopEnd");
         conductor.RepeatTempo(ticks.Marker(plan.loop_start));
     }
+
     conductor.SetEnd(end);
 }
 

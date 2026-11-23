@@ -54,7 +54,7 @@ int SoundfontBuilder::PcmSample(const PcmSound& sound)
         return pcms_[sound] = -1;
     }
 
-    // A sample that plays at several rates, which make its passes different lengths, gets a numbered copy for each.
+    // A sample that plays at several rates gets a numbered copy for each. The rates make its passes different lengths.
     sf2::Sample out;
     const int copy = ++pcm_copies_[sound.start];
     out.name = AddressName("PCM", sound.start);
@@ -66,12 +66,13 @@ int SoundfontBuilder::PcmSample(const PcmSound& sound)
     out.sample_rate = sound.rate;
     out.original_key = 60;
 
-    // The bytes from the start, then a pass through the loop, which is the SF2 sample's loop. The samples are 8-bit and
+    // The bytes from the start, then a pass through the loop: the SF2 sample's loop. The samples are 8-bit and
     // signed.
     for (uint32_t i = 0; i < sound.first; i++)
     {
         out.data.push_back(int16_t(rom_.S8(sound.start + sound.from + i) * 256));
     }
+
     for (uint32_t i = 0; i < loop_length; i++)
     {
         out.data.push_back(int16_t(rom_.S8(sound.start + sound.loop + i) * 256));

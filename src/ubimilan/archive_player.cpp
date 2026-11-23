@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "agblib/agb/output_peaks.h"
+#include "agblib/agb/player_steps.h"
 
 namespace agblib::ubimilan
 {
@@ -90,30 +91,21 @@ void ArchivePlayer::Start(int song, const ArchivePlayerOptions& options)
 
 const Output& ArchivePlayer::Driver() const
 {
-    if (!output_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(output_));
 
     return *output_;
 }
 
 void ArchivePlayer::RunFrame(std::vector<int16_t>& out)
 {
-    if (enhanced_)
-    {
-        throw std::logic_error("the song plays in the enhanced mode");
-    }
+    agb::CheckPlainFrame(enhanced_);
 
     Frame(&out, nullptr);
 }
 
 void ArchivePlayer::RunFrame(std::vector<float>& out)
 {
-    if (output_ && !enhanced_)
-    {
-        throw std::logic_error("the song doesn't play in the enhanced mode");
-    }
+    agb::CheckEnhancedFrame(bool(output_), enhanced_);
 
     Frame(nullptr, &out);
 }
@@ -125,31 +117,17 @@ void ArchivePlayer::RunFrame()
 
 uint16_t ArchivePlayer::SilentTracks() const
 {
-    return uint16_t(muted_ | (soloed_ ? ~soloed_ : 0));
+    return agb::SilentTracksOf(muted_, soloed_);
 }
 
 void ArchivePlayer::RunHardware(uint64_t cycles, std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (out)
-    {
-        apu_.Run(cycles, *out);
-    }
-    else if (enhanced_out)
-    {
-        apu_.Run(cycles, *enhanced_out);
-    }
-    else
-    {
-        apu_.Run(cycles);
-    }
+    agb::RunApu(apu_, cycles, out, enhanced_out);
 }
 
 void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (!output_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(output_));
 
     const bool metering = metered_ && (out || enhanced_out);
     const size_t first_sample = out ? out->size() : enhanced_out ? enhanced_out->size() : 0;
@@ -221,22 +199,12 @@ bool ArchivePlayer::Busy() const
 
 void ArchivePlayer::MuteTrack(int track, bool mute)
 {
-    if (track < 0 || track >= kTracks)
-    {
-        throw std::out_of_range("a song has at most " + std::to_string(kTracks) + " tracks");
-    }
-
-    muted_ = uint16_t(mute ? muted_ | 1u << track : muted_ & ~(1u << track));
+    agb::SetTrackBit(muted_, track, mute, kTracks);
 }
 
 void ArchivePlayer::SoloTrack(int track, bool solo)
 {
-    if (track < 0 || track >= kTracks)
-    {
-        throw std::out_of_range("a song has at most " + std::to_string(kTracks) + " tracks");
-    }
-
-    soloed_ = uint16_t(solo ? soloed_ | 1u << track : soloed_ & ~(1u << track));
+    agb::SetTrackBit(soloed_, track, solo, kTracks);
 }
 
 void ArchivePlayer::MeterTracks(bool on)
@@ -252,10 +220,7 @@ void ArchivePlayer::MeterTracks(bool on)
 
 ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 {
-    if (!output_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(bool(output_));
 
     Snapshot snapshot;
     snapshot.owner_ = this;
@@ -271,10 +236,7 @@ ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 
 void ArchivePlayer::Restore(const Snapshot& snapshot)
 {
-    if (snapshot.owner_ != this || !snapshot.output_)
-    {
-        throw std::invalid_argument("the snapshot is another player's");
-    }
+    agb::CheckSnapshotOwner(snapshot.owner_ == this && snapshot.output_);
 
     output_.emplace(*snapshot.output_);
     apu_ = snapshot.apu_;

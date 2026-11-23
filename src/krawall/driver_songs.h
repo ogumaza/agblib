@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 
 // Krawall's detection of the songs: the settings of the pieces that games play in ways that detection can't read,
-// the games' routines that play a module from a table, and the list of songs.
+// the games' routines that play a module from a table, and the list of songs. Only driver.cpp includes this header.
+// Its definitions therefore keep internal linkage.
+
+#pragma once
 
 #include <algorithm>
 #include <cstdint>
@@ -16,7 +19,6 @@
 
 namespace agblib::krawall
 {
-
 namespace
 {
 
@@ -52,7 +54,7 @@ constexpr SongSettings kSongSettings[] = {
     {.game_code = "BEAP", .module = 0x08361B28, .song = 5, .mode = 6, .music_volume = 64},
     {.game_code = "BEAP", .module = 0x08361B28, .song = 6, .music_volume = 64},
     {.game_code = "BEAP", .module = 0x08361B28, .song = 7, .music_volume = 64},
-    // The Koala Brothers: Outback Adventures plays songs 4 and 5 only as jingles, as at 0x0800171A and 0x0800172E.
+    // The Koala Brothers: Outback Adventures plays songs 4 and 5 only as jingles as at 0x0800171A and 0x0800172E.
     {.game_code = "BAKE", .module = 0x0858C284, .song = 4, .mode = 6},
     {.game_code = "BAKE", .module = 0x0858C284, .song = 5, .mode = 6},
     // Its European release makes the same calls at the same addresses, with the module elsewhere.
@@ -60,7 +62,7 @@ constexpr SongSettings kSongSettings[] = {
     {.game_code = "BAKP", .module = 0x0858BF70, .song = 5, .mode = 6},
     // Franklin the Turtle's ARM code plays nine of its modules only as jingles, at 41 calls of krapPlay(), as at
     // 0x08008848, 0x080088F8 and 0x08013AB8. Each of its 20 mini-games calls krapSetMusicVol(64) and then plays piece
-    // 1, 2 or 3, as at 0x08008290 and 0x08008400. krapPlay() keeps the music volume. The title plays piece 0 at 128.
+    // 1, 2 or 3 as at 0x08008290 and 0x08008400. krapPlay() keeps the music volume. The title plays piece 0 at 128.
     {.game_code = "BFKE", .module = 0x083321A8, .music_volume = 64},
     {.game_code = "BFKE", .module = 0x08334368, .music_volume = 64},
     {.game_code = "BFKE", .module = 0x08335A18, .music_volume = 64},
@@ -113,7 +115,7 @@ constexpr SongSettings kSongSettings[] = {
     {.game_code = "BFKP", .module = 0x0833737C, .mode = kModeJingle},
     // Cocoto Kart Racer's routine at 0x0800BC70 plays a race's module and sets the music volume: 100 for the first four
     // tracks at 0x0800C936, and 90 for the fifth at 0x0800C94E. On the last lap, 0x08005426 plays a jingle and
-    // 0x0800542E sets 90. krapPlay() keeps the music volume. 90 therefore holds for the last lap's module, from
+    // 0x0800542E sets 90. krapPlay() keeps the music volume. 90 therefore applies to the last lap's module, from
     // 0x08005638, for the jingle at the race's end, from 0x080053BA to 0x080053E6, and for the results' module, from
     // 0x0800B400 and 0x0800BB3C. The cup's end plays the race's jingles again at 128, at 0x08009692 to 0x080096D6. The
     // menus set 128. The countdown's jingle, from 0x0800BC9C, plays at 128 in a single race and a cup's first race, and
@@ -240,7 +242,7 @@ uint32_t PlayEntryRoutine(const Rom& rom, uint32_t at)
     return 0;
 }
 
-// Returns the modules that the game plays once, as jingles: the entries of a table of modules that a routine of the
+// Returns the modules that the game plays once as jingles: the entries of a table of modules that a routine of the
 // game plays with krapPlay() in the jingle mode (kPlayEntryPattern), by the number that each call of the routine gives.
 // The call's mode has to leave the loop bit clear. With that bit, krapPlay() loops the module in the jingle mode too.
 // Logs each such routine, and warns of a call whose number detection can't read.
@@ -255,6 +257,7 @@ std::vector<uint32_t> FindJingles(const Rom& rom, DriverInfo& info)
         {
             continue;
         }
+
         const uint32_t routine = PlayEntryRoutine(rom, at);
         if (!routine)
         {
@@ -326,6 +329,7 @@ std::vector<std::pair<uint32_t, int>> FindPlaysOnce(const Rom& rom, DriverInfo& 
         once.emplace_back(module, mode);
         listed += (listed.empty() ? "" : ", ") + Hex(module) + " (mode " + std::to_string(mode) + ")";
     }
+
     // The modules that the game plays once through routines of its own.
     for (const GameSettings& game : kGameSettings)
     {
@@ -355,7 +359,7 @@ std::vector<std::pair<uint32_t, int>> FindPlaysOnce(const Rom& rom, DriverInfo& 
 }
 
 // Returns the entries of the game's table of what it plays (kPlayTablePattern), up to the first that isn't one: an
-// entry needs a module that the list has, a mode of 0 to 7 and 2 bytes of 0. An entry that repeats an earlier one is
+// entry requires a module that the list has, a mode of 0 to 7 and 2 bytes of 0. An entry that repeats an earlier one is
 // left out. Sets the table's address in `info`, or leaves it 0 if the game has no such table, and logs the table.
 std::vector<ModuleSong> ReadPlayTable(const Rom& rom, DriverInfo& info)
 {
@@ -368,6 +372,7 @@ std::vector<ModuleSong> ReadPlayTable(const Rom& rom, DriverInfo& info)
             break;
         }
     }
+
     if (!info.play_table)
     {
         return entries;
@@ -381,6 +386,7 @@ std::vector<ModuleSong> ReadPlayTable(const Rom& rom, DriverInfo& info)
         {
             break;
         }
+
         const uint32_t module = rom.U32(entry);
         const int mode = rom.U8(entry + 4);
         const int song = rom.U8(entry + 5);
@@ -433,6 +439,7 @@ std::vector<ModuleSong> ReadModuleSettings(const Rom& rom, DriverInfo& info)
             {
                 return {};
             }
+
             const ModuleSong piece{info.modules[n], -1, false, int(mode), rom.U8(volumes + n)};
             if (std::find(entries.begin(), entries.end(), piece) == entries.end())
             {
@@ -478,6 +485,7 @@ void ListUnplayedModules(const Rom& rom, DriverInfo& info, const std::vector<uin
             info.songs.push_back({at, -1, false, direct->second});
             continue;
         }
+
         if (songs == 0)
         {
             const bool jingle = std::find(jingles.begin(), jingles.end(), at) != jingles.end();
@@ -485,6 +493,7 @@ void ListUnplayedModules(const Rom& rom, DriverInfo& info, const std::vector<uin
             {
                 listed += (listed.empty() ? "" : ", ") + std::to_string(info.songs.size());
             }
+
             info.songs.push_back({at, -1, jingle});
             continue;
         }
@@ -525,11 +534,13 @@ void ApplySongSettings(const Rom& rom, DriverInfo& info)
             piece->mode = row.mode;
             text += " in mode " + std::to_string(row.mode);
         }
+
         if (row.music_volume >= 0)
         {
             piece->music_volume = row.music_volume;
             text += " at a music volume of " + std::to_string(row.music_volume);
         }
+
         info.log.push_back(text);
     }
 
@@ -544,6 +555,7 @@ void ApplySongSettings(const Rom& rom, DriverInfo& info)
         {
             info.songs[i].music_volume = rom.U8(table.levels + uint32_t(i));
         }
+
         info.log.push_back("the game gives each song a music volume, from the table at " + Hex(table.levels));
     }
 }
@@ -552,7 +564,7 @@ void ApplySongSettings(const Rom& rom, DriverInfo& info)
 // no entry plays follows. One without markers converts as a whole, and one with markers song by song, each in the
 // player's song mode. A whole module that the game plays once converts in the jingle mode. Logs the songs that play
 // once and the jingles.
-void ListSongs(const Rom& rom, DriverInfo& info, const std::vector<uint32_t>& more_jingles)
+void ListSongs(const Rom& rom, DriverInfo& info, const std::vector<uint32_t>& more_jingles = {})
 {
     info.songs = ReadPlayTable(rom, info);
     if (info.songs.empty())
@@ -580,5 +592,4 @@ void ListSongs(const Rom& rom, DriverInfo& info, const std::vector<uint32_t>& mo
 }
 
 } // namespace
-
 } // namespace agblib::krawall

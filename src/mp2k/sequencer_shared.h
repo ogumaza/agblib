@@ -16,19 +16,21 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/wave/sinc.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/warnings.h"
 #include "agblib/mp2k/commands.h"
 #include "agblib/mp2k/driver.h"
 #include "agblib/mp2k/sequencer.h"
 #include "agblib/mp2k/song.h"
-#include "ntdlib/wave/sinc.h"
 
 namespace agblib::mp2k
 {
 
-// The most points that a frame of the mixer holds: those of its highest rate.
+// The most points that a frame of the mixer contains: those of its highest rate.
 constexpr int kMostFramePoints = 704;
 
 // The registers of the PSG's channels, NRx0 to NRx4. Channels 2 and 4 have no NRx0. The driver takes the byte after the
@@ -39,10 +41,10 @@ struct PsgRegisters
 };
 
 constexpr PsgRegisters kPsgRegisters[4] = {
-    {0x04000060, 0x04000062, 0x04000063, 0x04000064, 0x04000065},
-    {0x04000061, 0x04000068, 0x04000069, 0x0400006C, 0x0400006D},
-    {0x04000070, 0x04000072, 0x04000073, 0x04000074, 0x04000075},
-    {0x04000071, 0x04000078, 0x04000079, 0x0400007C, 0x0400007D},
+    {agb::kRegNr10, agb::kRegNr11, agb::kRegNr12, agb::kRegNr13, agb::kRegNr14},
+    {agb::kRegNr10 + 1, agb::kRegNr21, agb::kRegNr22, agb::kRegNr23, agb::kRegNr24},
+    {agb::kRegNr30, agb::kRegNr31, agb::kRegNr32, agb::kRegNr33, agb::kRegNr34},
+    {agb::kRegNr30 + 1, agb::kRegNr41, agb::kRegNr42, agb::kRegNr43, agb::kRegNr44},
 };
 
 // The steps of a compressed sample's points, by the 4 bits that code each one.
@@ -63,7 +65,7 @@ struct DecodedBlock
 };
 
 // Returns point `index` of the compressed sample at `wave`. Decodes the point's block into `block` first, unless
-// `block` holds it already.
+// `block` contains it already.
 inline int32_t CompressedPoint(const Rom& rom, uint32_t wave, uint32_t index, DecodedBlock& block)
 {
     if (block.index != index / kBlockPoints)
@@ -82,5 +84,22 @@ inline int32_t CompressedPoint(const Rom& rom, uint32_t wave, uint32_t index, De
 
     return block.points[index % kBlockPoints];
 }
+
+// The player's priority whose notes take a priority of 255 in a later version of Camelot's sequencer.
+constexpr int kCamelotTopPlayer = 120;
+
+// A track's flags.
+constexpr uint8_t kFlagVolSet = 0x01;
+constexpr uint8_t kFlagVolChange = 0x03;
+constexpr uint8_t kFlagPitSet = 0x04;
+constexpr uint8_t kFlagPitChange = 0x0C;
+constexpr uint8_t kFlagVolPitChange = kFlagVolChange | kFlagPitChange;
+constexpr uint8_t kFlagStart = 0x40;
+constexpr uint8_t kFlagExist = 0x80;
+
+// The settings that a track sets, for the conversion's reports.
+constexpr uint8_t kSetVolume = 0x01;
+constexpr uint8_t kSetPan = 0x02;
+constexpr uint8_t kSetPitch = 0x04;
 
 } // namespace agblib::mp2k

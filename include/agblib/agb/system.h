@@ -3,11 +3,11 @@
 // Enough of a GBA to call a game's sound driver: the ARM7TDMI, the work memories, the cartridge's ROM, the I/O
 // registers, the DMA's immediate transfers and a BIOS of high-level calls in place of the console's. The caller calls
 // the game's routines one at a time, in the order of the game's interrupts. Nothing runs between the calls: no
-// interrupt, timer, sound DMA or display. The I/O registers hold what the code writes to them. The vertical count is
-// the exception. It reads as a line that the caller holds, or else moves on a line with each read. Code that waits for
-// a line then goes on. A timed DMA without repeat is the other exception. The system never runs its transfer. It
-// clears the DMA's enable bit when the call returns, as the console does after the one transfer. A later call can then
-// start a DMA at once on that channel. The video memories and the save memory aren't modelled. Their accesses count as
+// interrupt, timer, sound DMA or display. The I/O registers keep what the code writes to them. The vertical count is
+// the exception. It reads as a line that the caller sets, or else moves on a line with each read. Code that waits for a
+// line then goes on. A timed DMA without repeat is the other exception. The system never runs its transfer. It clears
+// the DMA's enable bit when the call returns. The console clears it after the one transfer. A later call can then start
+// a DMA at once on that channel. The video memories and the save memory aren't modelled. Their accesses count as
 // unmapped ones. The cartridge's ROM is a copy, and a write there changes the copy.
 //
 // The BIOS's calls follow GBATEK's description of the GBA's BIOS.
@@ -23,8 +23,10 @@
 #include <string>
 #include <vector>
 
-#include "agblib/agb/rom.h"
 #include "ntdlib/arm/cpu.h"
+
+#include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 
 namespace agblib::agb
 {
@@ -41,10 +43,20 @@ constexpr uint32_t kMaxRomSize = 0x2000000;
 
 // The I/O registers that the sound drivers use.
 constexpr uint32_t kRegVcount = 0x04000006;
-constexpr uint32_t kRegSoundCntH = 0x04000082; // the DirectSound outputs' volumes and sides
-constexpr uint32_t kRegSoundBias = 0x04000088;
 constexpr uint32_t kRegDma0Source = 0x040000B0; // DMAs 1 to 3 follow, 12 bytes apart
 constexpr uint32_t kRegTimer0Reload = 0x04000100;
+constexpr uint32_t kRegWaitCnt = 0x04000204; // the wait states of the cartridge's accesses
+
+// The registers of DMA channel n start at kRegDma0Source + n * kDmaStride: the source, the destination, the count at
+// kDmaCount and the control at kDmaControl, by GBATEK. The control's bits: the enable, the repeat, 32-bit units, and
+// the timing (0 at once, 1 the vertical blank, 2 the horizontal blank, 3 special, such as a sound FIFO's request).
+constexpr uint32_t kDmaStride = 12;
+constexpr uint32_t kDmaCount = 8;
+constexpr uint32_t kDmaControl = 10;
+constexpr uint16_t kDmaEnable = 0x8000;
+constexpr uint16_t kDmaTiming = 0x3000;
+constexpr uint16_t kDmaRepeat = 0x0200;
+constexpr uint16_t kDmaWords = 0x0400;
 
 // The lines of a frame, and the first line of the vertical blank.
 constexpr int kFrameLines = 228;
@@ -53,9 +65,9 @@ constexpr int kVblankLine = 160;
 class System final : public ntdlib::arm::Bus
 {
 public:
-    // What Restore() takes to go back to the system's state between calls: the work memories, the I/O registers,
-    // the vertical count and the CPU's registers r0 to r12 and r14 of the system mode. The BIOS and the cartridge stay
-    // out. A snapshot shares the 4 KiB pages that hold the same bytes with the snapshot that it was saved after.
+    // What Restore() uses to go back to the system's state between calls: the work memories, the I/O registers, the
+    // vertical count and the CPU's registers r0 to r12 and r14 of the system mode. The BIOS and the cartridge stay out.
+    // A snapshot shares the 4 KiB pages that contain the same bytes with the snapshot that it was saved after.
     class Snapshot
     {
         friend class System;
@@ -103,7 +115,7 @@ public:
     // at a time and runs slower. A null `reads` stops the marking.
     void MarkRomReads(std::vector<uint8_t>* reads);
 
-    // Takes a snapshot between calls. The pages that hold the same bytes as `previous`'s share its memory.
+    // Takes a snapshot between calls. The pages that contain the same bytes as `previous`'s share its memory.
     Snapshot Save(const Snapshot* previous = nullptr) const;
 
     // Goes back to `snapshot`. The next calls give what they gave after the save.

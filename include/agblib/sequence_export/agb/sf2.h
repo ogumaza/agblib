@@ -43,7 +43,7 @@ int SidesPan(double left, double right);
 // Returns the factor that lengthens a SoundFont fade to match a fade to silence over `frames` frames that falls in a
 // straight line in level. Such a fade stays loud for most of its length. A SoundFont's level falls in a straight line
 // in decibels and becomes quiet sooner. The longer SoundFont fade keeps their loudness close while the fade is audible.
-// Short fades fall in larger steps and need less stretching.
+// Short fades fall in larger steps and require less stretching.
 double FadeStretch(double frames);
 
 // Returns the length in seconds of the SoundFont fade for a fade to silence over `frames` frames. That fade falls in a
@@ -69,12 +69,12 @@ void AddVolumeEnvelope(sf2::Zone& zone, const VolumeEnvelope& envelope);
 // way, and the rest in the fine tune. The fine tune reaches only 99 cents. A part that is 0 is left out.
 void AddTuning(sf2::Zone& zone, int cents);
 
-// Returns a zone that plays `sample` on keys `lo` to `hi`, looping it if `loop` is set. It holds the key range, a fine
-// tune of `cents` unless that's 0, the sample mode and the sample.
+// Returns a zone that plays `sample` on keys `lo` to `hi`, looping it if `loop` is set. It contains the key range, a
+// fine tune of `cents` unless that's 0, the sample mode and the sample.
 sf2::Zone SampleZone(int sample, bool loop, int lo = 0, int hi = 127, int cents = 0);
 
 // Returns a zone that plays `sample` on keys `lo` to `hi`, with key `root` at the sample's pitch. The zone loops the
-// sample if `loop` is set. It holds the key range, the root key, the sample mode and the sample.
+// sample if `loop` is set. It contains the key range, the root key, the sample mode and the sample.
 sf2::Zone RootKeyZone(int sample, bool loop, int lo, int hi, int root);
 
 // Returns the zones of an instrument that plays sample `first` for `frames` frames of each note, and then sample
@@ -89,8 +89,8 @@ struct NamedZones
     std::vector<sf2::Zone> zones;
 };
 
-// The shortest loop a sample gets, in points. A shorter one is repeated until it's at least this long, since some
-// players can't play a very short loop.
+// The shortest loop a sample gets, in points. A shorter one is repeated until it's at least this long: some players
+// can't play a very short loop.
 constexpr uint32_t kMinLoop = 32;
 
 // The points after a loop's end that repeat its start, for players that read past the end when they interpolate.
@@ -102,7 +102,7 @@ inline bool Looped(const sf2::Sample& s)
     return s.loop_end > s.loop_start;
 }
 
-// Stores one waveform cycle as three copies looping over the middle one, so players get lead-in and lead-out points
+// Stores one waveform cycle as three copies looping over the middle one. Players then get lead-in and lead-out points
 // around the loop.
 void SetCycle(sf2::Sample& out, const std::vector<int16_t>& cycle);
 
@@ -123,18 +123,18 @@ sf2::Preset MakePreset(const std::string& name, uint16_t bank, uint16_t program,
 // Returns the instrument that a preset from MakePreset() names.
 int PresetInstrument(const sf2::Preset& preset);
 
-// Returns an instrument named `name` that holds a global zone and then `zones`. Every instrument of the GBA conversions
-// comes from here. The global zone holds seqlib's kGlobalZoneModulators. Those modulators turn the default
-// velocity-to-filter modulators off, give the pitch wheel its full range and give CC10 the pan range that most
+// Returns an instrument named `name` that contains a global zone and then `zones`. Every instrument of the GBA
+// conversions comes from here. The global zone contains seqlib's kGlobalZoneModulators. Those modulators turn the
+// default velocity-to-filter modulators off, give the pitch wheel its full range and give CC10 the pan range that most
 // synthesizers give it. SoundFont 2.04's default modulator gives the pitch wheel 127/128 of the range that RPN 0 sets.
 // FluidSynth follows it. Without the set, a bend of 34 semitones plays 27 cents flat. The specification's default
 // modulator from CC10 to pan has an amount of 1000. FluidSynth and BASSMIDI play it at 500. With the set, a player that
-// follows the specification pans as they do. A zone's modulator takes the place of the default modulator with the same
-// sources, destination and transform. A local zone's modulator takes the place of the same one in the global zone.
+// follows the specification pans the same way. A zone's modulator takes the place of the default modulator with the
+// same sources, destination and transform. A local zone's modulator takes the place of the same one in the global zone.
 sf2::Instrument MakeInstrument(const std::string& name, std::vector<sf2::Zone> zones = {});
 
-// A SoundFont as the GBA conversions write it. Its INFO list holds the name, the program and then the comment. A sample
-// without a loop gets the whole sample as its loop, and the presets are listed by bank and program.
+// A SoundFont as the GBA conversions write it. Its INFO list contains the name, the program and then the comment. A
+// sample without a loop gets the whole sample as its loop, and the presets are listed by bank and program.
 struct Sf2File : sf2::SoundFont
 {
     // Names the SoundFont `title` and gives it the comment "Instruments for <title>, extracted by <program>", with
@@ -144,7 +144,7 @@ struct Sf2File : sf2::SoundFont
     // Writes the file. Returns false and sets `error` if it's too big for the format or can't be written.
     bool Write(const std::string& path, std::string& error) const;
 
-    // The file's bytes, as Write() writes them. Returns false and sets `error` if it's too big for the format.
+    // The file's bytes as Write() writes them. Returns false and sets `error` if it's too big for the format.
     bool Encode(std::vector<uint8_t>& bytes, std::string& error) const;
 
     std::string name = "Untitled";

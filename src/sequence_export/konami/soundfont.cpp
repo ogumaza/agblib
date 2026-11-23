@@ -153,6 +153,7 @@ int SoundfontBuilder::DsSample(int index)
     {
         std::snprintf(name, sizeof name, "Sample %03d", index);
     }
+
     out.name = name;
     out.sample_rate = uint32_t(std::max(1L, std::lround(s.Rate(info_.mix_rate))));
     out.original_key = uint8_t(DsRootKey(index));
@@ -219,7 +220,7 @@ void SoundfontBuilder::WavePattern(int wave, int (&steps)[32]) const
 {
     if (info_.wave_table)
     {
-        // The driver keeps each wave pre-scaled to 16 volumes; use the loudest row present.
+        // The driver keeps each wave pre-scaled to 16 volumes; use the loudest row there is.
         for (int vol = 15; vol >= 1; vol--)
         {
             const uint32_t row = WaveRowAddress(wave, vol);
@@ -267,6 +268,7 @@ int SoundfontBuilder::WaveCycles(int wave) const
         {
             repeats = steps[i] == steps[(i + period) % 32];
         }
+
         if (repeats)
         {
             return period == 1 ? 1 : 32 / period;
@@ -353,8 +355,9 @@ int SoundfontBuilder::WaveSample(int wave, int volume)
         return it->second;
     }
 
-    // The driver keeps every wave pre-scaled to 16 volumes and loads the row for the note's volume, so quiet notes are
-    // coarser. Each row used gets its own sample: DC removed, all rows on one scale (15 steps = half of full scale).
+    // The driver keeps every wave pre-scaled to 16 volumes and loads the row for the note's volume. Quiet notes are
+    // therefore coarser. Each row used gets a separate sample: DC removed, all rows on one scale (15 steps = half of
+    // full scale).
     int steps[32];
     WaveRow(wave, volume, steps);
     double mean = 0;
@@ -362,6 +365,7 @@ int SoundfontBuilder::WaveSample(int wave, int volume)
     {
         mean += v;
     }
+
     mean /= 32;
 
     sf2::Sample out;
@@ -376,6 +380,7 @@ int SoundfontBuilder::WaveSample(int wave, int volume)
             cycle.push_back(int16_t(std::lround((v - mean) / 15.0 * 32767)));
         }
     }
+
     SetCycle(out, cycle);
 
     // At the root key the period plays at the frequency of wave note 36.
@@ -411,13 +416,13 @@ int SoundfontBuilder::NoiseSample(uint16_t setting)
     }
     else
     {
-        // The LFSR clock is 524288 / r / 2^(s+1) Hz (r = 0 counts as 0.5), so each 32768 Hz output point advances it by
-        // 16 / den steps, exactly.
+        // The LFSR clock is 524288 / r / 2^(s+1) Hz (r = 0 counts as 0.5). Each 32768 Hz output point therefore
+        // advances it by exactly 16 / den steps.
         const uint64_t den = uint64_t(ratio ? 2 * ratio : 1) << shift;
         const uint64_t period = narrow ? 127 : 32767;
 
         // Long enough for the point-sampled sequence to repeat seamlessly, up to 65536 points. The slowest noise
-        // settings would need more, and loop with a seam.
+        // settings would require more, and loop with a seam.
         uint64_t length = period * den / std::gcd<uint64_t>(den, 16);
         if (length > 65536)
         {

@@ -6,9 +6,9 @@
 // A sound is a list of channels in the ROM. Each channel takes three words: its number, the address of its data and the
 // address of its table. A word of 0xFF ends the list. A channel's data is a run of commands, and F6 n calls and F8 n
 // jumps to the address in word n of the channel's table. Each of these is an absolute address, and sounds share what
-// they name: a later sound effect can play an earlier sound's channel. A sequence therefore holds a group of sounds,
+// they name: a later sound effect can play an earlier sound's channel. A sequence therefore contains a group of sounds,
 // and not one sound: a region of the ROM from the first to the last byte that they read, where no other sound reads a
-// byte (FindRegions). A region can hold one sound or hundreds. Labels name the items where the sounds' lists start.
+// byte (FindRegions). A region can contain one sound or hundreds. Labels name the items where the sounds' lists start.
 //
 // The decoder follows every channel of every sound in a region as the driver does. Each list's words, each command that
 // a channel reaches and each word of a table that a command reads become items of the sequence. The bytes that nothing
@@ -16,15 +16,16 @@
 // decoder read.
 //
 // The driver counts time in frames: one tick is one frame of the driver's routine, at the GBA's 59.7275 Hz. A note, a
-// rest, a hold and a release each wait for the channel's length, which a length byte chooses from the driver's table.
-// The bytes hold no number of ticks, and the channel that reads them decides: the same bytes can run with other
-// lengths. A note's and a wait's `value` therefore stay 0. brownie::Sequencer and the performance give the ticks.
+// rest, a hold and a release each wait for the channel's length. A length byte chooses that length from the driver's
+// table. The bytes contain no number of ticks, and the channel that reads them decides: the same bytes can run with
+// other lengths. A note's and a wait's `value` therefore stay 0. brownie::Sequencer and the performance give the ticks.
 //
 // The kinds:
 //   kOpenTrack  a list's channel: `index` is the channel and `target` the item where its data starts. It takes the
 //               channel's word and the data's word. A word item with the address of the channel's table follows it
-//   kJump       with `encoding.opcode` kAddressWord: a word that holds an address, in a list or in a table. `target` is
-//               the item at that address. Where no item starts there, `target_outside` is set and `target` holds the
+//   kJump       with `encoding.opcode` kAddressWord: a word that contains an address, in a list or in a table. `target`
+//   is
+//               the item at that address. Where no item starts there, `target_outside` is set and `target` contains the
 //               address. Without kAddressWord: F8. `index` is the word of the channel's table and `target` the item
 //               that the word names
 //   kCall       F6, with the same fields
@@ -44,7 +45,7 @@
 //   kTranspose  F3's signed byte, in cents
 //   kTune       F9's signed byte: an addition to a PSG channel's frequency setting, or 12ths of a semitone on a sample
 //               channel of the Magical Vacation revision
-//   kSweep      `index` 0: FA's NR10. `index` 1: FB, which turns the sweep off
+//   kSweep      `index` 0: FA's NR10. `index` 1: FB, the sweep off
 //   kLoopStart  F4: `value` is the count, with 0 for 256
 //   kLoopEnd    F5
 //   kOther      the opcode in `encoding.opcode` and its argument in `bytes`: a length byte (80-DF), the Sword of Mana
@@ -53,7 +54,7 @@
 //               command that does nothing
 //
 // In the Magical Vacation revision, E2-E9 are F2-F9 again and EF is FF. A command that a channel reads through such a
-// byte holds kKeptBytes plus the byte in `encoding.opcode`, and the encoder writes the byte.
+// byte contains kKeptBytes plus the byte in `encoding.opcode`, and the encoder writes the byte.
 //
 // A word of a list or of a table has to start on a multiple of 4 in the ROM, for the CPU reads it as a word. The
 // encoder puts zeros before one that would start elsewhere.
@@ -64,10 +65,11 @@
 #include <string>
 #include <vector>
 
-#include "agblib/agb/encoded.h"
-#include "agblib/brownie/driver.h"
 #include "ntdlib/commands/sequence.h"
 #include "ntdlib/commands/units.h"
+
+#include "agblib/agb/encoded.h"
+#include "agblib/brownie/driver.h"
 
 namespace agblib::brownie
 {
@@ -90,7 +92,7 @@ struct Region
 };
 
 // Finds the regions of `rom`, in the order of their bytes. A sound that ReadSong doesn't read, or whose channels the
-// decoder can't follow, lies in no region: a table that doesn't start on a word, or a channel that runs past the ROM.
+// decoder can't follow, is in no region: a table that doesn't start on a word, or a channel that runs past the ROM.
 std::vector<Region> FindRegions(const Rom& rom, const DriverInfo& info);
 
 // What the decoder made of a region.
@@ -110,7 +112,7 @@ struct Decoded
 // Decodes `region`.
 Decoded DecodeRegion(const Rom& rom, const DriverInfo& info, const Region& region);
 
-// Decodes the region that holds sound `song`. Throws std::invalid_argument for a sound that lies in no region.
+// Decodes the region that contains sound `song`. Throws std::invalid_argument for a sound that is in no region.
 Decoded DecodeSong(const Rom& rom, const DriverInfo& info, int song);
 
 // A channel of a list.
@@ -129,9 +131,9 @@ std::vector<ListTrack> TracksOfList(const ntdlib::commands::Sequence& sequence, 
 using Encoded = agb::Encoded;
 
 // Encodes `sequence` at the address `base`. Throws std::invalid_argument for a command that the revision's bytes can't
-// hold, for a target that the sequence lacks, and for a sequence that the driver wouldn't read as its items say: a
-// channel that reaches a word or data, that runs past the items, or whose call or jump finds another target in its
-// table.
+// express, for a target that the sequence doesn't have, and for a sequence that the driver wouldn't read as its items
+// say: a channel that reaches a word or data, that runs past the items, or whose call or jump finds another target in
+// its table.
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Revision revision, uint32_t base);
 
 // The scale of the value of a command of `kind` in revision `revision` (ntdlib::commands::UnitOf). A transpose takes

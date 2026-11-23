@@ -140,6 +140,7 @@ std::map<uint32_t, int> CountPointers(const Rom& rom, const std::vector<Table>& 
             counts[entry] = 0;
         }
     }
+
     for (uint32_t at = kRomBase; rom.Contains(at, 4); at += 4)
     {
         const auto it = counts.find(rom.U32(at));
@@ -180,6 +181,7 @@ void ClassifyMod1Pieces(const Rom& rom, const std::vector<uint32_t>& modules, Dr
     {
         game = rom.GameCode() == g.game_code ? &g : game;
     }
+
     if (!game)
     {
         info.log.push_back("no table of the game's pieces, so each piece plays as the driver plays it");
@@ -198,6 +200,7 @@ void ClassifyMod1Pieces(const Rom& rom, const std::vector<uint32_t>& modules, Dr
             }
         }
     }
+
     std::vector<Table> tables;
     for (size_t m = 0; m < modules.size(); m++)
     {
@@ -210,11 +213,13 @@ void ClassifyMod1Pieces(const Rom& rom, const std::vector<uint32_t>& modules, Dr
                 t.entries.push_back(at);
             }
         }
+
         if (t.record)
         {
             tables.push_back(t);
         }
     }
+
     const std::map<uint32_t, int> pointers = CountPointers(rom, tables);
 
     // The starts that the records and the entries name, and the title's.
@@ -227,23 +232,28 @@ void ClassifyMod1Pieces(const Rom& rom, const std::vector<uint32_t>& modules, Dr
         {
             Mark(pieces[t.module], info, order, module.order_count, starts, what);
         };
+
         for (uint32_t offset : game->music)
         {
             mark(rom.U8(t.record + offset), &Starts::music);
         }
+
         for (uint32_t offset : game->jingles)
         {
             mark(rom.U8(t.record + offset), &Starts::jingle);
         }
+
         if (rom.U32(t.record) == game->mark)
         {
             mark(rom.U8(t.record + game->marked_jingle), &Starts::jingle);
         }
+
         for (uint32_t entry : t.entries)
         {
             mark(rom.U8(entry) & kEntryOrder, pointers.at(entry) ? &Starts::jingle : &Starts::named);
         }
     }
+
     if (game->title_module < modules.size())
     {
         Module module;

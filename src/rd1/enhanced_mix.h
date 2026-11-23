@@ -43,8 +43,8 @@ inline uint32_t RecordWord(const std::array<uint8_t, kVoiceRecordBytes>& record,
 class EnhancedMix
 {
 public:
-    // `period` is the cycles of the console's samples, and `lead` the console's samples that the FIFOs hold before the
-    // first frame's mix.
+    // `period` is the cycles of the console's samples, and `lead` the console's samples that the FIFOs contain before
+    // the first frame's mix.
     EnhancedMix(const Rom& rom, uint32_t period, uint64_t lead);
 
     // The mode's samples of silence before the first frame's: the time of the lead.

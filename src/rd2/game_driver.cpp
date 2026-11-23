@@ -34,13 +34,16 @@ void GameDriver::Play(const DriverInfo& info, int song, int version)
         {
             return routines_.voices + uint32_t(order[i]) * uint32_t(kVoiceRecordBytes);
         };
+
         for (size_t i = 0; i < order.size(); i++)
         {
             system_.Store(record(i) + 0x68, 4, i > 0 ? record(i - 1) : 0);
             system_.Store(record(i) + 0x6C, 4, i + 1 < order.size() ? record(i + 1) : 0);
         }
+
         system_.Store(routines_.free_list, 4, record(0));
     }
+
     requested_ = true;
 
     const MusicSettings settings = VersionSettings(info, song, version);

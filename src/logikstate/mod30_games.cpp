@@ -15,7 +15,6 @@
 
 namespace agblib::logikstate
 {
-
 namespace
 {
 
@@ -193,10 +192,12 @@ bool GameSettings(const Rom& rom, const Mod30Bank& bank, const std::vector<uint3
             const bool no_loop = std::find(g.no_loop.begin(), g.no_loop.end(), song) != g.no_loop.end();
             songs.push_back({module, settings.loop && !no_loop});
         };
+
         for (int i = 0; i < g.song_count; i++)
         {
             add(rom.U32(g.song_table + 4 * uint32_t(i)));
         }
+
         for (uint32_t module : modules)
         {
             if (std::none_of(songs.begin(), songs.end(), [&](const Mod30Song& s) { return s.module == module; }))
@@ -227,6 +228,7 @@ bool DetectMod30(const Rom& rom, DriverInfo& info, std::string& error)
         error = "found " + count + ", but not their bank of samples";
         return false;
     }
+
     Mod30Settings settings;
     std::vector<Mod30Song> songs;
     if (!GameSettings(rom, bank, modules, settings, songs))
@@ -262,6 +264,7 @@ bool DetectMod30(const Rom& rom, DriverInfo& info, std::string& error)
     {
         info.log.push_back("one FIFO plays the mix (SOUNDCNT_H 0x0B0E)");
     }
+
     if (info.sound_off_call)
     {
         info.log.push_back(std::string(info.fifos == 2 ? "both FIFOs" : "the FIFO") +

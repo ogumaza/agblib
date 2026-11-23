@@ -36,6 +36,7 @@
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/brownie/driver.h"
 
 namespace agblib::brownie
@@ -50,17 +51,17 @@ constexpr int kRateSteps = 12;
 constexpr int kMixPoints = 16;
 
 // The sound registers that Sequencer::Registers() returns: from SOUND1CNT_L up to the end of the wave RAM.
-constexpr uint32_t kIoNr10 = 0x04000060;      // SOUND1CNT_L: square 1's sweep, and the first of the sound registers
-constexpr uint32_t kIoNr30 = 0x04000070;      // SOUND3CNT_L: the wave channel's bank and on bit
-constexpr uint32_t kIoSoundcntL = 0x04000080; // NR50 and NR51
-constexpr uint32_t kIoSoundcntH = 0x04000082; // the FIFOs' and the PSG's mix
-constexpr uint32_t kIoNr52 = 0x04000084;      // SOUNDCNT_X: the sound's on bit
-constexpr uint32_t kIoWaveRam = 0x04000090;
-constexpr uint32_t kIoSoundEnd = 0x040000A0; // just past the wave RAM
+constexpr uint32_t kIoNr10 = agb::kRegNr10; // SOUND1CNT_L: square 1's sweep, and the first of the sound registers
+constexpr uint32_t kIoNr30 = agb::kRegNr30; // SOUND3CNT_L: the wave channel's bank and on bit
+constexpr uint32_t kIoSoundcntL = agb::kRegSoundCntL; // NR50 and NR51
+constexpr uint32_t kIoSoundcntH = agb::kRegSoundCntH; // the FIFOs' and the PSG's mix
+constexpr uint32_t kIoNr52 = agb::kRegNr52;           // SOUNDCNT_X: the sound's on bit
+constexpr uint32_t kIoWaveRam = agb::kRegWaveRam;
+constexpr uint32_t kIoSoundEnd = agb::kRegFifoA; // just past the wave RAM
 
-// Each PSG channel's NRx1 and NRx2, and its NRx3 and NRx4. NRx3 and NRx4 hold the channel's frequency setting.
-inline constexpr uint32_t kIoControlRegisters[4] = {0x04000062, 0x04000068, 0x04000072, 0x04000078};
-inline constexpr uint32_t kIoFrequencyRegisters[4] = {0x04000064, 0x0400006C, 0x04000074, 0x0400007C};
+// Each PSG channel's NRx1 and NRx2, and its NRx3 and NRx4. NRx3 and NRx4 contain the channel's frequency setting.
+inline constexpr uint32_t kIoControlRegisters[4] = {agb::kRegNr11, agb::kRegNr21, agb::kRegNr31, agb::kRegNr41};
+inline constexpr uint32_t kIoFrequencyRegisters[4] = {agb::kRegNr13, agb::kRegNr23, agb::kRegNr33, agb::kRegNr43};
 
 // The bits of a channel's flags.
 constexpr uint8_t kFlagOn = 0x01;     // the channel is in use
@@ -155,11 +156,11 @@ struct Channel
     uint32_t return_to = 0;   // 0x0C: where F7 returns to
     uint32_t subroutines = 0; // 0x10: the places F6 calls and F8 jumps to
     uint32_t samples = 0;     // 0x14: E1's sample set, or in the Magical Vacation revision its sample's start
-    uint32_t sample_end = 0;  // 0x18: the Magical Vacation revision: E1's sample's end
+    uint32_t sample_end = 0;  // 0x18: the Magical Vacation revision: the end of E1's sample
     uint32_t wave = 0;        // 0x1C: FC's wave, or in the Magical Vacation revision a sample channel's loop
     uint16_t frequency = 0;   // 0x20: a PSG channel's frequency setting, for noise NR43, or in the Magical Vacation
                               // revision a sample channel's timer reload value
-    uint16_t control = 0;     // 0x22: NRx1 in the low byte and NRx2 in the high, as last set
+    uint16_t control = 0;     // 0x22: NRx1 in the low byte and NRx2 in the high as last set
     uint8_t duty = 0;         // 0x24: F1's NRx1, or on a sample channel the frames to the level's next change
     uint8_t sweep = 0;        // 0x25: FA's NR10, or on a sample channel its volume with the envelope
     uint8_t volume = 0;       // 0x26: F2's
@@ -173,7 +174,7 @@ struct Channel
                               // Magical Vacation revision bit 3
     uint8_t ramp_frames = 0;  // 0x2E: the frames between those changes
     uint8_t length_set = 0;   // 0x2F: EE's set of lengths
-    uint32_t envelope = 0;    // 0x30: F0's envelope, which each note starts
+    uint32_t envelope = 0;    // 0x30: F0's envelope, started by each note
     uint32_t step = 0;        // 0x34: the envelope's next step
 };
 
@@ -200,13 +201,14 @@ inline int SampleKey(int key)
     return (key & 0xC0) ? 47 : key;
 }
 
-// Returns the octave of a sample note's key, 0-3, which the mixer plays at an eighth of its rate up to its full rate.
+// Returns the octave of a sample note's key, 0-3. The mixer plays the octaves from an eighth of the sample's rate up to
+// its full rate.
 inline int SampleOctave(int key)
 {
     return std::min(key / kOctaveKeys, kSampleOctaves - 1);
 }
 
-// A FIFO's sample in the Magical Vacation revision, as the driver keeps it: 16 bytes.
+// A FIFO's sample in the Magical Vacation revision as the driver keeps it: 16 bytes.
 struct FifoVoice
 {
     uint32_t point = 0;  // 0x00: the next 4 points to give the FIFO
@@ -219,16 +221,16 @@ struct FifoVoice
 struct Fifo
 {
     bool running = false; // the timer runs
-    uint16_t reload = 0;  // the timer's reload value, which sets the rate
+    uint16_t reload = 0;  // the timer's reload value: it sets the rate
     uint64_t next = 0;    // the CPU cycle of the timer's next overflow
-    int count = 0;        // the points the FIFO holds
-    bool dma = false;     // the FIFO's DMA is on, so that its requests for more points interrupt
+    int count = 0;        // the points the FIFO contains
+    bool dma = false;     // the FIFO's DMA is on: its requests for more points interrupt
     int owner = -1;       // the channel whose note last started the timer
 };
 
-// The driver's other variables, kept as the driver keeps them, since some of its stores span several of them. In the
-// Sword of Mana revision, they're 48 bytes from the request queue on. In the Magical Vacation revision, they're the 12
-// bytes of the queue, and then the 32 from SOUNDCNT_L's copy on, which comes after the FIFOs' samples.
+// The driver's other variables, kept as the driver keeps them: some of its stores span several of them. In the Sword of
+// Mana revision, they're 48 bytes from the request queue on. In the Magical Vacation revision, they're the 12 bytes of
+// the queue, and then the 32 from SOUNDCNT_L's copy on. That copy comes after the FIFOs' samples.
 using Globals = std::array<uint8_t, 48>;
 
 // The offsets in Globals of the variables the driver uses.
@@ -238,15 +240,15 @@ constexpr int kQueue = 0x02;         // 8 requests of a halfword, 0 for none
 constexpr int kMixerMode = 0x12;     // E2's: 0 mixes voices 0 and 1, and anything else all 5
 constexpr int kMaster = 0x14;        // the master level, 0-255
 constexpr int kFadeStep = 0x15;      // the master level's change at each step of a fade
-constexpr int kFadeOutFrames = 0x16; // a halfword: the frames left of a fade out, which stops everything at its end
+constexpr int kFadeOutFrames = 0x16; // a halfword: the frames left of a fade out, at whose end everything stops
 constexpr int kFadeOutTimer = 0x18;  // a halfword: frames to its next step, in 256ths
 constexpr int kFadeOutPeriod = 0x1A; // a halfword: the frames between its steps, in 256ths
-constexpr int kFadeInTimer = 0x1C;   // a halfword, as for the fade out
+constexpr int kFadeInTimer = 0x1C;   // a halfword as for the fade out
 constexpr int kFadeInPeriod = 0x1E;  // a halfword
 constexpr int kSoundcntLCopy = 0x20; // a halfword: SOUNDCNT_L as the driver last set it
 constexpr int kFadeInFrames = 0x2C;  // the frames left of a fade in
 
-// The Magical Vacation revision's variables, where they differ: the queue is the same, but it holds 4 requests.
+// The Magical Vacation revision's variables, where they differ: the queue is the same, but it contains 4 requests.
 constexpr int kVacationSoundcntLCopy = 0x0C;
 constexpr int kVacationMaster = 0x20;
 constexpr int kVacationGlobals = 44; // the bytes of Globals that the revision has
@@ -261,7 +263,7 @@ struct FifoTimerChange
     uint32_t first = 0;
 };
 
-// A musical event on a channel, which the conversion follows.
+// A musical event on a channel. The conversion follows these events.
 struct Event
 {
     enum Kind : uint8_t
@@ -292,12 +294,12 @@ struct ChannelRead
     uint32_t address = 0; // the address of its first byte
 };
 
-// Plays a sound one frame at a time, as the driver's per-frame routine and its mixer do.
+// Plays a sound one frame at a time as the driver's per-frame routine and its mixer do.
 class Sequencer
 {
 public:
-    // Sets up the driver as its init leaves it, and queues `song`, which it starts at the end of the first frame. `rom`
-    // and `info` have to outlive the sequencer.
+    // Sets up the driver as its init leaves it, and queues `song`. The driver starts the song at the end of the first
+    // frame. `rom` and `info` have to outlive the sequencer.
     Sequencer(const Rom& rom, const DriverInfo& info, int song);
 
     // Returns the record of a channel as the driver keeps it, for traces.
@@ -438,7 +440,7 @@ public:
         return voices_[size_t(v)];
     }
 
-    // Returns the voices as the last frame's routine left them, which the mixer then played.
+    // Returns the voices as the last frame's routine left them. The mixer then played them.
     const std::array<Voice, kVoiceCount>& VoicesBeforeMix() const
     {
         return voices_before_mix_;
@@ -461,14 +463,14 @@ public:
         return globals_;
     }
 
-    // Returns the set of lengths that channel `c` last took a length from: EE's, or in the Magical Vacation revision,
-    // which has no EE, the length command's group of 16.
+    // Returns the set of lengths that channel `c` last took a length from: EE's, or in the Magical Vacation revision
+    // the length command's group of 16. That revision has no EE.
     uint8_t LengthSet(int c) const
     {
         return vacation_ ? length_groups_[size_t(c)] : channels_[size_t(c)].length_set;
     }
 
-    // Returns the sound registers from SOUND1CNT_L to the wave RAM's end, as last written: 0x40 bytes.
+    // Returns the sound registers from SOUND1CNT_L to the wave RAM's end as last written: 0x40 bytes.
     const std::array<uint8_t, 0x40>& Registers() const
     {
         return registers_;
@@ -534,6 +536,7 @@ private:
     void Resume();
     void Fade();
     void FadeStep(int timer, int period, bool up);
+    void ResetSound();
     void StopAll();
     void Requests();
     void StartSound(int sound);
@@ -552,15 +555,15 @@ private:
     void MixEnhancedVoice(int voice, int channel, std::array<float, 2> to, uint32_t period);
     float PointOf(const EnhancedVoice& e, int64_t point) const;
 
-    // Returns the word that the CPU loads from `address` in the ROM: the word that holds it, turned so that the
+    // Returns the word that the CPU loads from `address` in the ROM: the word that contains it, turned so that the
     // address's byte comes first.
     uint32_t LoadWord(uint32_t address) const;
 
-    // The 16 points that the mixer takes from a voice at `point`, as each of its parts makes them.
+    // The 16 points that the mixer takes from a voice at `point` as each of its parts makes them.
     Points16 PointsOfTwoVoiceMix(const Voice& v, uint32_t point) const;
     Points16 PointsOfFiveVoiceMix(const Voice& v, uint32_t point) const;
 
-    // Queues a sound, as the driver's request routine does.
+    // Queues a sound as the driver's request routine does.
     void Request(int sound);
 
     // Returns the offset in Globals of the driver's copy of SOUNDCNT_L.
@@ -587,7 +590,7 @@ private:
     // sample channel past the end of the driver's table of registers, change nothing the model follows.
     void Write(uint32_t address, int size, uint32_t value);
 
-    // Returns the address of a PSG channel's NRx1 and NRx2 from the driver's table, as the driver reads it. A sample
+    // Returns the address of a PSG channel's NRx1 and NRx2 from the driver's table as the driver reads it. A sample
     // channel reads past the table's end.
     uint32_t ControlRegister(int c) const;
 
@@ -624,7 +627,7 @@ private:
     uint64_t mix_cycles_ = 0;    // CPU cycles between the mixer's runs
     uint64_t now_ = 0;           // the CPU cycle that the driver's code runs at
 
-    // The per-frame routine's r5, which the PSG rest writes to the frequency setting. Each frame starts with 0.
+    // The per-frame routine's r5. The PSG rest writes it to the frequency setting. Each frame starts with 0.
     uint32_t r5_ = 0;
 
     bool returned_ = false; // E3 has ended the frame's routine

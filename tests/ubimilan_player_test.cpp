@@ -370,7 +370,7 @@ void TestMutesOfEachChannel()
 
 void TestMeters()
 {
-    // A kit voice of level 32 at volume 64 gives bytes of 32: 32 * 256 in a 16-bit sample. A track's peak lies on that
+    // A kit voice of level 32 at volume 64 gives bytes of 32: 32 * 256 in a 16-bit sample. A track's peak is on that
     // scale, and the output's peak on the same one.
     TestImage image;
     image.SetKey(40, ConstantLoop(image, 32));

@@ -211,9 +211,9 @@ struct Lookup
     bool drum_kit = false; // a drum kit plays the voice at the voice's root key
 };
 
-// Returns what key `key` (0-127) plays with program `program` (0-127) in the tune of `header`, as the driver reads the
+// Returns what key `key` (0-127) plays with program `program` (0-127) in the tune of `header` as the driver reads the
 // tables. Any type of instrument but a sample or a key split counts as a drum kit. The driver reads the words of a key
-// map's 0xFF entry, and of instruments outside the ROM, as zeros.
+// map's 0xFF entry, and of instruments outside the ROM as zeros.
 Lookup LookUpInstrument(const Rom& rom, const TuneHeader& header, int program, int key);
 
 } // namespace agblib::rare

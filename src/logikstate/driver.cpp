@@ -15,6 +15,7 @@
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/thumb.h"
 #include "mod1_pieces.h"
 
@@ -180,6 +181,7 @@ bool ValidBank(const Rom& rom, uint32_t bank)
         {
             return false;
         }
+
         points += uint32_t(length);
     }
 
@@ -251,6 +253,7 @@ uint32_t FindMusicVolumeRoutine(const Rom& rom, uint32_t play)
                     rom.U16(setter + 4) == kVolumeSetter[2] &&
                     rom.U32(setter + kVolumeSetterWord) == rom.U32(at + kVolumeSetterWord) + i * 4;
         }
+
         if (found)
         {
             return at + kVolumeSetterSize;
@@ -289,7 +292,6 @@ int32_t FindMusicVolume(const Rom& rom, uint32_t routine, uint32_t& call)
 // SOUNDCNT_X's address.
 constexpr std::array<uint16_t, 4> kSoundOff = {0x4901, 0x2000, 0x8008, 0x4770};
 constexpr uint32_t kSoundOffWord = 8;
-constexpr uint32_t kSoundControlX = 0x04000084;
 
 // The furthest that a routine's start is before one of its calls of that routine, in bytes.
 constexpr uint32_t kCallerSpan = 0x400;
@@ -304,7 +306,7 @@ uint32_t FindSoundOffRoutine(const Rom& rom, uint32_t play, uint32_t output)
         for (uint32_t at = from; from && at < from + kVolumeSpan; at += 2)
         {
             if (rom.U16(at) == kSoundOff[0] && rom.U16(at + 2) == kSoundOff[1] && rom.U16(at + 4) == kSoundOff[2] &&
-                rom.U16(at + 6) == kSoundOff[3] && rom.U32(at + kSoundOffWord) == kSoundControlX)
+                rom.U16(at + 6) == kSoundOff[3] && rom.U32(at + kSoundOffWord) == agb::kRegSoundCntX)
             {
                 return at;
             }
@@ -336,6 +338,7 @@ uint32_t FindGameCall(const Rom& rom, uint32_t routine, uint32_t play)
             return at;
         }
     }
+
     for (uint32_t at : calls)
     {
         const uint32_t start = RoutineStart(rom, at, kCallerSpan);
@@ -502,6 +505,7 @@ void SetMusicVolume(const Rom& rom, DriverInfo& info)
         info.log.push_back("music volume " + std::to_string(info.music_volume) + " of " + std::to_string(kFullVolume) +
                            ", which the game sets at " + Hex(volume_call));
     }
+
     bool named = false;
     for (const GameVolume& game : kGameVolumes)
     {
@@ -576,6 +580,7 @@ Output FindOutput(const Rom& rom, std::vector<std::string>& log)
                 log.push_back("one FIFO plays the mix (SOUNDCNT_H " + xsflib::Hex(value, 4, true) + " at " + Hex(next) +
                               ")");
             }
+
             return {at, fifos};
         }
     }
@@ -677,6 +682,7 @@ bool ReadModule(const Rom& rom, uint32_t address, Module& module)
     {
         return false;
     }
+
     m.address = address;
     m.steps = address + layout.steps;
     m.channels = m.format == Format::kGbaMod1 ? kMod1Channels : rom.U32(address + kModuleChannels);
@@ -701,6 +707,7 @@ bool ReadModule(const Rom& rom, uint32_t address, Module& module)
         {
             return false;
         }
+
         m.patterns[p] = at;
         at += m.rows[p] * m.channels * kCellSize;
     }
@@ -708,6 +715,7 @@ bool ReadModule(const Rom& rom, uint32_t address, Module& module)
     {
         return false;
     }
+
     m.points = at;
 
     for (uint32_t i = 0; i < m.order_count; i++)
@@ -726,6 +734,7 @@ bool ReadModule(const Rom& rom, uint32_t address, Module& module)
                         rom.U16(header + kSampleVolume), rom.U16(header + kSampleLoopStart),
                         rom.U16(header + kSampleLoopLength)};
     }
+
     module = m;
 
     return true;
@@ -816,10 +825,12 @@ bool DetectDriver(const Rom& rom, DriverInfo& info, std::string& error)
         {
             bank_calls[call.bank]++;
         }
+
         if (call.module && call.bank)
         {
             module_banks.try_emplace(call.module, call.bank);
         }
+
         calls.push_back(call);
     }
 
@@ -846,6 +857,7 @@ bool DetectDriver(const Rom& rom, DriverInfo& info, std::string& error)
             }
         }
     }
+
     std::sort(info.songs.begin(), info.songs.end());
     info.songs.erase(std::unique(info.songs.begin(), info.songs.end()), info.songs.end());
 
@@ -855,6 +867,7 @@ bool DetectDriver(const Rom& rom, DriverInfo& info, std::string& error)
     {
         info.log.push_back("bank of samples at " + Hex(bank));
     }
+
     if (bank_calls.empty())
     {
         info.warnings.push_back("found no bank of samples, so each module plays the points after its patterns");

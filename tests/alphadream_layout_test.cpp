@@ -11,19 +11,23 @@
 #include <variant>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/rom.h"
 #include "agblib/alphadream/commands.h"
 #include "agblib/alphadream/driver.h"
 #include "agblib/alphadream/layout.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 using xsflib::testing::Check;
 
 namespace
 {
+
+using agblib::testing::agb_tests::RomOf;
+using agblib::testing::agb_tests::Throws;
 
 namespace alphadream = agblib::alphadream;
 using agblib::agb::kRomBase;
@@ -123,30 +127,6 @@ alphadream::DriverInfo TestInfo()
     info.wave_levels = kRomBase + kWaveLevels;
 
     return info;
-}
-
-Rom RomOf(std::vector<uint8_t> image)
-{
-    Rom rom;
-    rom.Assign(std::move(image));
-
-    return rom;
-}
-
-// Whether `body` throws an exception of type `E`.
-template <typename E, typename Body>
-bool Throws(Body body)
-{
-    try
-    {
-        body();
-    }
-    catch (const E&)
-    {
-        return true;
-    }
-
-    return false;
 }
 
 void TestRoundTrip()

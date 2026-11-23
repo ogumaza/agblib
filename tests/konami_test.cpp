@@ -105,6 +105,7 @@ void TestSequencer()
     {
         SEQLIB_CHECK(!frames[size_t(f)][4].Any());
     }
+
     SEQLIB_CHECK(frames[10][4].flags & kOutStop);
     SEQLIB_CHECK(frames[15][4].flags & kOutNoteOn);
 
@@ -184,8 +185,8 @@ void TestLoopStartEarliest()
 void TestLoopStartLast()
 {
     // As in TestLoopStart, but track 5 passes a second loop point, at frame 8: wait 5, loop point, wait 3, loop point,
-    // wait 2, note, wait 3, rest, wait 1, loop the song. Each loop takes the track back to the second loop point, so
-    // the song loops at frame 14 and every 6 frames after it.
+    // wait 2, note, wait 3, rest, wait 1, loop the song. Each loop takes the track back to the second loop point. The
+    // song therefore loops at frame 14 and every 6 frames after it.
     Image m = SyntheticImage();
     m.PutBytes(kSongBase + 0x07, {0xFE});
     m.PutBytes(kSongBase + 0x80, {0x05, 0xF3, 0xAA, 0xBB, 0x03, 0xF3, 0xAA, 0xBB, 0x02, 0xB7, 0x05, 0x0C, 0x03, 0xE0,
@@ -303,14 +304,9 @@ void TestLaterBuildDetection()
     m.Song(kTable, 0, kRomBase + 0x200, 0, {});
     m.PutBytes(kRomBase + 0x200, {0x00, 0xE0, 0x00, 0xFD});
 
-    DriverOverrides ov;
-    ov.song_table = kTable;
-    ov.song_count = 1;
-    ov.mix_rate = 16000;
     DriverInfo info;
-    std::string err;
 
-    const bool found = DetectDriver(m.ToRom(), ov, info, err);
+    const bool found = DetectGiven(m.ToRom(), kTable, 1, info, 0);
 
     SEQLIB_CHECK(found);
     SEQLIB_CHECK(info.revision == Revision::kUltimateMasters);
@@ -321,7 +317,7 @@ void TestLaterBuildDetection()
     m.PutHalfwords(kRomBase + 0x800, {0x200F, 0x4005, 0x2D03, 0xDD01, 0x3D04, 0xE000, 0x01AD});
     DriverInfo tennis;
 
-    const bool found_tennis = DetectDriver(m.ToRom(), ov, tennis, err);
+    const bool found_tennis = DetectGiven(m.ToRom(), kTable, 1, tennis, 0);
 
     SEQLIB_CHECK(found_tennis);
     SEQLIB_CHECK(tennis.revision == Revision::kPrinceOfTennis);
@@ -336,7 +332,7 @@ void TestLaterBuildDetection()
     m.PutHalfwords(kRomBase + 0x900, {0x2AEF, 0xDD06, 0x3701, 0x3301, 0x200F, 0x4010, 0x0202});
     DriverInfo live;
 
-    const bool found_live = DetectDriver(m.ToRom(), ov, live, err);
+    const bool found_live = DetectGiven(m.ToRom(), kTable, 1, live, 0);
 
     SEQLIB_CHECK(found_live);
     SEQLIB_CHECK(live.revision == Revision::kLiveStart);
@@ -445,7 +441,7 @@ void TestLaterBuildSequencer()
     SEQLIB_CHECK(frames[7][5].flags == kOutNoteOn && frames[7][5].key == 7 && frames[7][5].vol == 9);
     SEQLIB_CHECK_EQ(frames[10][5].flags, kOutStop);
 
-    // FA holds nothing back after a song request, which sets the game's setting to 0xFF.
+    // FA holds nothing back after a song request. The request sets the game's setting to 0xFF.
     SEQLIB_CHECK(frames[0][6].flags == kOutNoteOn && frames[0][6].key == 7);
     SEQLIB_CHECK(frames[2][6].flags == kOutNoteOn && frames[2][6].key == 7);
 }
@@ -602,6 +598,7 @@ void TestLiveSampleTable()
         m.Put32(h + 8, 0xFFFFFFFF);
         m.PutBytes(h + 12, {1, 2, 3, 4});
     }
+
     const Rom rom = m.ToRom();
     DriverInfo info;
     info.revision = Revision::kWct2004;
@@ -731,7 +728,7 @@ void TestOverrides()
 
     SEQLIB_CHECK(DetectDriver(rom, ov, info, err));
 
-    // The song table ends quietly at an entry that doesn't point into the ROM, which is no song at all.
+    // The song table ends quietly at an entry that doesn't point into the ROM. Such an entry is no song at all.
     Image m = SyntheticImage();
     m.Put32(kSongTable + 2 * kSongEntrySize, 0x12345678);
     ov.mix_rate = 16000;
@@ -755,6 +752,7 @@ void TestShortLoop()
     {
         m.Put8(kShortLoop + 12 + i, uint8_t(i * 9));
     }
+
     const Rom rom = m.ToRom();
     DriverInfo info;
     SEQLIB_REQUIRE(DetectGiven(rom, kSongTable, 2, info));

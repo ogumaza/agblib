@@ -15,13 +15,14 @@
 #include <utility>
 #include <vector>
 
-#include "agblib/agb/files.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/agb/song_plan.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/sequence_export/agb/beat_grid.h"
 #include "agblib/sequence_export/agb/beat_midi.h"
 #include "agblib/sequence_export/agb/midi.h"
+#include "agblib/sequence_export/agb/module_conversion.h"
 #include "agblib/sequence_export/agb/psg.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/sequence_export/agb/sf2.h"
@@ -37,7 +38,6 @@ using agblib::agb::FrameSeconds;
 using agblib::agb::LoopStart;
 using agblib::agb::PassComparison;
 using agblib::agb::RegisterWrite;
-using agblib::agb::WriteFile;
 using agblib::sequence_export::agb::BeatGrid;
 using agblib::sequence_export::agb::BeatTicks;
 using agblib::sequence_export::agb::BendRangeFor;
@@ -95,7 +95,7 @@ constexpr std::array<int, kTracks> kMidiChannels = {0, 1, 2, 10, 3};
 constexpr uint16_t kSoundcntL = 0xFF33;
 constexpr uint16_t kSoundcntH = 0xA90E;
 
-// The registers of the PSG after a frame, as the conversion reads them: NR10, each channel's NRx1 and NRx2, its NRx3
+// The registers of the PSG after a frame as the conversion reads them: NR10, each channel's NRx1 and NRx2, its NRx3
 // and NRx4, NR30, and the channels that the frame restarted.
 struct PsgFrame
 {
@@ -113,20 +113,21 @@ public:
     // Takes in a write of the driver's. A write to NRx3 and NRx4 with bit 15 set restarts the channel.
     void Write(const RegisterWrite& w)
     {
-        if (w.size != 2 || w.address < kNr10 || w.address > kNr43)
+        if (w.size != 2 || w.address < agblib::agb::kRegNr10 || w.address > agblib::agb::kRegNr43)
         {
             return;
         }
 
         const uint16_t value = uint16_t(w.value);
-        if (w.address == kNr10)
+        if (w.address == agblib::agb::kRegNr10)
         {
             frame_.nr10 = value;
         }
-        else if (w.address == kNr30)
+        else if (w.address == agblib::agb::kRegNr30)
         {
             frame_.nr30 = value;
         }
+
         for (size_t h = 0; h < kControl.size(); h++)
         {
             if (w.address == kControl[h])
@@ -151,11 +152,10 @@ public:
 
 private:
     // NR10 and NR30, each channel's NRx1 and NRx2, and its NRx3 and NRx4.
-    static constexpr uint32_t kNr10 = 0x04000060;
-    static constexpr uint32_t kNr30 = 0x04000070;
-    static constexpr uint32_t kNr43 = 0x0400007C;
-    static constexpr std::array<uint32_t, 4> kControl = {0x04000062, 0x04000068, 0x04000072, 0x04000078};
-    static constexpr std::array<uint32_t, 4> kFrequency = {0x04000064, 0x0400006C, 0x04000074, kNr43};
+    static constexpr std::array<uint32_t, 4> kControl = {agblib::agb::kRegNr11, agblib::agb::kRegNr21,
+                                                         agblib::agb::kRegNr31, agblib::agb::kRegNr41};
+    static constexpr std::array<uint32_t, 4> kFrequency = {agblib::agb::kRegNr13, agblib::agb::kRegNr23,
+                                                           agblib::agb::kRegNr33, agblib::agb::kRegNr43};
     PsgFrame frame_;
 };
 
@@ -191,6 +191,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int loops,
         {
             registers.Write(w);
         }
+
         sim.psg.push_back(registers.EndFrame());
         done = looping ? seq.SequenceStarts().size() > passes * count : !seq.Playing();
     }
@@ -209,6 +210,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int loops,
     {
         sim.plan.end = std::max<uint32_t>(seq.Frame(), 1);
     }
+
     if (!done)
     {
         sim.truncated = true;
@@ -227,6 +229,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int loops,
             n.ended = true;
             n.off = sim.plan.end;
         }
+
         sim.notes.push_back(n);
     }
 
@@ -351,7 +354,7 @@ struct PsgNote
     uint32_t read = 0;         // the read of the sequence that ran it, in Sequencer::SequenceReads()
 };
 
-// Returns the pitch in Hz at which a square zone plays key `key`, or a wave zone of program `program`, as a square's
+// Returns the pitch in Hz at which a square zone plays key `key`, or a wave zone of program `program` as a square's
 // pitch at the same frequency setting.
 double ZoneHz(const Rom& rom, const DriverInfo& info, int channel, int key, int program)
 {
@@ -365,11 +368,11 @@ double ZoneHz(const Rom& rom, const DriverInfo& info, int channel, int key, int 
     return 4 * KeyHz(key - offset) * std::pow(2.0, WaveCents(rom, info, key, offset) / 1200.0);
 }
 
-// Returns track `t`'s notes, which play PSG channel kPsgOfTrack[t], if `track_mask` sets the bit of its sequence
-// channel. Adds their instruments to `instruments`. Each note-on starts a stretch of the channel, which lasts until the
-// channel's next note-on or the conversion's end. A model of the PSG plays the driver's registers through each stretch:
-// its envelope, length counter and sweep, and the frequency that the modulation and the glides write. The MIDI notes
-// are the runs of frames in which the channel sounds.
+// Returns track `t`'s notes if `track_mask` sets the bit of its sequence channel. The notes play PSG channel
+// kPsgOfTrack[t]. Adds their instruments to `instruments`. Each note-on starts a stretch of the channel. The stretch
+// lasts until the channel's next note-on or the conversion's end. A model of the PSG plays the driver's registers
+// through each stretch: its envelope, length counter and sweep, and the frequency that the modulation and the glides
+// write. The MIDI notes are the runs of frames in which the channel sounds.
 std::vector<PsgNote> PsgNotes(const Rom& rom, const DriverInfo& info, const Simulation& sim, int t, uint32_t track_mask,
                               InstrumentSet& instruments)
 {
@@ -391,6 +394,7 @@ std::vector<PsgNote> PsgNotes(const Rom& rom, const DriverInfo& info, const Simu
                      return PsgRegisters{r.nr10, r.control[size_t(h)], r.frequency[size_t(h)], r.nr30,
                                          (r.restarted & (1 << h)) != 0};
                  });
+
     const PsgScale scale = PsgScaleOf(kSoundcntL, kSoundcntH);
     const uint32_t frames = std::min<uint32_t>(sim.plan.end, uint32_t(sim.psg.size()));
     for (size_t i = 0; i < starts.size(); i++)
@@ -418,6 +422,7 @@ std::vector<PsgNote> PsgNotes(const Rom& rom, const DriverInfo& info, const Simu
             {
                 instruments.AddSquare(h, note.program, uint8_t(sim.psg[note.on].control[size_t(h)]));
             }
+
             notes.push_back(note);
             open = false;
         };
@@ -438,6 +443,7 @@ std::vector<PsgNote> PsgNotes(const Rom& rom, const DriverInfo& info, const Simu
                 {
                     finish(f);
                 }
+
                 continue;
             }
 
@@ -473,6 +479,7 @@ std::vector<PsgNote> PsgNotes(const Rom& rom, const DriverInfo& info, const Simu
                     sound.sweeps.emplace_back(at, 12 * std::log2(SquareHz(frequency) / key_hz));
                 }
             }
+
             note.sounds.push_back(sound);
         }
 
@@ -500,10 +507,12 @@ BeatGrid SongGrid(const Simulation& sim)
             {
                 starts[size_t(c)].push_back(0);
             }
+
             starts[size_t(c)].push_back(n.on);
             starts[size_t(c)].push_back(n.off);
         }
     }
+
     for (std::vector<uint32_t>& frames : starts)
     {
         std::sort(frames.begin(), frames.end());
@@ -515,12 +524,12 @@ BeatGrid SongGrid(const Simulation& sim)
     return BeatGrid(starts, hints);
 }
 
-// Writes to `mt` the kit's track. The kit plays `notes`, at least one. The track holds its name, its end at tick `end`,
-// and the notes at the ticks that `ticks` gives them. The kit plays on its MIDI channel in kMidiChannels, in the bank
-// that PresetBank() gives sequence channel 9. At tick 0, the track sets the first note's bank and program. It sets CC7
-// and CC11 to 127, CC10 to 64, and CC91 and CC93 to 0. The notes' velocities hold their levels. The mixer is mono and
-// adds no reverb or chorus. The kit writes no bends. The track therefore sets no bend range. Unless the loop starts
-// with the song, the kit gives its bank and program again at its first note from tick `loop_start`.
+// Writes to `mt` the kit's track. The kit plays `notes`, at least one. The track contains its name, its end at tick
+// `end`, and the notes at the ticks that `ticks` gives them. The kit plays on its MIDI channel in kMidiChannels, in the
+// bank that PresetBank() gives sequence channel 9. At tick 0, the track sets the first note's bank and program. It sets
+// CC7 and CC11 to 127, CC10 to 64, and CC91 and CC93 to 0. The notes' velocities contain their levels. The mixer is
+// mono and adds no reverb or chorus. The kit writes no bends. The track therefore sets no bend range. Unless the loop
+// starts with the song, the kit gives its bank and program again at its first note from tick `loop_start`.
 void WriteKit(MidiTrack& mt, const std::vector<Note>& notes, const BeatTicks& ticks, uint32_t loop_start, uint32_t end)
 {
     const int c = kKitTrack;
@@ -547,24 +556,27 @@ void WriteKit(MidiTrack& mt, const std::vector<Note>& notes, const BeatTicks& ti
             bank = program = -1;
             restated = true;
         }
+
         if (bank != preset_bank)
         {
             mt.Bank(on, midi_channel, preset_bank);
             bank = preset_bank;
         }
+
         if (program != n.program)
         {
             mt.Program(on, midi_channel, n.program);
             program = n.program;
         }
+
         mt.NoteOn(on, midi_channel, n.key, Velocity(n));
         mt.NoteOff(off, midi_channel, n.key);
     }
 }
 
-// Writes to `mt` track `t`, which plays a PSG channel. The notes `notes`, at least one, play at full velocity. In each
-// frame, CC11 sets the channel level, and the bend sets the semitones from the note key to the channel frequency. The
-// bend range covers the widest bend. The noise notes play drums at a fixed pitch.
+// Writes track `t` to `mt`. The track plays a PSG channel. The notes `notes`, at least one, play at full velocity. In
+// each frame, CC11 sets the channel level, and the bend sets the semitones from the note key to the channel frequency.
+// The bend range covers the widest bend. The noise notes play drums at a fixed pitch.
 void WritePsgTrack(MidiTrack& mt, int t, const std::vector<PsgNote>& notes, const BeatTicks& ticks, uint32_t loop_start,
                    uint32_t end)
 {
@@ -583,6 +595,7 @@ void WritePsgTrack(MidiTrack& mt, int t, const std::vector<PsgNote>& notes, cons
             }
         }
     }
+
     const int range = BendRangeFor(widest, kSmallBend);
     const auto tick = [&](double frame)
     {
@@ -615,6 +628,7 @@ void WritePsgTrack(MidiTrack& mt, int t, const std::vector<PsgNote>& notes, cons
                 }
             }
         }
+
         writer.Note(on, off, std::clamp(n.key, 0, 127));
     }
 }
@@ -669,6 +683,7 @@ Tracks ChooseTracks(const Rom& rom, const DriverInfo& info, const Simulation& si
             tracks.psg[size_t(t)] = PsgNotes(rom, info, sim, t, track_mask, instruments);
         }
     }
+
     tracks.kit = KitNotes(sim, track_mask, instruments);
 
     return tracks;
@@ -687,7 +702,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
         return report;
     }
 
-    // The model's notes, those that the files hold and their instruments, and the song's beat. The simulation's
+    // The model's notes, those that the files contain and their instruments, and the song's beat. The simulation's
     // warnings come first.
     const Simulation sim = SimulateConversion(rom, info, song, settings.loops, KitPlays(info, song, settings.version));
     report.warnings = sim.warnings;
@@ -699,6 +714,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
         const bool empty = t == kKitTrack ? tracks.kit.empty() : tracks.psg[size_t(t)].empty();
         report.tracks += empty ? 0 : 1;
     }
+
     const BeatGrid grid = SongGrid(sim);
 
     // The length, the loop and the first tempo.
@@ -708,6 +724,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
         report.loop_start = FrameSeconds(sim.plan.loop_start);
         report.loop_end = FrameSeconds(sim.plan.loop_end);
     }
+
     report.bpm = 60 / FrameSeconds(grid.Tempos().front().frames);
 
     report.silent = report.tracks == 0;
@@ -729,54 +746,22 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
                   unsigned(piece.address), settings.program.c_str());
     std::vector<uint8_t> midi = EncodeMidi(title, about, sim.plan, grid, settings.frame_timing, tracks.psg, tracks.kit);
 
-    std::string error;
-    if (files)
+    // The song's SoundFont, unless the instruments go in a shared one.
+    Sf2File file;
+    if (!shared)
     {
-        files->midi = std::move(midi);
-        Sf2File file;
         file.program = settings.program;
         for (const std::string& w : own.Build(rom, info, file))
         {
             report.warnings.push_back(w);
         }
-        file.SetTitle(title);
-        if (!file.Encode(files->sf2, error))
-        {
-            report.warnings.push_back(error);
-            return report;
-        }
 
-        report.ok = true;
-        return report;
+        file.SetTitle(title);
     }
 
     const std::string stem = SongStem(settings, number) + picked.suffix;
-    report.midi_path = stem + ".mid";
-    if (!WriteFile(report.midi_path, midi, error))
-    {
-        report.warnings.push_back(error);
-        return report;
-    }
-
-    // The song's SoundFont, unless the instruments go in a shared one.
-    if (!shared)
-    {
-        Sf2File file;
-        file.program = settings.program;
-        for (const std::string& w : own.Build(rom, info, file))
-        {
-            report.warnings.push_back(w);
-        }
-        file.SetTitle(title);
-        report.sf2_path = stem + ".sf2";
-        if (!file.Write(report.sf2_path, error))
-        {
-            report.warnings.push_back(error);
-            return report;
-        }
-    }
-
-    report.ok = true;
+    report.ok = agb::WriteModuleFiles(stem, std::move(midi), shared ? nullptr : &file, report,
+                                      files ? &files->midi : nullptr, files ? &files->sf2 : nullptr);
 
     return report;
 }
@@ -820,7 +805,7 @@ ConvertedSong ConvertedNotes(const Rom& rom, const DriverInfo& info, int song, c
     const uint32_t end = ticks.Song(sim.plan.end);
     converted.end_tick = end;
 
-    // The notes as the tracks of the MIDI file hold them: the PSG's at full velocity, without those that the beat
+    // The notes as the tracks of the MIDI file contain them: the PSG's at full velocity, without those that the beat
     // leaves no tick, and the kit's at their velocities, a tick long at least.
     for (int t = 0; t < kTracks; t++)
     {
@@ -843,6 +828,7 @@ ConvertedSong ConvertedNotes(const Rom& rom, const DriverInfo& info, int song, c
                 note.read = n.read;
                 converted.notes.push_back(note);
             }
+
             continue;
         }
 
@@ -858,6 +844,7 @@ ConvertedSong ConvertedNotes(const Rom& rom, const DriverInfo& info, int song, c
             {
                 continue;
             }
+
             note.key = std::clamp(n.key, 0, 127);
             note.velocity = 127;
             note.bank = t == kNoiseTrack ? kNoiseBank : PresetBank(t);

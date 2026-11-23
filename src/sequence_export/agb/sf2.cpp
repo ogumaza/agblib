@@ -74,6 +74,7 @@ void AddVolumeEnvelope(sf2::Zone& zone, const VolumeEnvelope& envelope)
             zone.generators.push_back(sf2::Generator::Value(oper, value));
         }
     }
+
     if (envelope.sustain)
     {
         zone.generators.push_back(sf2::Generator::Value(sf2::kSustainVolEnv, envelope.sustain));
@@ -86,6 +87,7 @@ void AddTuning(sf2::Zone& zone, int cents)
     {
         zone.generators.push_back(sf2::Generator::Value(sf2::kCoarseTune, std::clamp(cents / 100, -120, 120)));
     }
+
     if (cents % 100)
     {
         zone.generators.push_back(sf2::Generator::Value(sf2::kFineTune, cents % 100));
@@ -100,6 +102,7 @@ sf2::Zone SampleZone(int sample, bool loop, int lo, int hi, int cents)
     {
         z.generators.push_back(sf2::Generator::Value(sf2::kFineTune, cents));
     }
+
     z.generators.push_back(sf2::Generator::Value(sf2::kSampleModes, loop ? 1 : 0));
     z.generators.push_back(sf2::Generator::Value(sf2::kSampleId, sample));
 
@@ -124,7 +127,7 @@ std::vector<sf2::Zone> SwitchZones(int first, int frames, int second, int cents,
         return {SampleZone(first, true, lo, hi, cents)};
     }
 
-    // The first sample holds for the frames and then falls silent. The second waits for them.
+    // The first sample stays for the frames and then falls silent. The second waits for them.
     const int time = sf2::ToTimecents(FrameSeconds(frames) * 1000.0);
     sf2::Zone a = SampleZone(first, true, lo, hi, cents);
     a.generators.insert(a.generators.begin() + 1, {sf2::Generator::Value(sf2::kHoldVolEnv, time),

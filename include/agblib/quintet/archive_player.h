@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-// Plays a song or a sound effect of a GBA ROM with Quintet's driver on ntdlib's models: the driver's per-frame routine
-// (quintet::Sequencer) on the GBA's sound hardware (agb::Apu), frame by frame. The song's 6 channels are the tracks:
-// square 1, square 2, the wave channel, the noise channel, then FIFO A and FIFO B.
+// Plays a song or a sound effect of a GBA ROM with Quintet's driver on the agblib models: the driver's per-frame
+// routine (quintet::Sequencer) on the GBA's sound hardware (agb::Apu), frame by frame. The song's 6 channels are the
+// tracks: square 1, square 2, the wave channel, the noise channel, then FIFO A and FIFO B.
 //
 // The driver plays a PCM note from the ROM. It empties the note's FIFO, stores the sample's first 32 bytes in it and
 // points the FIFO's DMA at the rest. The DMA then moves 16 bytes each time the FIFO runs down to 16, and the FIFO's
@@ -10,7 +10,7 @@
 // frame's start: the model doesn't time them within the frame.
 //
 // The hardware starts as the game's sound init leaves it. The output's resolution comes from the sound bias register,
-// which the play routine sets. Rate() gives it.
+// and the play routine sets that register. Rate() gives the resolution.
 //
 // In the enhanced mixing mode (ArchivePlayerOptions::enhanced), the output comes in floating point at
 // agb::kEnhancedRate. The APU plays the PSG's channels in its enhanced mode, and each FIFO's bytes reach it at that
@@ -41,9 +41,9 @@ namespace agblib::quintet
 class SoundBus
 {
 public:
-    // The registers from agb::kRegSound1CntL up to the FIFOs as `registers` holds them (agb::Apu's constructor). With
-    // `fills`, the start of a FIFO's DMA puts the 32 bytes before the DMA's source in the FIFO, as the driver's stores
-    // to the FIFO do. Without it, only stores to the FIFOs' registers put bytes in them.
+    // The registers from agb::kRegSound1CntL up to the FIFOs as `registers` contains them (agb::Apu's constructor).
+    // With `fills`, the start of a FIFO's DMA puts the 32 bytes before the DMA's source in the FIFO as the driver's
+    // stores to the FIFO do. Without it, only stores to the FIFOs' registers put bytes in them.
     SoundBus(const agb::Rom& rom, std::span<const uint8_t> registers, bool fills);
 
     // Makes a store to the sound registers, to the FIFOs, to DMA 1's or DMA 2's registers, or to timer 0's or timer
@@ -64,6 +64,7 @@ public:
     {
         return apu_;
     }
+
     const agb::Apu& Apu() const
     {
         return apu_;
@@ -80,7 +81,7 @@ private:
     struct Fifo
     {
         std::array<uint8_t, 12> registers = {}; // the DMA's source, destination, count and control
-        std::deque<int8_t> bytes;               // what the FIFO holds
+        std::deque<int8_t> bytes;               // what the FIFO contains
         int8_t output = 0;                      // the byte that the FIFO plays
         uint32_t source = 0;                    // the DMA's next byte
         bool dma = false;
@@ -96,7 +97,7 @@ private:
     // mode, adds the samples between the bytes to `enhanced`.
     void PlayFifo(int f, std::vector<float>& enhanced);
 
-    // Puts `count` bytes from `address` in FIFO `fifo`, as the DMA or the CPU does.
+    // Puts `count` bytes from `address` in FIFO `fifo` as the DMA or the CPU does.
     void Fill(int fifo, uint32_t address, uint32_t count);
 
     // Returns the timer that SOUNDCNT_H gives FIFO `fifo`.
@@ -127,8 +128,8 @@ struct ArchivePlayerOptions
 class ArchivePlayer
 {
 public:
-    // Keeps a reference to `rom`, which must outlive the player, and a copy of `files`: the music files of the game in
-    // the numbering of ReadMusicFiles(). Throws std::invalid_argument when `files` is empty.
+    // Keeps a reference to `rom` and a copy of `files`: the music files of the game in the numbering of
+    // ReadMusicFiles(). `rom` must outlive the player. Throws std::invalid_argument when `files` is empty.
     ArchivePlayer(const agb::Rom& rom, std::span<const DriverInfo> files);
     ArchivePlayer(const ArchivePlayer&) = delete;
     ArchivePlayer& operator=(const ArchivePlayer&) = delete;
@@ -137,7 +138,7 @@ public:
     // does after the sound init. Throws std::invalid_argument when the song can't be played.
     void Start(int song, const ArchivePlayerOptions& options = {});
 
-    // Starts an audition: one note on channel `channel` of song `song`, as Sequencer::Audition() plays it with
+    // Starts an audition: one note on channel `channel` of song `song` as Sequencer::Audition() plays it with
     // `instrument`, `index` and `volume`. The song's channels stay idle. The note sounds until ReleaseNote(). Throws
     // std::invalid_argument when the song can't be played, and std::out_of_range for a channel or an index that
     // Sequencer::Audition() refuses.
@@ -170,7 +171,7 @@ public:
         return frames_;
     }
 
-    // The song's tick: the largest tick count of its channels, which counts every pass through a loop.
+    // The song's tick: the largest tick count of its channels, with every pass through a loop.
     uint64_t Tick() const;
 
     // The output's rate in Hz: agb::kEnhancedRate in the enhanced mode, or else from the resolution in the sound bias
@@ -205,7 +206,7 @@ public:
     }
 
     // While any track is soloed, leaves every track that isn't out of the output, in the same way as a mute. A mute
-    // still holds on a soloed track.
+    // still applies on a soloed track.
     void SoloTrack(int track, bool solo);
     bool IsTrackSoloed(int track) const
     {
@@ -240,7 +241,7 @@ public:
         bool enhanced_ = false;
     };
 
-    // Takes a snapshot. `previous` is there for the interface that ntdlib's archive players share: a snapshot stands
+    // Takes a snapshot. `previous` is there for the interface that the agblib archive players share: a snapshot stands
     // alone. Throws std::logic_error before a start.
     Snapshot Save(const Snapshot* previous = nullptr) const;
 

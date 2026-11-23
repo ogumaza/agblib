@@ -3,13 +3,13 @@
 // A game's Brownie Brown driver, run on the GBA's CPU (agb::System). It calls the routines that the game calls: the
 // init and the request of a sound, and each frame the per-frame routine. In the Sword of Mana revision, it then runs
 // the mixer as the game's DMA interrupts do, once for each 16 points of the FIFOs, counted from the frame in which the
-// DMA and Timer 0 started. In the Magical Vacation revision, each FIFO plays at its timer's rate, and a FIFO that holds
-// 16 points or fewer after playing one runs its DMA interrupt's routine. It reads what the driver leaves in memory: the
-// channel records, the voices, the driver's variables and the FIFOs' bytes. It's the reference for ntdlib's model of
-// the driver (brownie::Sequencer).
+// DMA and Timer 0 started. In the Magical Vacation revision, each FIFO plays at its timer's rate, and a FIFO that
+// contains 16 points or fewer after playing one runs its DMA interrupt's routine. It reads what the driver leaves in
+// memory: the channel records, the voices, the driver's variables and the FIFOs' bytes. It's the reference for the
+// model of the driver (brownie::Sequencer).
 //
 // Every call starts with r0 to r12 at 0. A channel's rest writes the per-frame routine's r5 to a frequency register. In
-// the game, r5 holds what the code that the VBlank interrupted left there. The reference takes 0, as the model does.
+// the game, r5 contains what the code that the VBlank interrupted left there. The reference takes 0 as the model does.
 
 #pragma once
 

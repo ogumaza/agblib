@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 // Krawall's detection of the modified build's modules: the music files that the game unpacks, and the modules
-// mapped after the ROM's end.
+// mapped after the ROM's end. Only driver.cpp includes this header. Its definitions therefore keep internal linkage.
+
+#pragma once
 
 #include <algorithm>
 #include <cstdint>
@@ -19,7 +21,6 @@
 
 namespace agblib::krawall
 {
-
 namespace
 {
 
@@ -36,7 +37,7 @@ struct MusicFile
     uint32_t module = 0;       // the module's offset in `data`
 };
 
-// The most bytes of a module's data: EWRAM holds no more.
+// The most bytes of a module's data: EWRAM contains no more.
 constexpr uint32_t kMaxModuleData = 0x40000;
 
 // The counts at the end of a module's data.
@@ -162,10 +163,12 @@ std::vector<MusicFile> FindMusicFiles(const Rom& rom, bool& scanned)
             place(second);
         }
     }
+
     for (uint32_t at = kRomBase; rom.Contains(at, 4); at += 4)
     {
         place(lookup(rom.U32(at)));
     }
+
     scanned = order.empty();
     for (uint32_t at = kRomBase; scanned && rom.Contains(at, 16) && order.size() < kMaxModules; at += 4)
     {
@@ -192,6 +195,7 @@ std::vector<uint32_t> MusicJingles(const Rom& rom, uint32_t loader_code)
     {
         loader = rom.U16(loader_code - back) == 0xB5F0 ? loader_code - back : 0;
     }
+
     if (!loader)
     {
         return {};
@@ -216,6 +220,7 @@ std::vector<uint32_t> MusicJingles(const Rom& rom, uint32_t loader_code)
         {
             routine = (rom.U16(call - back) & 0xFF00) == 0xB500 ? call - back : 0;
         }
+
         for (uint32_t play : routine ? FindCalls(rom, routine) : std::vector<uint32_t>())
         {
             if (rom.U16(play - 2) == 0x2100 && agb::IsThumbLiteralLoad(rom, play - 4))
@@ -229,8 +234,8 @@ std::vector<uint32_t> MusicJingles(const Rom& rom, uint32_t loader_code)
 }
 
 // Lists the modified build's modules: unpacks the music files and maps their modules after the ROM's end, in a copy of
-// the ROM that `info.unpacked` holds. Returns the modules of the files that the game plays once. Returns false and sets
-// `error` if there are no modules.
+// the ROM that `info.unpacked` contains. Returns the modules of the files that the game plays once. Returns false and
+// sets `error` if there are no modules.
 bool ListMusicFiles(const Rom& rom, uint32_t loader_code, const std::string& program, DriverInfo& info,
                     std::vector<uint32_t>& jingles, std::string& error)
 {
@@ -250,6 +255,7 @@ bool ListMusicFiles(const Rom& rom, uint32_t loader_code, const std::string& pro
         info.modules.push_back(base + music.module);
         info.files.push_back(music.file);
     }
+
     if (info.modules.empty())
     {
         error = "found Krawall, but no music files";
@@ -309,5 +315,4 @@ bool ListMusicFiles(const Rom& rom, uint32_t loader_code, const std::string& pro
 }
 
 } // namespace
-
 } // namespace agblib::krawall

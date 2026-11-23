@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of a song of AlphaDream's GBA driver for an editor. ntdlib's model of the driver
-// (agblib::sequence_export::alphadream::Sequencer) plays the song as ConvertSong does. The performance holds the notes
-// of ConvertSong's MIDI file, each with the note's bytes that started it. It also holds each track's stretches of
-// commands, and each track's changes of its volume and pan.
+// The performance of a song of AlphaDream's GBA driver for an editor. The model of the driver
+// (agblib::sequence_export::alphadream::Sequencer) plays the song as ConvertSong does. The performance contains the
+// notes of ConvertSong's MIDI file, each with the note's bytes that started it. It also contains each track's stretches
+// of commands, and each track's changes of its volume and pan.
 
 #pragma once
 
@@ -11,11 +11,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/alphadream/driver.h"
 #include "agblib/sequence_export/agb/settings.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::alphadream
 {

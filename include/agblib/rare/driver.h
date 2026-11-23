@@ -19,8 +19,8 @@ namespace agblib::rare
 using agblib::agb::kFrameRate;
 using agblib::agb::Rom;
 
-// The driver counts each frame as 1/60 s of the song's time, so a song plays slower on the GBA than its tempo says, by
-// this factor.
+// The driver counts each frame as 1/60 s of the song's time. A song therefore plays slower on the GBA than its tempo
+// says, by this factor.
 constexpr double kTempoScale = 60.0 / kFrameRate;
 
 // User-supplied overrides for driver detection.
@@ -31,7 +31,7 @@ struct DriverOverrides
     std::string program = "ntdlib"; // the name that the warning of another build's music volumes gives
 };
 
-// A tune that the game plays as two arrangements, each on a group of channels. The game holds the channels of the
+// A tune that the game plays as two arrangements, each on a group of channels. The game contains the channels of the
 // arrangement that isn't playing at a level of 0. The mixer then leaves their notes out. Donkey Kong Country 3 plays
 // Enchanted Riverbank this way: one arrangement above water and the other under water. The game's code fades from one
 // to the other as the Kong dives in and climbs out.
@@ -54,17 +54,17 @@ struct DriverInfo
     uint32_t rate_scale = 0x01397FC3;         // the pitch scale for the mix rate: 2^38 / mix_rate
     int voice_limit = 8;                      // maximum voices mixed per frame
     int slots_per_channel = 6;                // the notes a channel can play at once
-    bool envelope_controllers = false;        // controllers 20-23 set a channel's envelope, as in BDQE's revision
-    bool frees_loop_once = false;             // moving a note past its end frees it in loop mode 1, as in BDQE's
-    bool skips_silent_notes = false;          // the mixer leaves out a note at a level of 0, as BDQE's does
-    bool writes_pairs = false;                // the mixer writes the first voice's samples in pairs, as BAJE's does
+    bool envelope_controllers = false;        // controllers 20-23 set a channel's envelope as in BDQE's revision
+    bool frees_loop_once = false;             // moving a note past its end frees it in loop mode 1 as in BDQE's
+    bool skips_silent_notes = false;          // the mixer leaves out a note at a level of 0 as BDQE's does
+    bool writes_pairs = false;                // the mixer writes the first voice's samples in pairs as BAJE's does
     WaterTune water;                          // the tune whose arrangement the game picks by the water. BDQE has one.
     uint32_t pitch_table = 0;                 // 2^(n/12) for n = -64..63 in 9.23 fixed point, at n = 0
     uint32_t sine_table = 0;                  // 257 words: the vibrato's sine
     std::array<uint8_t, 100> fade_table = {}; // the length of each decay and release, from the driver's table
     int music_volume = 128;                   // out of 128: the music volume of each tune that music_volumes leaves out
     std::vector<uint8_t> music_volumes;       // each tune's music volume at its start in the game
-    std::vector<std::string> log;             // detection results, as text
+    std::vector<std::string> log;             // detection results as text
     std::vector<std::string> warnings;        // assumptions detection had to make
 };
 

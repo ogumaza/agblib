@@ -34,8 +34,8 @@ namespace
 // Returns an approximation of the driver's fade table, for a ROM in which detection doesn't find the table. A decay or
 // release with index i takes entry i + 1 frames, or none if the entry is 0. The entries fall by about 10% an index from
 // 254 at index 0 to 88 at index 10, then by about 3% an index to 7 at index 90, and then in a straight line to 0 at
-// index 99, which follows the driver's table to within about 10%. It's worked out in 16.16 fixed point, so it's the
-// same everywhere.
+// index 99. That follows the driver's table to within about 10%. It's worked out in 16.16 fixed point, and is therefore
+// the same everywhere.
 std::array<uint8_t, 100> ApproximateFadeTable()
 {
     std::array<uint8_t, 100> table = {};
@@ -110,6 +110,11 @@ constexpr uint8_t kAwueVolumes[] = {127, 80,  127, 127, 127, 80,  127, 80,  127,
 constexpr uint8_t kBajeVolumes[] = {50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50,
                                     50, 50, 50, 50, 50, 50, 50, 63, 63, 63, 50, 63, 63, 63, 50, 50, 50};
 
+// Battletoads, the prototype: the routine at 0x08005E48 starts tune 0 and sets a volume of 0x46. The routines at
+// 0x08001130 and 0x08001144 start tune 1 at 0x46 and tune 2 at 0x50. The setter at 0x08007848 has no other caller but
+// the init.
+constexpr uint8_t kRareVolumes[] = {70, 70, 80};
+
 // The music volume, out of 128, of most of Donkey Kong Country 3's tunes (kBdqeVolumes).
 constexpr int kDkc3MusicVolume = 69;
 
@@ -130,6 +135,7 @@ constexpr GameSettings kGameSettings[] = {
     {.game_code = "BDQE", .init = 0x080AED90, .tune_count = 31, .volumes = kBdqeVolumes},
     {.game_code = "AWUE", .init = 0x0800DBD4, .tune_count = 38, .volumes = kAwueVolumes},
     {.game_code = "BAJE", .init = 0x08002084, .tune_count = 34, .volumes = kBajeVolumes},
+    {.game_code = "RARE", .init = 0x080073D0, .tune_count = 3, .volumes = kRareVolumes},
     // Banjo-Kazooie: Grunty's Revenge: the options' music level runs from 0 to 9 and starts at 4 (0x08040C96). The
     // table at 0x080BF604 gives level 4 a volume of 56. Every tune plays at it.
     {.game_code = "BKZX", .init = 0x08004C18, .tune_count = 0, .volumes = {}, .volume = 56},
@@ -138,7 +144,7 @@ constexpr GameSettings kGameSettings[] = {
 // Maximum number of tunes to read during detection.
 constexpr int kMaxTunes = 1024;
 
-// The ARM instructions that detection looks for in the driver's code, which the init copies to IWRAM.
+// The ARM instructions that detection looks for in the driver's code. The init copies that code to IWRAM.
 constexpr uint32_t kReadCommand = 0xE4DB0001;  // ldrb r0, [fp], #1
 constexpr uint32_t kDispatch = 0xE79C0100;     // ldr r0, [ip, r0, lsl #2]
 constexpr uint32_t kChannelShift = 0xE1A01220; // lsr r1, r0, #4
@@ -269,7 +275,7 @@ std::string ChannelsText(uint16_t channels)
     return first == last ? std::to_string(first) : std::to_string(first) + "-" + std::to_string(last);
 }
 
-// The driver's init, as found from its copy of the driver's code to IWRAM.
+// The driver's init as found from its copy of the driver's code to IWRAM.
 struct InitCode
 {
     uint32_t start = 0; // the routine's first instruction
@@ -364,6 +370,7 @@ bool ReadDriverCode(const Rom& rom, const InitCode& init, DriverInfo& info)
             found = true;
             break;
         }
+
         if (rom.U32(at + 4) == kChannelShift && rom.U32(at + 8) == kCommandMask && rom.U32(at + 12) == kDispatch)
         {
             info.format = Format::kChannelNibble;
@@ -371,6 +378,7 @@ bool ReadDriverCode(const Rom& rom, const InitCode& init, DriverInfo& info)
             break;
         }
     }
+
     if (!found)
     {
         return false;
@@ -426,7 +434,7 @@ bool ReadDriverCode(const Rom& rom, const InitCode& init, DriverInfo& info)
 
     // When the routine that moves the notes on takes a sample past its end, it stores the free state in loop modes 3
     // and 1: mov r3, #0x10; strb r3, [r0]; b; mov r3, #0x10; strb r3, [r0]. The older revisions store mode 1's through
-    // r8, which doesn't hold the slot's address.
+    // r8. That register doesn't contain the slot's address.
     info.frees_loop_once = HasArmCode(rom, init, {{kFreeState}, {kStoreR0}, kAnyBranch, {kFreeState}, {kStoreR0}});
 
     // The mixer of Donkey Kong Country 3's revision scales a note's level by its channel's level, and leaves the note
@@ -480,6 +488,7 @@ long long CommandsInFormat(const Rom& rom, uint32_t table, int count, Format for
 
                 address += e.size;
             }
+
             if (n == kMaxTrackCommands)
             {
                 return -1;
@@ -526,6 +535,7 @@ void SetRate(DriverInfo& info)
             known_rate = true;
         }
     }
+
     if (!known_rate)
     {
         info.warnings.push_back("the init sets a mix rate of " + std::to_string(info.mix_rate) +
@@ -567,6 +577,7 @@ void SetMusicVolume(const Rom& rom, const DriverOverrides& overrides, DriverInfo
         info.music_volumes.assign(game.volumes.begin(), game.volumes.end());
         known = true;
     }
+
     if (!known && info.skips_silent_notes)
     {
         info.music_volume = kDkc3MusicVolume;
@@ -595,6 +606,7 @@ void LogDetection(DriverInfo& info)
         {
             info.log.push_back("controllers 20-23 set a channel's attack, decay, sustain and release");
         }
+
         if (!info.music_volumes.empty() || info.music_volume != 128)
         {
             int low = info.music_volume, high = info.music_volume;
@@ -603,9 +615,11 @@ void LogDetection(DriverInfo& info)
                 low = *std::min_element(info.music_volumes.begin(), info.music_volumes.end());
                 high = *std::max_element(info.music_volumes.begin(), info.music_volumes.end());
             }
+
             info.log.push_back("the game's code starts the tunes at a music volume of " + std::to_string(low) +
                                (low == high ? "" : " to " + std::to_string(high)) + ", out of 128");
         }
+
         if (info.water.tune >= 0)
         {
             info.log.push_back("the game's code plays tune " + std::to_string(info.water.tune) + " on channels " +
@@ -613,6 +627,7 @@ void LogDetection(DriverInfo& info)
                                " under water");
         }
     }
+
     info.log.push_back("tune table at " + Hex(info.tune_table) + ": " + std::to_string(info.tune_count) + " tune" +
                        (info.tune_count == 1 ? "" : "s"));
 }
@@ -641,6 +656,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
     {
         info.tune_table = overrides.tune_table;
     }
+
     if (info.tune_table == 0)
     {
         error.clear();

@@ -48,7 +48,7 @@ constexpr Kind kExtendedKinds[kXcmdCount] = {
     Kind::kPsgLength, Kind::kSweep,      Kind::kWait,      Kind::kSampleOffset,
 };
 
-// The bytes that a note and an end of a tie hold at most after their code, where a note reads up to `note_arguments`.
+// The most bytes that a note and an end of a tie contain after their code, where a note reads up to `note_arguments`.
 int MostArguments(Kind kind, int note_arguments)
 {
     return kind == Kind::kNoteOff ? 1 : note_arguments;
@@ -104,7 +104,7 @@ void Append32(std::vector<uint8_t>& out, uint32_t value)
     }
 }
 
-// `value`, which has to lie from `low` to `high` for a command of `kind`.
+// `value`. It has to be from `low` to `high` for a command of `kind`.
 int64_t Checked(int64_t value, int64_t low, int64_t high, Kind kind)
 {
     if (value < low || value > high)
@@ -121,7 +121,7 @@ uint8_t Byte(int64_t value, int64_t low, int64_t high, Kind kind)
     return static_cast<uint8_t>(Checked(value, low, high, kind));
 }
 
-// The code byte of `command`, which its bytes leave out where it repeats the running status.
+// The code byte of `command`. Its bytes leave the code out where it repeats the running status.
 uint8_t CodeOf(const Command& command)
 {
     switch (command.kind)
@@ -148,6 +148,7 @@ uint8_t CodeOf(const Command& command)
         {
             return *code;
         }
+
         throw std::invalid_argument("a wait of " + std::to_string(command.value.value) +
                                     " ticks, which no code's length gives");
     case Kind::kJump:
@@ -185,6 +186,7 @@ uint8_t CodeOf(const Command& command)
             {
                 return kCmdXcmd;
             }
+
             throw std::invalid_argument("no end has opcode " + std::to_string(opcode));
         }
     case Kind::kOther:
@@ -192,6 +194,7 @@ uint8_t CodeOf(const Command& command)
         {
             return kCmdMemAcc;
         }
+
         throw std::invalid_argument("no command of MP2K does nothing with opcode " +
                                     std::to_string(command.encoding.opcode));
     default:
@@ -210,7 +213,7 @@ uint8_t CodeOf(const Command& command)
     throw std::invalid_argument("MP2K has no command for " + std::string(ntdlib::commands::Name(command.kind)));
 }
 
-// Appends the bytes of `command`, whose target lies at address `target`, for a driver whose notes read up to
+// Appends the bytes of `command`, whose target is at address `target`, for a driver whose notes read up to
 // `note_arguments` bytes. Its values are the console's.
 void AppendCommand(std::vector<uint8_t>& out, const Command& command, uint32_t target, int note_arguments)
 {
@@ -229,6 +232,7 @@ void AppendCommand(std::vector<uint8_t>& out, const Command& command, uint32_t t
         throw std::invalid_argument(std::string(ntdlib::commands::Name(command.kind)) +
                                     " takes no condition, time, random value or variable on MP2K");
     }
+
     const bool lfo = command.kind == Kind::kLfoSpeed || command.kind == Kind::kLfoDelay ||
                      command.kind == Kind::kLfoDepth || command.kind == Kind::kLfoType;
     if (lfo && command.index != 0)
@@ -265,12 +269,14 @@ void AppendCommand(std::vector<uint8_t>& out, const Command& command, uint32_t t
                     throw std::invalid_argument("a note of " + std::to_string(value) +
                                                 " ticks, which its length code can't give");
                 }
+
                 if (extra != 0 && note_arguments < 3)
                 {
                     throw std::invalid_argument("a note of " + std::to_string(value) +
                                                 " ticks, which no length code gives without an extra length");
                 }
             }
+
             const int usual = command.kind == Kind::kNoteOff ? 1 : extra != 0 ? 3 : 2;
             const int count = command.encoding.arguments ? *command.encoding.arguments : usual;
             if (count > MostArguments(command.kind, note_arguments) ||
@@ -279,18 +285,22 @@ void AppendCommand(std::vector<uint8_t>& out, const Command& command, uint32_t t
                 throw std::invalid_argument(std::string(ntdlib::commands::Name(command.kind)) + " with " +
                                             std::to_string(count) + " arguments");
             }
+
             if (count >= 1)
             {
                 out.push_back(Byte(command.key, 0, 0x7F, command.kind));
             }
+
             if (count >= 2)
             {
                 out.push_back(Byte(command.velocity, 0, 0x7F, command.kind));
             }
+
             if (count >= 3)
             {
                 out.push_back(static_cast<uint8_t>(extra));
             }
+
             return;
         }
     case Kind::kWait:
@@ -300,6 +310,7 @@ void AppendCommand(std::vector<uint8_t>& out, const Command& command, uint32_t t
             out.push_back(static_cast<uint8_t>(Checked(value, 0, 0xFFFF, command.kind)));
             out.push_back(static_cast<uint8_t>(value >> 8));
         }
+
         return;
     case Kind::kJump:
     case Kind::kCall:
@@ -321,6 +332,7 @@ void AppendCommand(std::vector<uint8_t>& out, const Command& command, uint32_t t
         {
             out.push_back(static_cast<uint8_t>(command.encoding.opcode));
         }
+
         return;
     case Kind::kReturn:
         return;
@@ -341,6 +353,7 @@ void AppendCommand(std::vector<uint8_t>& out, const Command& command, uint32_t t
         {
             Append32(out, target);
         }
+
         return;
     }
 
@@ -359,6 +372,7 @@ void AppendCommand(std::vector<uint8_t>& out, const Command& command, uint32_t t
         default:
             break;
         }
+
         return;
     }
 
@@ -398,7 +412,7 @@ RunningState StateOf(const Command& command, uint8_t code)
 }
 
 // Whether the driver reads `bytes` as `command`, with the state that the command takes, where a note reads up to
-// `note_arguments` bytes. Its values are the console's, and its target lies at address `target`. A byte from 0x80 up
+// `note_arguments` bytes. Its values are the console's, and its target is at address `target`. A byte from 0x80 up
 // follows the bytes.
 bool ReadsBack(std::span<const uint8_t> bytes, const Command& command, uint32_t target, int note_arguments)
 {
@@ -449,8 +463,8 @@ struct Bytes
     }
 };
 
-// The command at offset `at` with the track's state `state`, or nothing where it runs past the bytes or needs a running
-// status that the state lacks.
+// The command at offset `at` with the track's state `state`, or nothing where it runs past the bytes or requires a
+// running status that the state doesn't have.
 std::optional<Step> ReadAt(const Bytes& bytes, uint32_t at, const RunningState& state)
 {
     const PlayedCommand played = ReadPlayedCommand([&bytes](uint32_t address) { return bytes.At(address); },
@@ -498,6 +512,7 @@ bool Follow(const Bytes& bytes, std::span<const uint32_t> entries, Found& found,
     {
         pending.push_back({entry, RunningState{}, {}});
     }
+
     std::set<Place> visited;
     while (!pending.empty())
     {
@@ -515,6 +530,7 @@ bool Follow(const Bytes& bytes, std::span<const uint32_t> entries, Found& found,
             {
                 break; // the rest stays data
             }
+
             const auto known = found.reads.find(place.at);
             if (known != found.reads.end())
             {
@@ -549,10 +565,12 @@ bool Follow(const Bytes& bytes, std::span<const uint32_t> entries, Found& found,
                 {
                     break;
                 }
+
                 place.returns.push_back(bytes.base + next);
                 place.at = command.target - bytes.base;
                 continue;
             }
+
             if (command.kind == Kind::kReturn && !place.returns.empty())
             {
                 const uint32_t back = place.returns.back();
@@ -561,22 +579,27 @@ bool Follow(const Bytes& bytes, std::span<const uint32_t> entries, Found& found,
                 {
                     break;
                 }
+
                 place.at = back - bytes.base;
                 continue;
             }
+
             if (inside && command.kind != Kind::kJump)
             {
                 pending.push_back({command.target - bytes.base, place.state, place.returns});
             }
+
             if (command.kind == Kind::kJump)
             {
                 if (!inside)
                 {
                     break;
                 }
+
                 place.at = command.target - bytes.base;
                 continue;
             }
+
             if (!FallsThrough(command))
             {
                 break;
@@ -589,7 +612,8 @@ bool Follow(const Bytes& bytes, std::span<const uint32_t> entries, Found& found,
     return true;
 }
 
-// What a guess knows of a track's state: nothing at the start of a run of commands, and what the run's commands give.
+// The parts of a track's state that a guess has: nothing at the start of a run of commands, and what the run's commands
+// give.
 struct Guessed
 {
     RunningState state;
@@ -604,7 +628,7 @@ int ArgumentsOf(const Read& read)
     return static_cast<int>(read.size) - (read.command.encoding.repeated ? 0 : 1);
 }
 
-// Whether `read` takes only the parts of the track's state that `guessed` knows.
+// Whether `read` takes only the parts of the track's state that `guessed` has.
 bool Knows(const Read& read, const Guessed& guessed)
 {
     if (read.command.encoding.repeated && !guessed.running)
@@ -617,6 +641,7 @@ bool Knows(const Read& read, const Guessed& guessed)
     {
         return true;
     }
+
     const int count = ArgumentsOf(read);
 
     return (count >= 1 || guessed.key) && (kind == Kind::kNoteOff || count >= 2 || guessed.velocity);
@@ -652,14 +677,17 @@ void Guess(const Bytes& bytes, const std::set<uint32_t>& cuts, Found& found)
             guessed.key = guessed.key || count >= 1;
             guessed.velocity = guessed.velocity || (kind == Kind::kNote && count >= 2);
         }
+
         guessed.state = step->after;
 
         return std::move(step->read);
     };
+
     const auto falls_through = [](const Command& command)
     {
         return FallsThrough(command);
     };
+
     const auto offset_of = [&bytes](uint32_t target)
     {
         return bytes.OffsetOf(target);
@@ -740,6 +768,7 @@ Decoded DecodeSequence(std::span<const uint8_t> data, uint32_t base, std::span<c
     {
         return bytes.OffsetOf(target); // a target outside the bytes keeps its address
     };
+
     if (opaque)
     {
         std::set<uint32_t> entry_cuts(offsets.begin(), offsets.end());
@@ -806,6 +835,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, uint32_t base
     {
         AppendCommand(out, item, target, note_arguments);
     };
+
     const auto reads_back = [note_arguments](std::span<const uint8_t> bytes, std::size_t start,
                                              const ntdlib::commands::Command& item, uint32_t target)
     {

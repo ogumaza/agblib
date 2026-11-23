@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <map>
 #include <set>
 #include <span>
@@ -14,8 +13,8 @@
 #include <utility>
 #include <vector>
 
-#include "agblib/agb/data_items.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sequence_codec.h"
 #include "agblib/rare/song.h"
 
 namespace agblib::rare
@@ -28,7 +27,6 @@ using ntdlib::commands::Kind;
 using ntdlib::commands::kOne;
 using ntdlib::commands::ToUnit;
 using Item = ntdlib::commands::Command;
-using agb::DataItem;
 
 bool HasChannel(uint8_t command)
 {
@@ -36,24 +34,10 @@ bool HasChannel(uint8_t command)
 }
 
 // Reads the bytes of a command. Past the bytes, it reads 0 and sets a flag.
-class Reader
+class Reader : public agb::ByteReader
 {
 public:
-    Reader(std::span<const uint8_t> bytes, uint32_t at) : bytes_(bytes), at_(at)
-    {
-    }
-
-    uint8_t Byte()
-    {
-        if (at_ >= bytes_.size())
-        {
-            past_ = true;
-            at_++;
-            return 0;
-        }
-
-        return bytes_[at_++];
-    }
+    using ByteReader::ByteReader;
 
     // A little-endian value of `count` bytes.
     uint32_t Value(int count)
@@ -66,21 +50,6 @@ public:
 
         return value;
     }
-
-    bool Past() const
-    {
-        return past_;
-    }
-
-    uint32_t At() const
-    {
-        return at_;
-    }
-
-private:
-    std::span<const uint8_t> bytes_;
-    uint32_t at_;
-    bool past_ = false;
 };
 
 // Sets the byte that the driver ignores after a command's first argument, where it isn't 0.
@@ -148,11 +117,13 @@ Item ReadItem(Reader& r, const Traits& traits, bool& unknown)
         command = first & 0x0F;
         item.index = first >> 4;
     }
+
     if (command >= kCommandCount)
     {
         unknown = true;
         return item;
     }
+
     if (traits.format == Format::kChannelByte && HasChannel(command))
     {
         item.index = r.Byte();
@@ -173,7 +144,7 @@ Item ReadItem(Reader& r, const Traits& traits, bool& unknown)
     case kCmdDelay2:
     case kCmdDelay3:
         {
-            // The bytes that the delay takes, where it holds a value that fewer bytes would.
+            // The bytes that the delay takes, where it contains a value that fewer bytes would.
             const int count = command - kCmdDelay1 + 1;
             const uint32_t value = r.Value(count);
             const int needed = value > 0xFFFF ? 3 : value > 0xFF ? 2 : 1;
@@ -279,6 +250,7 @@ private:
             problem_ = "a track reads a command that the driver has no code for";
             return nullptr;
         }
+
         if (reader.Past())
         {
             problem_ = "a track runs past the bytes";
@@ -286,9 +258,7 @@ private:
         }
 
         next = reader.At();
-        const auto after = items_.lower_bound(at);
-        if ((after != items_.end() && after->first < next) ||
-            (after != items_.begin() && afters_.at(std::prev(after)->first) > at))
+        if (agb::OverlapsItems(items_, afters_, at, next))
         {
             problem_ = "two commands overlap";
             return nullptr;
@@ -329,72 +299,22 @@ private:
     std::string problem_;
 };
 
-// Keeps a sequence whose commands can't be read safely as data, split at the tracks' starts.
-Decoded Opaque(std::span<const uint8_t> data, std::span<const uint32_t> starts, std::string reason)
-{
-    Decoded decoded;
-    decoded.opaque = true;
-    decoded.reason = std::move(reason);
-
-    const std::map<uint32_t, uint32_t> items =
-        agb::AppendDataItems(data, {starts.begin(), starts.end()}, decoded.sequence.items);
-    for (const uint32_t start : starts)
-    {
-        decoded.entries.push_back(items.at(start));
-    }
-
-    return decoded;
-}
-
-// Makes the items of the sequence in `data`, from what `flow` found.
+// Makes the items of the sequence in `data`, from what `flow` found. A sequence whose commands can't be read safely
+// stays data, split at the tracks' starts.
 Decoded Build(std::span<const uint8_t> data, std::span<const uint32_t> starts, const Flow& flow)
 {
-    if (!flow.Problem().empty())
+    const auto finish = [](Item& item)
     {
-        return Opaque(data, starts, flow.Problem());
-    }
-
-    Decoded decoded;
-    std::vector<Item>& items = decoded.sequence.items;
-    std::map<uint32_t, uint32_t> item_at;
-    uint32_t at = 0;
-    for (const auto& [offset, read] : flow.Items())
-    {
-        if (offset > at)
-        {
-            items.push_back(DataItem(data.subspan(at, offset - at)));
-        }
-
-        Item item = read;
         item.velocity = ToUnit(item.velocity, ntdlib::commands::Scale{});
         item.value.value = ToUnit(item.value.value, ScaleOf(item.kind));
-        item_at[offset] = uint32_t(items.size());
-        items.push_back(std::move(item));
-        at = flow.After(offset);
-    }
-    if (data.size() > at)
-    {
-        items.push_back(DataItem(data.subspan(at)));
-    }
-
-    for (const uint32_t start : starts)
-    {
-        decoded.entries.push_back(item_at.at(start));
-    }
-
-    return decoded;
+    };
+    return agb::BuildSequence<Decoded>(data, starts, flow, finish);
 }
 
-// A value of `bytes` bytes. Throws std::invalid_argument outside `low` to the largest that the bytes hold.
+// A value of `bytes` bytes. Throws std::invalid_argument outside `low` to the largest that the bytes contain.
 int64_t ValueOf(int64_t value, int64_t low, int bytes, Kind kind)
 {
-    if (value < low || value >= int64_t(1) << (8 * bytes))
-    {
-        throw std::invalid_argument("a value of a " + std::string(ntdlib::commands::Name(kind)) +
-                                    " command doesn't fit in the driver's bytes");
-    }
-
-    return value;
+    return agb::CommandValue(value, low, (int64_t(1) << (8 * bytes)) - 1, kind);
 }
 
 // Adds the `count` bytes of `value`, little-endian.
@@ -428,6 +348,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
             {
                 throw std::invalid_argument("a command's channel doesn't fit in the high nibble of its byte");
             }
+
             bytes.push_back(uint8_t(item.index << 4 | command));
             return;
         }
@@ -442,6 +363,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
             throw std::invalid_argument("a command without a channel holds one");
         }
     };
+
     const auto controller = [&](uint8_t number, int64_t to)
     {
         start(kCmdControl);
@@ -449,12 +371,14 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
         bytes.push_back(uint8_t(ValueOf(to, 0, 1, item.kind)));
         return bytes;
     };
+
     const auto flag = [&](uint8_t number)
     {
         if (value != 0)
         {
             throw std::invalid_argument("a loop of the driver runs for ever");
         }
+
         return controller(number, ignored);
     };
 
@@ -480,6 +404,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
         {
             throw std::invalid_argument("a note of the driver holds no length");
         }
+
         start(item.encoding.opcode == kCmdNoteOnB ? kCmdNoteOnB : kCmdNoteOn);
         bytes.push_back(item.key);
         bytes.push_back(uint8_t(ValueOf(velocity, 0, 1, item.kind)));
@@ -518,6 +443,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
         {
             throw std::invalid_argument("this revision of the driver ignores controllers 20 to 23");
         }
+
         return controller(uint8_t(kCtrlAttack + (item.kind == Kind::kAttack    ? 0
                                                  : item.kind == Kind::kDecay   ? 1
                                                  : item.kind == Kind::kSustain ? 2
@@ -534,6 +460,7 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
         {
             throw std::invalid_argument("a monophonic command of the driver turns the mode on or off");
         }
+
         return controller(value ? kCtrlMonoOn : kCtrlPolyOn, ignored);
 
     case Kind::kOther:
@@ -543,15 +470,18 @@ std::vector<uint8_t> ItemBytes(const Item& item, const Traits& traits)
             bytes.push_back(ignored);
             return bytes;
         }
+
         if (item.encoding.opcode == kCmdNop)
         {
             start(kCmdNop);
             return bytes;
         }
+
         if (item.encoding.opcode >= kController && item.encoding.opcode <= kController + 0xFF)
         {
             return controller(uint8_t(item.encoding.opcode - kController), value);
         }
+
         throw std::invalid_argument("the driver has no command with that opcode");
 
     default:
@@ -572,6 +502,7 @@ Decoded DecodeSequence(std::span<const uint8_t> data, std::span<const uint32_t> 
     {
         throw std::invalid_argument("a sequence holds no bytes");
     }
+
     for (const uint32_t start : starts)
     {
         if (start >= data.size())
@@ -639,7 +570,7 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence)
     const std::span<const uint8_t> data(rom.Ptr(address), rom.End() - address);
     const Flow flow(data, traits, starts);
 
-    // The sequence ends with the last byte that a track reads, or at the next sequence where that lies close after it.
+    // The sequence ends with the last byte that a track reads, or at the next sequence where that is close after it.
     uint32_t size = std::max<uint32_t>(flow.End(), 1);
     uint32_t next = rom.End();
     for (int s = 0; s < SequenceCount(info); s++)
@@ -650,6 +581,7 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence)
             next = other;
         }
     }
+
     if (next - (address + size) < kSequenceGap && next < rom.End())
     {
         size = next - address;
@@ -660,17 +592,7 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence)
 
 std::vector<uint32_t> ItemOffsets(const ntdlib::commands::Sequence& sequence, const Traits& traits)
 {
-    std::vector<uint32_t> offsets;
-    offsets.reserve(sequence.items.size() + 1);
-    uint32_t at = 0;
-    for (const Item& item : sequence.items)
-    {
-        offsets.push_back(at);
-        at += uint32_t(item.kind == Kind::kData ? item.bytes.size() : ItemBytes(item, traits).size());
-    }
-    offsets.push_back(at);
-
-    return offsets;
+    return agb::ItemOffsets(sequence, [&](const Item& item) { return ItemBytes(item, traits); });
 }
 
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<const uint32_t> entries,
@@ -678,17 +600,11 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<con
 {
     const std::vector<Item>& items = sequence.items;
     Encoded encoded;
-    uint32_t at = 0;
-    bool any_command = false;
-    for (const Item& item : items)
+    const auto item_bytes = [&](const Item& item)
     {
-        const std::vector<uint8_t> bytes = item.kind == Kind::kData ? item.bytes : ItemBytes(item, traits);
-        encoded.offsets.push_back(at);
-        encoded.bytes.insert(encoded.bytes.end(), bytes.begin(), bytes.end());
-        at += uint32_t(bytes.size());
-        any_command = any_command || item.kind != Kind::kData;
-    }
-    encoded.offsets.push_back(at);
+        return ItemBytes(item, traits);
+    };
+    const bool any_command = agb::JoinItems(items, item_bytes, encoded);
 
     std::vector<uint32_t> starts;
     for (const uint32_t entry : entries)
@@ -697,10 +613,11 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<con
         {
             throw std::invalid_argument("a track starts past the sequence's items");
         }
+
         starts.push_back(encoded.offsets[entry]);
     }
 
-    // The driver has to read the bytes as the items say. A sequence kept as data holds no commands.
+    // The driver has to read the bytes as the items say. A sequence kept as data contains no commands.
     if (!any_command)
     {
         return encoded;
@@ -712,26 +629,13 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<con
         throw std::invalid_argument("the sequence's items don't read back: " + flow.Problem());
     }
 
-    std::map<uint32_t, size_t> item_at;
-    for (size_t i = 0; i < items.size(); i++)
+    const auto same = [](Kind kind, Kind read)
     {
-        if (encoded.offsets[i + 1] > encoded.offsets[i])
-        {
-            item_at[encoded.offsets[i]] = i;
-        }
-    }
-    for (const auto& [offset, read] : flow.Items())
-    {
-        const auto found = item_at.find(offset);
-        if (found == item_at.end() || items[found->second].kind == Kind::kData)
-        {
-            throw std::invalid_argument("a track reaches bytes that no item starts at");
-        }
-        if (items[found->second].kind != read.kind)
-        {
-            throw std::invalid_argument("a command's bytes read as a command of another kind");
-        }
-    }
+        return kind == read;
+    };
+
+    agb::CheckFlowItems(items, encoded, flow, "a track reaches bytes that no item starts at",
+                        "a command's bytes read as a command of another kind", same);
 
     return encoded;
 }

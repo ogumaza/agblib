@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// A model of AlphaDream's sound driver that plays one song on one player, frame by frame, as the per-frame routine and
+// A model of AlphaDream's sound driver that plays one song on one player, frame by frame as the per-frame routine and
 // the mixer do.
 
 #pragma once
@@ -31,7 +31,7 @@ namespace flag
 {
 
 constexpr uint16_t kUsed = 0x01;
-constexpr uint16_t kMuted = 0x02; // a lower player holds the track's channel
+constexpr uint16_t kMuted = 0x02; // a lower player contains the track's channel
 constexpr uint16_t kRests = 0x20; // a rest's length follows each note that isn't tied
 constexpr uint16_t kTie = 0x40;   // the note goes on into the next one
 constexpr uint16_t kNote = 0x80;  // a note sounds
@@ -53,7 +53,7 @@ struct Lfo
     uint8_t count = 0;
 };
 
-// A track's record of 32 bytes, as the driver keeps it.
+// A track's record of 32 bytes as the driver keeps it.
 struct TrackState
 {
     uint16_t flags = 0;
@@ -167,7 +167,7 @@ struct Change
 class Sequencer
 {
 public:
-    // Keeps references to `rom` and `info`, which have to outlive this. Starts `song` on player 1, as the game starts
+    // Keeps references to `rom` and `info`. They have to outlive this. Starts `song` on player 1 as the game starts
     // its music.
     Sequencer(const Rom& rom, const DriverInfo& info, const Song& song);
 
@@ -245,7 +245,7 @@ public:
         return reads_;
     }
 
-    // Returns the player's volume, as the driver keeps it.
+    // Returns the player's volume as the driver keeps it.
     uint16_t PlayerVolume() const
     {
         return player_volume_;

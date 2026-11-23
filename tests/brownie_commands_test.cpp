@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
 #include "seqlib/testing/check.h"
 #include "xsflib/bytes.h"
 #include "xsflib/testing/check.h"
@@ -20,12 +21,12 @@
 #include "agblib/brownie/commands.h"
 #include "agblib/brownie/driver.h"
 #include "agblib/testing/brownie_cart.h"
-#include "ntdlib/commands/sequence.h"
 
 namespace
 {
 
 using namespace agblib::testing::brownie_cart;
+using seqlib::testing::Throws;
 
 namespace brownie = agblib::brownie;
 using brownie::Decoded;
@@ -105,31 +106,34 @@ int64_t ValueOf(const Command& item)
 // Returns true if TracksOfList refuses `list`.
 bool TracksOfListRefused(const Sequence& sequence, uint32_t list)
 {
-    try
-    {
-        TracksOfList(sequence, list);
-    }
-    catch (const std::invalid_argument&)
-    {
-        return true;
-    }
-
-    return false;
+    return Throws<std::invalid_argument>([&] { TracksOfList(sequence, list); });
 }
 
 // Returns true if encoding `sequence` throws std::invalid_argument.
 bool Refused(const Sequence& sequence, Revision revision, uint32_t base)
 {
-    try
+    return Throws<std::invalid_argument>([&] { EncodeSequence(sequence, revision, base); });
+}
+
+// Puts a note of key `key` in before item `at`, and moves the targets and labels that name later items.
+void InsertNote(Sequence& sequence, size_t at, uint8_t key)
+{
+    Command added;
+    added.kind = Kind::kNote;
+    added.key = key;
+    sequence.items.insert(sequence.items.begin() + std::ptrdiff_t(at), added);
+    for (Command& item : sequence.items)
     {
-        EncodeSequence(sequence, revision, base);
-    }
-    catch (const std::invalid_argument&)
-    {
-        return true;
+        if (ntdlib::commands::HasTarget(item.kind) && !item.target_outside && item.target >= at)
+        {
+            item.target++;
+        }
     }
 
-    return false;
+    for (ntdlib::commands::Label& label : sequence.labels)
+    {
+        label.item += label.item >= at ? 1 : 0;
+    }
 }
 
 // Every command of a PSG channel and a sample channel takes the kind that the header gives it, and the bytes come back.
@@ -285,14 +289,14 @@ void TestLists()
     SEQLIB_CHECK_EQ(xsflib::LoadLe32(&elsewhere.bytes[12]), 9);
 }
 
-// Sounds that read each other's bytes share a region, and a sound far from them lies in another region.
+// Sounds that read each other's bytes share a region, and a sound far from them is in another region.
 void TestRegions()
 {
     Cart cart;
     cart.Sound(1, {{0, {0x89, 0x10, 0xFF}, {}}});
     cart.Sound(2, {{1, {0x89, 0x20, 0xFF}, {}}});
 
-    // Sound 3's list lies far from sound 1's, and names sound 1's data.
+    // Sound 3's list is far from sound 1's, and names sound 1's data.
     const uint32_t shared_list = kRomBase + 0x4000;
     cart.Put32(kSongTable + 4 * 3, shared_list);
     cart.Put32(shared_list, 4);
@@ -345,6 +349,7 @@ void TestRegions()
     {
         data = data || item.kind == Kind::kData;
     }
+
     SEQLIB_CHECK(data);
 }
 
@@ -434,25 +439,11 @@ void TestEdits()
         SEQLIB_CHECK_EQ(changed.bytes[i], expected);
     }
 
-    // A note goes in before the jump. The channel's data is 8 bytes and its table takes a word after them, so the table
-    // moves up by a word.
+    // A note goes in before the jump. The channel's data is 8 bytes and its table takes a word after them. The table
+    // therefore moves up by a word.
     Sequence longer = DecodeRegion(rom, info, region).sequence;
     const size_t jump = ItemAt(before, data + 4);
-    Command added;
-    added.kind = Kind::kNote;
-    added.key = 0x24;
-    longer.items.insert(longer.items.begin() + std::ptrdiff_t(jump), added);
-    for (Command& item : longer.items)
-    {
-        if (ntdlib::commands::HasTarget(item.kind) && !item.target_outside && item.target >= jump)
-        {
-            item.target++;
-        }
-    }
-    for (ntdlib::commands::Label& label : longer.labels)
-    {
-        label.item += label.item >= jump ? 1 : 0;
-    }
+    InsertNote(longer, jump, 0x24);
     const Encoded grown = EncodeSequence(longer, info.revision, region.start);
     SEQLIB_CHECK_EQ(grown.bytes[data + 4], 0x24);
     SEQLIB_CHECK_EQ(grown.bytes[data + 5], 0xF8);
@@ -475,21 +466,7 @@ void TestTableAfterEdit()
     const uint32_t data = kSequences - region.start;
 
     const size_t jump = ItemAt(before, data + 4);
-    Command added;
-    added.kind = Kind::kNote;
-    added.key = 0x24;
-    longer.items.insert(longer.items.begin() + std::ptrdiff_t(jump), added);
-    for (Command& item : longer.items)
-    {
-        if (ntdlib::commands::HasTarget(item.kind) && !item.target_outside && item.target >= jump)
-        {
-            item.target++;
-        }
-    }
-    for (ntdlib::commands::Label& label : longer.labels)
-    {
-        label.item += label.item >= jump ? 1 : 0;
-    }
+    InsertNote(longer, jump, 0x24);
 
     const auto open = std::find_if(longer.items.begin(), longer.items.end(),
                                    [](const Command& item) { return item.kind == Kind::kOpenTrack; });
@@ -547,6 +524,7 @@ void TestRefusals()
             item.target--;
         }
     }
+
     SEQLIB_CHECK(Refused(bad, info.revision, region.start));
 
     // A list's channel without the word that gives its table's address.
@@ -572,22 +550,15 @@ void TestOpaque()
     SEQLIB_CHECK(ComesBack(rom, decoded, info.revision, region));
 }
 
-// A sound that lies in no region can't be decoded.
+// A sound that is in no region can't be decoded.
 void TestNoRegion()
 {
     Cart cart;
     cart.Sound(1, {{0, {0x89, 0x10, 0xFF}, {}}});
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
-    bool refused = false;
-    try
-    {
-        DecodeSong(rom, info, info.song_count);
-    }
-    catch (const std::invalid_argument&)
-    {
-        refused = true;
-    }
+    const bool refused = Throws<std::invalid_argument>([&] { DecodeSong(rom, info, info.song_count); });
+
     SEQLIB_CHECK(refused);
 }
 

@@ -53,6 +53,7 @@ struct RomArchiveTraits
         {
             archive.emplace(std::move(*bytes));
         }
+
         return std::nullopt;
     }
 

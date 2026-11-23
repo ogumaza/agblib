@@ -18,17 +18,19 @@
 #include <utility>
 #include <vector>
 
+#include "seqlib/midi/performance.h"
 #include "seqlib/sf2/presets.h"
 #include "xsflib/bytes.h"
 
-#include "agblib/agb/files.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/agb/song_plan.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/warnings.h"
 #include "agblib/rd2/driver.h"
 #include "agblib/rd2/sequencer.h"
 #include "agblib/sequence_export/agb/midi.h"
+#include "agblib/sequence_export/agb/module_conversion.h"
 #include "agblib/sequence_export/agb/psg.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/sequence_export/agb/sf2.h"
@@ -53,7 +55,6 @@ using agblib::agb::SongPlan;
 using agblib::agb::TickSeconds;
 using agblib::agb::TrackLayout;
 using agblib::agb::WarnOnce;
-using agblib::agb::WriteFile;
 using agblib::rd2::BankAddress;
 using agblib::rd2::DriverInfo;
 using agblib::rd2::Effect;
@@ -128,8 +129,8 @@ constexpr uint32_t kMaxFrames = 60 * 60 * 60;
 // slowest envelope fades from 15 to 0 in 1.64 s, and a released wave voice fades out faster.
 constexpr uint32_t kRunOutFrames = 120;
 
-// The slowest tempo a MIDI file can hold at this resolution: at 3 or less, a quarter note lasts more than the 2^24
-// microseconds a tempo event can give it.
+// The slowest tempo that a MIDI file can express at this resolution: at 3 or less, a quarter note lasts more than the
+// 2^24 microseconds a tempo event can give it.
 constexpr int kMinMidiTempo = 4;
 
 // A bend that no pitch has, for a note whose bend is unknown when two passes are compared.
@@ -154,10 +155,12 @@ double Semitones(const Voice& v)
     return PsgSemitones(int(v.note_pitch), int(v.pitch));
 }
 
-// A frame's results for the conversion. `volume` holds each PSG channel's volume at the frame's start, from 0 to 15, or
+// A frame's results for the conversion. `volume` contains each PSG channel's volume at the frame's start, from 0 to 15,
+// or
 // -1 when the channel is off. The wave channel's volume is 15 times the share of its full level that NR32 sets.
-// `envelope` holds the share of its full level that each sample voice's envelope gives it in the frame. `sample_volume`
-// holds each sample voice's volume, and `sample_note` the model's number for the note that the voice plays, or 0.
+// `envelope` contains the share of its full level that each sample voice's envelope gives it in the frame.
+// `sample_volume` contains each sample voice's volume, and `sample_note` the model's number for the note that the voice
+// plays, or 0.
 struct FrameData
 {
     int tempo = kStartTempo;                // the units the frame lasts
@@ -176,9 +179,9 @@ constexpr int kWaveChannel = kWaveType - 1;
 // NR30 and NR51.
 constexpr size_t kEnvelopeRegisters[kPsgVoices] = {0x02, 0x08, 0x12, 0x18};
 constexpr size_t kFrequencyRegisters[kPsgVoices] = {0x04, 0x0C, 0x14, 0x1C};
-constexpr size_t kNr10 = 0x00;
-constexpr size_t kNr30 = 0x10;
-constexpr size_t kNr51 = 0x21;
+constexpr size_t kNr10 = agblib::agb::kRegNr10 - agblib::agb::kRegSound1CntL;
+constexpr size_t kNr30 = agblib::agb::kRegNr30 - agblib::agb::kRegSound1CntL;
+constexpr size_t kNr51 = agblib::agb::kRegNr51 - agblib::agb::kRegSound1CntL;
 
 // Returns PSG channel `c`'s registers after the sequencer's last frame, for the channel's model.
 PsgRegisters ChannelRegisters(const Sequencer& seq, int c)
@@ -211,6 +214,7 @@ public:
             const int volume = models_[size_t(c)].Frame(r);
             d.volume[size_t(c)] = c == kWaveChannel && volume >= 0 ? volume * WaveShare(r.envelope) : volume;
         }
+
         d.nr51 = seq.Registers()[kNr51];
     }
 
@@ -233,7 +237,7 @@ struct Simulation
     std::vector<uint64_t> frame_ticks; // the MIDI tick each frame starts at, and the one after the last frame
     SongPlan plan;                     // in MIDI ticks
     bool frame_timing = false; // each event at the start of the frame the driver plays it in, rather than its time
-    int volume2 = 0x80;        // the player's second volume, as the game sets it for the sequence
+    int volume2 = 0x80;        // the player's second volume as the game sets it for the sequence
     bool truncated = false;    // the sequence was cut off after kMaxFrames
     LoopStart start_pass = LoopStart::kFirstPass; // the pass through the loop that the plan's loop starts at
     std::vector<agblib::rd2::TrackRead> reads;    // each read of the tracks' data, on request
@@ -262,7 +266,7 @@ uint64_t TimeTick(const Simulation& sim, uint64_t units)
 
 // The plan's record of a track: its first loop, its count of loops, its end, and the time by which it has read its last
 // command and its notes have ended. The track's end can release its notes before then. A track that F8 starts again
-// doesn't hold the plan open.
+// doesn't contain the plan open.
 struct TrackPlan
 {
     bool started = false;
@@ -390,6 +394,7 @@ SongPlan FinishPlan(const std::optional<SongPlan>& loop, const TrackPlans& track
             }
         }
     }
+
     if (plan.end == 0)
     {
         plan.end = stopped;
@@ -407,6 +412,7 @@ std::vector<std::string> SimulationWarnings(const Sequencer& seq, const std::vec
     {
         warnings.push_back("the sequence was cut off after an hour");
     }
+
     for (const FrameData& d : frames)
     {
         if (d.tempo < kMinMidiTempo)
@@ -477,7 +483,7 @@ void RunOut(Sequencer& seq, PsgChannels& psg, Simulation& sim)
     sim.plan.end = std::max(sim.plan.end, sim.frame_ticks[silent]);
 }
 
-// Moves the end of a sequence without a loop back to where its last sound dies away, when the end lies more than
+// Moves the end of a sequence without a loop back to where its last sound dies away, when the end is more than
 // kMaxSilentEndSeconds later. A frame sounds while a PSG channel plays at a volume above 0 at its start, or while a
 // sample voice that isn't free has a level after it. The sequence then ends two frames after the last frame that
 // sounds. The second frame covers a voice that stops partway through its frame.
@@ -498,6 +504,7 @@ void EndWithLastSound(Simulation& sim)
         {
             sample = sample || (d.envelope[v] > 0 && d.sample_volume[v] > 0);
         }
+
         if (sample || PsgSounds(d))
         {
             quiet = f + 2;
@@ -515,7 +522,7 @@ void EndWithLastSound(Simulation& sim)
 // with `frame_timing`, at the start of the frame the driver plays it in. From LoopStart::kSecondPass, the loop starts
 // at the sequence's second pass through it. The sequence then plays the first pass before it. A sequence without a loop
 // runs on while the PSG sounds after the player stops (see RunOut()). The sequence plays as its version `version`. With
-// `keep_reads`, the simulation holds each read of the tracks' data.
+// `keep_reads`, the simulation contains each read of the tracks' data.
 Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int version, int loops, bool frame_timing,
                     LoopStart start_pass, bool keep_reads = false)
 {
@@ -538,11 +545,13 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int versio
         {
             sim.volume2 = seq.GetPlayer().volume2;
         }
+
         for (const Event& e : seq.Events())
         {
             sim.events.push_back({e, f});
             UpdateTrackPlans(e, tracks);
         }
+
         // The frame's events come first. A track that F8 starts in the frame then counts as started for the first time.
         for (int n = 0; n < kPlayerTracks; n++)
         {
@@ -556,6 +565,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int versio
         {
             loop = PlanLoop(tracks, loops, start_pass);
         }
+
         if ((loop && (!loop->loops || sim.frame_ticks[f] >= loop->end)) || seq.Ended())
         {
             finished = true;
@@ -568,10 +578,12 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int versio
     {
         RunOut(seq, psg, sim);
     }
+
     if (!sim.plan.loops)
     {
         EndWithLastSound(sim);
     }
+
     sim.warnings = SimulationWarnings(seq, sim.frames, finished);
     sim.truncated = !finished && seq.Valid() && sim.frames.size() >= kMaxFrames;
 
@@ -623,10 +635,10 @@ struct ZoneSound
     bool own_pan = false; // a drum's: the track's pan doesn't move it
 };
 
-// Returns the pan of a zone that plays a drum at pan `pan` on a voice of type `type`. The driver holds a sample voice's
-// pan to 0 to 127 and gives the voice levels of 127 - pan on the left and pan on the right. CC10 plays a track's notes
-// at the centre (0x40) in the middle. The zone gives the ratio of the drum's levels to the centre's. A PSG voice plays
-// on both sides at the centre. At any other pan, it plays on one side alone.
+// Returns the pan of a zone that plays a drum at pan `pan` on a voice of type `type`. The driver contains a sample
+// voice's pan to 0 to 127 and gives the voice levels of 127 - pan on the left and pan on the right. CC10 plays a
+// track's notes at the centre (0x40) in the middle. The zone gives the ratio of the drum's levels to the centre's. A
+// PSG voice plays on both sides at the centre. At any other pan, it plays on one side alone.
 int DrumZonePan(int pan, uint8_t type)
 {
     if (type != kSampleType)
@@ -672,14 +684,14 @@ uint64_t NoteFrameTick(const Simulation& sim, const Note& n, uint32_t f)
 }
 
 // Returns a note's velocity in the MIDI file. A PSG voice's note plays at full velocity. Its CC11 follows the channel's
-// volume. The volume holds the velocity. Another note plays its velocity divided by its track's `scale` (see
+// volume. The volume contains the velocity. Another note plays its velocity divided by its track's `scale` (see
 // VelocityScales()).
 int MidiVelocity(const Note& n, double scale)
 {
     return n.psg >= 0 ? 127 : SquareRootValue(n.velocity, 127 * scale, 1);
 }
 
-// An instrument of the driver's banks, as a program of the MIDI file.
+// An instrument of the driver's banks as a program of the MIDI file.
 struct Program
 {
     uint16_t bank = 0;
@@ -706,7 +718,7 @@ public:
     {
     }
 
-    // Works out the notes, the end of each, and the programs they play. A PSG voice's note holds its channel until
+    // Works out the notes, the end of each, and the programs they play. A PSG voice's note contains its channel until
     // another note takes the channel. The note lasts as long as the channel sounds in that time (see EndSound()). A
     // sample note lasts until its voice's release, or until its voice plays another note. A voice in legato plays the
     // track's next note without a release. Also works out the cuts that end with All Sound Off (see Cuts()).
@@ -716,7 +728,7 @@ public:
         std::vector<Note> notes;
         std::map<uint32_t, size_t> by_id;
         std::array<uint32_t, kVoices> voice_note = {};
-        std::array<int, kPsgVoices> holder; // the index of the note that holds each PSG channel, or -1
+        std::array<int, kPsgVoices> holder; // the index of the note that contains each PSG channel, or -1
         holder.fill(-1);
         const uint64_t end = TimeTick(sim_, sim_.plan.end);
 
@@ -750,7 +762,8 @@ public:
                     EndSound(notes[size_t(holder[size_t(channel)])], te.frame, tick, end);
                     holder[size_t(channel)] = -1;
                 }
-                // A note without a region holds a voice in the game even where the file leaves it out (see Missing()).
+
+                // A note without a region uses a voice in the game even where the file leaves it out (see Missing()).
                 missing_ = missing_ || (e.lookup.missing && e.units < sim_.plan.end);
                 if (e.velocity == 0 || e.track < 0 || !(mask_ >> e.track & 1) || e.units >= sim_.plan.end)
                 {
@@ -776,6 +789,7 @@ public:
                     n.psg = channel;
                     holder[size_t(channel)] = int(notes.size());
                 }
+
                 by_id[e.id] = notes.size();
                 notes.push_back(n);
                 voice_note[size_t(e.voice)] = e.id;
@@ -791,6 +805,7 @@ public:
                     {
                         stops.push_back({e.id, te.frame, tick, e.units});
                     }
+
                     close(e.id, tick);
                 }
             }
@@ -804,6 +819,7 @@ public:
                 notes[i].off = std::max(end, notes[i].on + 1);
             }
         }
+
         for (int h : holder)
         {
             if (h >= 0)
@@ -811,6 +827,7 @@ public:
                 EndSound(notes[size_t(h)], uint32_t(sim_.frames.size()), end, end);
             }
         }
+
         FindCuts(notes, by_id, stops);
 
         return notes;
@@ -877,6 +894,7 @@ private:
                 psg[size_t(n.track)].emplace_back(n.on, n.off);
             }
         }
+
         for (auto& list : psg)
         {
             std::sort(list.begin(), list.end());
@@ -890,6 +908,7 @@ private:
         {
             return n.frame < frame;
         };
+
         for (const Stop& s : stops)
         {
             const Note& cut = notes[by_id.at(s.id)];
@@ -926,6 +945,7 @@ private:
             {
                 clear = false;
             }
+
             if (clear)
             {
                 cuts_.push_back(c);
@@ -939,12 +959,12 @@ private:
         std::sort(cuts_.begin(), cuts_.end(), order);
     }
 
-    // Ends `n`, a PSG voice's note. The note holds its channel until another note takes it in frame `until`, at tick
+    // Ends `n`, a PSG voice's note. The note keeps its channel until another note takes it in frame `until`, at tick
     // `until_tick`. Where no note takes it, `until` is the frames' end. The channel sounds until the start of the frame
     // after the last one in which its volume is above 0. The note lasts that long, but ends by `until_tick` and `end`.
     // The release fades the volume out over frames. A square's or the noise's envelope can fade it out before the
     // release. A note that the channel never sounds lasts a tick. The note's CC11 follows the channel's volume up to
-    // the frame in which the sound ends. That frame's volume of 0 holds CC11 at 0 until the note off.
+    // the frame in which the sound ends. That frame's volume of 0 keeps CC11 at 0 until the note off.
     void EndSound(Note& n, uint32_t until, uint64_t until_tick, uint64_t end) const
     {
         uint32_t silent = n.frame; // the frame in which the sound ends
@@ -993,6 +1013,7 @@ private:
         {
             return -1;
         }
+
         if (key < 0 || key > 127)
         {
             warnings_.push_back("a note's key is outside MIDI's range, so it's left out");
@@ -1061,6 +1082,7 @@ private:
                 z.root = key;
                 z.coarse = -kUnityIndex;
             }
+
             return z;
         }
 
@@ -1076,6 +1098,7 @@ private:
         {
             z.release = RegionRelease(rom_, region);
         }
+
         z.own_pan = lk.drum;
         if (lk.drum)
         {
@@ -1114,6 +1137,7 @@ private:
                 {
                     nr43 |= 8;
                 }
+
                 z.sound = nr43;
                 key = e.key;
                 z.root = key;
@@ -1128,7 +1152,7 @@ private:
     }
 
     // Returns the duty or width that a square or noise voice settles on: the low byte of `e.psg`, or a table's last
-    // entry. The driver steps through the table's other entries, a frame each, and holds the last.
+    // entry. The driver steps through the table's other entries, a frame each, and contains the last.
     uint8_t SettledDuty(const Event& e) const
     {
         return HasPsgTable(rom_, e.lookup.region) ? LastPsgTableEntry(rom_, e.psg) : uint8_t(e.psg);
@@ -1227,7 +1251,7 @@ std::vector<std::string> AddPresets(SoundfontBuilder& sf, const std::vector<Prog
                 last = it->first;
             }
 
-            // The PSG's samples hold its level against the samples' (see PsgShare()).
+            // The PSG's samples contain its level against the samples' (see PsgShare()).
             int sample = -1;
             switch (z.type)
             {
@@ -1245,6 +1269,7 @@ std::vector<std::string> AddPresets(SoundfontBuilder& sf, const std::vector<Prog
                 sample = sf.NoiseSample(uint8_t(z.sound));
                 break;
             }
+
             if (sample < 0)
             {
                 char text[96];
@@ -1261,6 +1286,7 @@ std::vector<std::string> AddPresets(SoundfontBuilder& sf, const std::vector<Prog
             {
                 zone.generators.push_back(sf2::Generator::Value(sf2::kCoarseTune, z.coarse));
             }
+
             AddTuning(zone, z.cents);
             if (z.pan)
             {
@@ -1286,6 +1312,7 @@ std::vector<std::string> AddPresets(SoundfontBuilder& sf, const std::vector<Prog
                 const int release = SampleRelease(z.release);
                 sf2::AddGenerator(zone, sf2::kReleaseVolEnv, release);
             }
+
             zones.push_back(zone);
         }
 
@@ -1373,9 +1400,9 @@ void TrackControllers(Revision revision, const Levels& l, bool psg, double scale
 }
 
 // Returns CC11 for a note at full velocity on PSG channel `c` at volume `volume` (0-15, or -1 when the channel is off).
-// The note plays on the sides that `nr51` enables for the channel. The driver's volume already holds the note's
+// The note plays on the sides that `nr51` enables for the channel. The driver's volume already contains the note's
 // velocity and the volumes. Volume 15 plays at the level that PsgShare() gives it against a full-scale sample. A
-// SoundFont's PSG samples hold that share. The note's CC10 comes from its track's pan (see TrackControllers()).
+// SoundFont's PSG samples contain that share. The note's CC10 comes from its track's pan (see TrackControllers()).
 int PsgExpression(Revision revision, double volume, uint8_t nr51, int c)
 {
     const double level = std::max(volume, 0.0) / PsgShare(revision);
@@ -1450,6 +1477,7 @@ std::array<std::vector<LevelChange>, kPlayerTracks> TrackChanges(const Simulatio
             {
                 list.push_back({at, levels[size_t(n)], false});
             }
+
             list.back().levels = levels[size_t(n)];
             list.back().pan = list.back().pan || pan;
         }
@@ -1467,6 +1495,7 @@ std::vector<LevelChange> LevelRecords(const Levels& start, const std::vector<Lev
     {
         records.push_back({0, start, false});
     }
+
     records.insert(records.end(), changes.begin(), changes.end());
 
     return records;
@@ -1505,6 +1534,7 @@ std::array<double, kPlayerTracks> VelocityScales(Revision revision, const Levels
                 scale = std::min(scale, kLoudestLevels / amplitude);
             }
         }
+
         scales[size_t(t)] = std::max(scale, 1.0);
     }
 
@@ -1524,7 +1554,7 @@ struct ExpressionSpan
 };
 
 // Returns the ticks at which a track's CC10 or CC11 can change: each of `records`, and each note on, step and end of
-// `spans`. Each tick comes with whether CC11 is worked out again there when no span holds the tick. It isn't at a
+// `spans`. Each tick comes with whether CC11 is worked out again there when no span contains the tick. It isn't at a
 // span's end.
 std::map<uint64_t, bool> LevelTicks(const std::vector<LevelChange>& records, const std::vector<ExpressionSpan>& spans)
 {
@@ -1533,6 +1563,7 @@ std::map<uint64_t, bool> LevelTicks(const std::vector<LevelChange>& records, con
     {
         ticks[change.tick] = true;
     }
+
     for (const ExpressionSpan& span : spans)
     {
         ticks[span.on] = true;
@@ -1540,10 +1571,12 @@ std::map<uint64_t, bool> LevelTicks(const std::vector<LevelChange>& records, con
         {
             ticks[step.first] = true;
         }
+
         for (const auto& share : span.shares)
         {
             ticks[share.first] = true;
         }
+
         ticks.emplace(span.end, false);
     }
 
@@ -1551,17 +1584,17 @@ std::map<uint64_t, bool> LevelTicks(const std::vector<LevelChange>& records, con
 }
 
 // Writes a track's CC10 for pan and CC11 for loudness at the start and whenever they change. A player that jumps back
-// to `loop`, the loop's start, retains the levels from the loop's end, as the game does until the loop sets them. So
+// to `loop`, the loop's start, retains the levels from the loop's end as the game does until the loop sets them. So
 // CC11 is written again at the first tick at or after `loop` that sets it, even if its value hasn't changed. CC10
 // follows the pan alone. It's written again at the first level-change record that sets the pan. `start` gives the
 // levels before the track's first change. With `psg`, the controllers follow the PSG's rule (see TrackControllers()).
 // CC11 plays the track's levels times `scale` (see VelocityScales()).
 //
-// `spans` holds each of the notes' stretches of CC11, in the order of their note ons. Where it's empty, CC11 follows
-// the track's levels. At each tick, of the spans that hold the tick, the one with the latest note on sets CC11. Where
-// no span holds a tick, CC11 holds the value that the last span left. A level change then gives the track's levels
-// times the last share of a sample note's span. The driver's release keeps the envelope's level that the voice had
-// reached. After a PSG voice's span, a level change gives the track's levels.
+// `spans` contains each of the notes' stretches of CC11, in the order of their note ons. Where it's empty, CC11 follows
+// the track's levels. At each tick, of the spans that contain the tick, the one with the latest note on sets CC11.
+// Where no span contains a tick, CC11 keeps the value that the last span left. A level change then gives the track's
+// levels times the last share of a sample note's span. The driver's release keeps the envelope's level that the voice
+// had reached. After a PSG voice's span, a level change gives the track's levels.
 void WriteLevels(MidiTrack& mt, int c, Revision revision, bool psg, double scale, const Levels& start,
                  const std::vector<LevelChange>& changes, const std::vector<ExpressionSpan>& spans,
                  std::optional<uint64_t> loop)
@@ -1574,7 +1607,7 @@ void WriteLevels(MidiTrack& mt, int c, Revision revision, bool psg, double scale
     double share = 1; // the last share of the track's levels that a span gave
     bool again10 = loop.has_value(), again11 = loop.has_value();
     size_t next_record = 0, next_span = 0;
-    std::vector<size_t> held;                     // the spans that hold the tick, in the order of their note ons
+    std::vector<size_t> held;                     // the spans that contain the tick, in the order of their note ons
     std::vector<size_t> step_at(spans.size(), 0); // each span's last step so far
     for (const auto& [tick, returns] : LevelTicks(records, spans))
     {
@@ -1599,6 +1632,7 @@ void WriteLevels(MidiTrack& mt, int c, Revision revision, bool psg, double scale
         {
             held.push_back(next_span++);
         }
+
         std::erase_if(held, [&spans, tick](size_t s) { return spans[s].end <= tick; });
         int n11 = level11;
         if (!held.empty() && !spans[held.back()].steps.empty())
@@ -1609,6 +1643,7 @@ void WriteLevels(MidiTrack& mt, int c, Revision revision, bool psg, double scale
             {
                 k++;
             }
+
             n11 = steps[k].second;
             share = 1;
         }
@@ -1620,6 +1655,7 @@ void WriteLevels(MidiTrack& mt, int c, Revision revision, bool psg, double scale
             {
                 k++;
             }
+
             share = shares[k].second;
             int unused10 = 64;
             TrackControllers(revision, levels, psg, scale * share, unused10, n11);
@@ -1657,6 +1693,7 @@ void WriteBends(MidiTrack& mt, int c, const Simulation& sim, int n, const std::v
             bends.push_back({sim.frame_ticks[f], sim.frames[f].bend[size_t(n)]});
         }
     }
+
     for (const Note* note : notes)
     {
         if (!std::isnan(sim.frames[note->frame].bend[size_t(n)]))
@@ -1664,6 +1701,7 @@ void WriteBends(MidiTrack& mt, int c, const Simulation& sim, int n, const std::v
             bends.push_back({note->on, sim.frames[note->frame].bend[size_t(n)]});
         }
     }
+
     std::stable_sort(bends.begin(), bends.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 
     int bend = 8192;
@@ -1709,12 +1747,15 @@ MidiNoteEnds EndsInMidi(const std::vector<const Note*>& notes)
             ends.offs[size_t(before)] = std::max(ends.offs[size_t(before)], ends.offs[i]);
             continue;
         }
+
         if (before >= 0 && ends.offs[size_t(before)] > notes[i]->on)
         {
             ends.offs[size_t(before)] = notes[i]->on;
         }
+
         before = int(i);
     }
+
     for (size_t i = 0; i < notes.size(); i++)
     {
         ends.offs[i] = std::max(ends.offs[i], notes[i]->on + 1);
@@ -1754,6 +1795,7 @@ void WriteNotes(MidiTrack& mt, int c, const std::vector<const Note*>& notes, con
             program = note->program;
             mt.Program(uint32_t(note->on), c, slots[size_t(program)].program);
         }
+
         mt.NoteOn(uint32_t(note->on), c, note->key, MidiVelocity(*note, scale));
         mt.NoteOff(uint32_t(ends.offs[i]), c, note->key);
     }
@@ -1814,8 +1856,8 @@ std::array<std::vector<double>, kPlayerTracks> TrackShares(const Simulation& sim
 
 // Returns true if every track's notes of the sequence's second pass through its loop start as those of its first do: at
 // the same ticks from the pass's start, with the same key, velocity and program, the levels that the MIDI file gives
-// them, and the same bend and tempo. A track keeps its pan, volume and bend when it jumps back to its loop. The
-// first pass can therefore play unlike the later ones. `sim` has to hold two passes of the loop, on the beat.
+// them, and the same bend and tempo. A track keeps its pan, volume and bend when it jumps back to its loop. The first
+// pass can therefore play unlike the later ones. `sim` has to contain two passes of the loop, on the beat.
 bool FirstPassRepeats(const Rom& rom, const DriverInfo& info, const Simulation& sim)
 {
     NoteMaker maker(rom, info, sim, 0xFFFF);
@@ -1828,7 +1870,7 @@ bool FirstPassRepeats(const Rom& rom, const DriverInfo& info, const Simulation& 
     PassComparison passes(plan.loop_start, plan.loop_end - plan.loop_start);
     for (const Note& n : notes)
     {
-        // The track's levels from its last change up to the note's start, as CC10 and CC11 give them.
+        // The track's levels from its last change up to the note's start as CC10 and CC11 give them.
         const std::vector<LevelChange>& list = changes[size_t(n.track)];
         const auto by_tick = [](uint64_t tick, const LevelChange& change)
         {
@@ -1888,6 +1930,7 @@ std::vector<ExpressionSpan> TrackSpans(const Simulation& sim, Revision revision,
                     span.steps.emplace_back(NoteFrameTick(sim, *n, f), value);
                 }
             }
+
             steps = steps || !span.steps.empty();
         }
         else
@@ -1900,10 +1943,13 @@ std::vector<ExpressionSpan> TrackSpans(const Simulation& sim, Revision revision,
                     span.shares.emplace_back(NoteFrameTick(sim, *n, f), share);
                 }
             }
+
             steps = steps || !span.shares.empty();
         }
+
         spans.push_back(std::move(span));
     }
+
     if (!steps)
     {
         return {};
@@ -1939,12 +1985,14 @@ std::vector<uint8_t> EncodeMidi(const std::string& title, const std::string& abo
     {
         conductor.Tempo(uint32_t(tick), QuarterMicros(kTicksPerQuarter, uint64_t(tempo)));
     }
+
     const uint64_t loop_start = TimeTick(sim, plan.loop_start);
     if (plan.loops)
     {
         conductor.Meta(uint32_t(loop_start), 0x06, "loopStart");
         conductor.Meta(uint32_t(TimeTick(sim, plan.loop_end)), 0x06, "loopEnd");
     }
+
     conductor.SetEnd(end);
 
     // The loop's start, from which each track writes its settings again, unless the loop starts with the sequence.
@@ -1963,6 +2011,7 @@ std::vector<uint8_t> EncodeMidi(const std::string& title, const std::string& abo
                 list.push_back(&note);
             }
         }
+
         if (list.empty())
         {
             continue;
@@ -1970,7 +2019,7 @@ std::vector<uint8_t> EncodeMidi(const std::string& title, const std::string& abo
 
         const int c = MelodicChannel(n);
         MidiTrack& mt = midi.AddTrack();
-        mt.Name("Track " + std::to_string(n));
+        mt.Name(seqlib::midi::DefaultTrackName(n));
         mt.SetEnd(end);
 
         // The pitch bend range covers the track's largest bend.
@@ -1982,6 +2031,7 @@ std::vector<uint8_t> EncodeMidi(const std::string& title, const std::string& abo
                 widest = std::max(widest, std::fabs(d.bend[size_t(n)]));
             }
         }
+
         const int range = BendRangeFor(widest, kSmallBend);
 
         const int program = list[0]->program;
@@ -2021,7 +2071,7 @@ std::vector<uint8_t> EncodeMidi(const std::string& title, const std::string& abo
 // those of the first time. A cut of the marked pass stays only where `later`, the cuts of a simulation that plays the
 // next pass, has one on the same track a loop's length later. The times are compared in units: with frame timing, the
 // ticks of two passes don't line up. The cuts outside the marked pass stay. A cut belongs to the marked pass by its
-// tick, as the file plays it between the loop markers.
+// tick as the file plays it between the loop markers.
 std::vector<Cut> RepeatedCuts(const Simulation& sim, const std::vector<Cut>& cuts, const std::vector<Cut>& later)
 {
     const SongPlan& plan = sim.plan;
@@ -2075,8 +2125,9 @@ std::vector<Cut> AllSoundOffs(const Rom& rom, const DriverInfo& info, int song, 
 }
 
 // Plays a sequence as the conversion does. The marked loop starts at the sequence's second pass if its first plays
-// unlike it, as when the tracks come back to their loops with the pan or volume that the loop's end left them. The
-// passes are compared on the beat, as the default MIDI file plays them. Frame timing therefore moves the same loops.
+// unlike it. That happens when the tracks come back to their loops with the pan or volume that the loop's end left
+// them. The passes are compared on the beat as the default MIDI file plays them. Frame timing therefore moves the same
+// loops.
 Simulation SimulateSong(const Rom& rom, const DriverInfo& info, int song, const ConvertSettings& settings,
                         bool keep_reads = false)
 {
@@ -2105,6 +2156,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
         report.warnings.push_back("there's no such sequence");
         return report;
     }
+
     if (effect && !effect->address)
     {
         report.warnings.push_back("the sound effect's entry gives no track");
@@ -2124,6 +2176,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
     {
         played[size_t(n.track)] = true;
     }
+
     for (bool p : played)
     {
         report.tracks += p ? 1 : 0;
@@ -2135,6 +2188,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
         report.loop_start = TickSeconds(sim.frame_ticks, sim.plan.loop_start);
         report.loop_end = TickSeconds(sim.frame_ticks, sim.plan.loop_end);
     }
+
     report.bpm = 60.0 / FrameSeconds(double(kTicksPerQuarter) / TempoMap(sim).front().second);
 
     report.silent = report.tracks == 0;
@@ -2157,6 +2211,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
                                   (shared ? "; convert the sequence without --single-sf2" : ""));
         return report;
     }
+
     for (const std::string& w : AddPresets(sf, maker.Programs(), slots))
     {
         WarnOnce(report.warnings, w);
@@ -2183,48 +2238,21 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
                       rom.GameCode().c_str(), song, named.c_str(), unsigned(info.sequence_addresses[size_t(song)]),
                       settings.program.c_str());
     }
+
     std::vector<uint8_t> midi = EncodeMidi(title, about, info.revision, sim, notes, PsgTracks(notes, maker.Programs()),
                                            slots, AllSoundOffs(rom, info, song, settings, sim, maker));
 
-    std::string error;
-    if (files)
+    // The song's SoundFont, unless the instruments go in a shared one.
+    Sf2File& file = sf.File();
+    if (!shared)
     {
-        files->midi = std::move(midi);
-        Sf2File& file = sf.File();
         file.program = settings.program;
         file.SetTitle(title);
-        if (!file.Encode(files->sf2, error))
-        {
-            report.warnings.push_back(error);
-            return report;
-        }
-
-        report.ok = true;
-        return report;
     }
 
     const std::string stem = SongStem(settings, number) + picked.suffix;
-    report.midi_path = stem + ".mid";
-    if (!WriteFile(report.midi_path, midi, error))
-    {
-        report.warnings.push_back(error);
-        return report;
-    }
-
-    if (!shared)
-    {
-        Sf2File& file = sf.File();
-        file.program = settings.program;
-        file.SetTitle(title);
-        report.sf2_path = stem + ".sf2";
-        if (!file.Write(report.sf2_path, error))
-        {
-            report.warnings.push_back(error);
-            return report;
-        }
-    }
-
-    report.ok = true;
+    report.ok = agb::WriteModuleFiles(stem, std::move(midi), shared ? nullptr : &file, report,
+                                      files ? &files->midi : nullptr, files ? &files->sf2 : nullptr);
 
     return report;
 }
@@ -2248,11 +2276,13 @@ std::vector<SongVersion> SongVersions(const DriverInfo& info, int song)
             const std::string music = std::to_string(settings[v].music);
             version = {"as music " + music, "_music" + music};
         }
+
         if (settings[v].riding_yoshi)
         {
             version.name += (version.name.empty() ? "" : " ") + std::string("riding Yoshi");
             version.suffix += "_yoshi";
         }
+
         versions.push_back(version);
     }
 
@@ -2268,6 +2298,7 @@ ConvertedSong ConvertedNotes(const Rom& rom, const DriverInfo& info, int song, c
         converted.warnings.push_back("there's no such sequence");
         return converted;
     }
+
     if (effect && !effect->address)
     {
         converted.warnings.push_back("the sound effect's entry gives no track");
@@ -2297,6 +2328,7 @@ ConvertedSong ConvertedNotes(const Rom& rom, const DriverInfo& info, int song, c
             commands[te.event.id] = &te.event;
         }
     }
+
     for (int t = 0; t < kPlayerTracks; t++)
     {
         std::vector<const Note*> list;

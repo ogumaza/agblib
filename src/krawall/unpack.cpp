@@ -32,6 +32,7 @@ public:
             byte_ = rom_.U8(at_++);
             left_ = 8;
         }
+
         left_--;
         return (byte_ >> left_) & 1;
     }
@@ -110,10 +111,12 @@ bool Unpack(const Rom& rom, uint32_t at, std::vector<uint8_t>& out)
         {
             return false;
         }
+
         for (uint32_t i = 0; i < count && out.size() <= size; i++)
         {
             out.push_back(out[out.size() - distance]);
         }
+
         return true;
     };
 
@@ -169,6 +172,7 @@ bool Unpack(const Rom& rom, uint32_t at, std::vector<uint8_t>& out)
                 run = bits.Bits(run, 9 - max_gamma);
                 run_high = bits.Gamma(max_gamma) - 1;
             }
+
             const uint32_t rank = bits.Gamma(max_gamma);
             if (rank < 32 && rank > rank_count)
             {
@@ -183,6 +187,7 @@ bool Unpack(const Rom& rom, uint32_t at, std::vector<uint8_t>& out)
             }
         }
     }
+
     return false;
 }
 

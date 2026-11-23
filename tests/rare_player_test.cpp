@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 // Unit tests for Rare's performance figures, archive player, audition and dump. They build small synthetic cartridges
-// in memory, so no game ROM is needed.
+// in memory. No game ROM is needed.
+
+#include "seqlib/testing/check.h"
 
 #include "rare_test_util.h"
 
@@ -9,6 +11,8 @@ namespace agblib::sequence_export::rare
 {
 namespace
 {
+
+using seqlib::testing::Throws;
 
 // The performance of a tune: its notes with their commands, the stretches of a track that loops, and its volume. The
 // note on lies at offset 15 of the track, after the tempo, the program, the volume and the loop's start.
@@ -68,6 +72,7 @@ void TestPerformance()
             notes.push_back({e.tick, e.note});
         }
     }
+
     SEQLIB_REQUIRE(notes.size() >= 2);
     SEQLIB_CHECK(notes[0] == std::make_pair(0u, 1u) && notes[1] == std::make_pair(480u, 2u));
     SEQLIB_CHECK(perf.tracks[0].front().kind == ntdlib::sequence_export::EventKind::kPreset &&
@@ -119,6 +124,7 @@ void TestPlayer()
     {
         sides = sides && out[i] == out[i + 1];
     }
+
     SEQLIB_CHECK(sides);
     SEQLIB_CHECK(std::any_of(out.begin(), out.end(), [](int16_t s) { return s != 0; }));
     SEQLIB_CHECK(full.TrackPeaks(0)[0] > 0 && full.TrackPeaks(0)[0] == full.TrackPeaks(0)[1]);
@@ -144,6 +150,7 @@ void TestPlayer()
     {
         sums = all[i] == alone[0][i] + alone[1][i];
     }
+
     SEQLIB_CHECK(sums);
 
     // A restore and a seek.
@@ -153,6 +160,7 @@ void TestPlayer()
     {
         run.RunFrame();
     }
+
     const ArchivePlayer::Snapshot snapshot = run.Save();
     std::vector<int16_t> after;
     RunFrames(run, 20, after);
@@ -177,6 +185,7 @@ void TestPlayer()
         run.RunFrame();
         frames++;
     }
+
     SEQLIB_CHECK(!run.Busy());
     SEQLIB_CHECK(run.Driver().Ended());
     std::vector<int16_t> still;
@@ -192,20 +201,14 @@ void TestPlayer()
     {
         enhanced.RunFrame(floats);
     }
+
     SEQLIB_CHECK_EQ(enhanced.Rate(), agblib::agb::kEnhancedRate);
     SEQLIB_CHECK(floats.size() == size_t(5 * 2 * agblib::agb::kEnhancedFrameSamples));
     SEQLIB_CHECK(std::all_of(floats.begin(), floats.end(), [](float s) { return std::isfinite(s); }));
     SEQLIB_CHECK(std::any_of(floats.begin(), floats.end(), [](float s) { return s != 0.0f; }));
-    bool threw = false;
-    try
-    {
-        std::vector<int16_t> console;
-        enhanced.RunFrame(console);
-    }
-    catch (const std::logic_error&)
-    {
-        threw = true;
-    }
+    std::vector<int16_t> console;
+    const bool threw = Throws<std::logic_error>([&] { enhanced.RunFrame(console); });
+
     SEQLIB_CHECK(threw);
 }
 
@@ -235,6 +238,7 @@ void TestAudition()
         player.RunFrame();
         frames++;
     }
+
     SEQLIB_CHECK(player.Driver().GetSlot(0).state == kSlotFree);
 
     // The audition ends once the note and the mix have fallen silent.
@@ -243,6 +247,7 @@ void TestAudition()
         player.RunFrame();
         frames++;
     }
+
     SEQLIB_CHECK(!player.Busy());
 }
 

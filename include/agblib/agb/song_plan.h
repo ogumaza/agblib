@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// The plan of a song's conversion from its tracks' loops and ends, as every GBA driver's conversion makes it.
+// The plan of a song's conversion from its tracks' loops and ends. Every GBA driver's conversion makes it this way.
 
 #pragma once
 
@@ -14,9 +14,9 @@ namespace agblib::agb
 // The most times as long as the longest of its tracks' loops that a song's loop can be.
 constexpr uint64_t kMaxLoopFactor = 8;
 
-// Returns the length of a song's loop from its looping tracks' loop lengths, which are above 0: the shortest length
-// that each of them divides, so that every track is back where its loop started, or the longest of them if that would
-// be more than kMaxLoopFactor times as long.
+// Returns the length of a song's loop from its looping tracks' loop lengths: at least one, each above 0. The length is
+// the shortest one that each of them divides: every track is then back where its loop started. Where that would be
+// more than kMaxLoopFactor times as long as the longest of them, it is the longest.
 uint64_t LoopLength(const std::vector<uint64_t>& lengths);
 
 // A track's loop and end in its driver's ticks, read from its commands without timing them. Each driver's ScanTrack()
@@ -41,8 +41,8 @@ struct SongPlan
 
 // The longest silence that a song without a loop keeps after its last sound has died away, in seconds. A song can end
 // long after that point: a tempo change, a controller's change or a track's end can come after a long wait. When the
-// end lies further than this after the last sound, the song ends where that sound dies away. Nothing after that point
-// can be heard, and a player would show the silence as part of the song.
+// end is further than this after the last sound, the song ends where that sound dies away. Nothing after that point can
+// be heard, and a player would show the silence as part of the song.
 constexpr double kMaxSilentEndSeconds = 10.0;
 
 // The pass through a song's loop that the marked loop starts at.
@@ -60,9 +60,9 @@ enum class LoopStart
 SongPlan PlanSong(const std::vector<TrackLayout>& tracks, int loops, LoopStart start_pass);
 
 // Collects the notes that start in a song's first two passes through its loop, to tell whether a player that loops on
-// the markers can repeat the first. A driver can carry a setting, such as a pan, a level, a program or the tempo, from
-// the loop's end into the next pass, so that the first pass, which comes from the song's start, plays unlike the later
-// ones. The marked loop then starts at the second pass.
+// the markers can repeat the first. A driver can keep a setting, such as a pan, a level, a program or the tempo, from
+// the loop's end into the next pass. The first pass comes from the song's start, and then plays unlike the later ones.
+// The marked loop then starts at the second pass.
 class PassComparison
 {
 public:

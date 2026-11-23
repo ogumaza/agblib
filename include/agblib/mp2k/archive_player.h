@@ -8,7 +8,7 @@
 // once it holds 16. A point therefore plays 17 to 32 of the timer's overflows after the DMA reads it, depending on the
 // DMA's phase. The player keeps the FIFOs 24 points ahead of the timer.
 //
-// The SDK starts timer 0 so that a frame holds a whole number of its overflows: one for each of the mixer's points.
+// The SDK starts timer 0 so that a frame takes a whole number of its overflows: one for each of the mixer's points.
 // Each frame therefore plays the points of one part of the buffer.
 //
 // In the enhanced mixing mode, the output runs at about 48,022 Hz in floats (agb::Apu's enhanced mode). The mixer adds
@@ -17,8 +17,8 @@
 // the 24 points ahead of the timer. The console's mixer and FIFOs run on beside them. Their buffer, the channels'
 // progress and Busy() stay the console's. The driver grows its channels in the enhanced mode (Sequencer::GrowChannels):
 // a note takes a new channel in place of a note's that hasn't reached its release, and no priority leaves a note out. A
-// note in its release gives way to a new note, as on the console. The hardware's model plays the grown PSG channels in
-// its grown units.
+// note in its release gives way to a new note. The console does the same. The hardware's model plays the grown PSG
+// channels in its grown units.
 
 #pragma once
 
@@ -43,9 +43,9 @@ constexpr int kFifoLead = 24;
 
 struct ArchivePlayerOptions
 {
-    // The cycle of each frame at which the driver's writes to the sound registers take effect, below
-    // agb::kFrameCycles. A game calls the driver's routine from its vertical blank interrupt or from its main loop. The
-    // writes come after the music players' work. The default lies a sixth of a frame in.
+    // The cycle of each frame at which the driver's writes to the sound registers take effect, below agb::kFrameCycles.
+    // A game calls the driver's routine from its vertical blank interrupt or from its main loop. The writes come after
+    // the music players' work. The default is a sixth of a frame in.
     uint32_t store_cycle = uint32_t(agb::kFrameCycles / 6);
 
     // The PSG envelopes' frame counter at the song's start (Sequencer::SetEnvelopeCounter).
@@ -69,9 +69,9 @@ public:
     ArchivePlayer(const ArchivePlayer&) = delete;
     ArchivePlayer& operator=(const ArchivePlayer&) = delete;
 
-    // Starts song `song` as the game does after the driver's init. The hardware starts as the init leaves it: the
-    // PSG's channels off, the FIFOs silent and timer 0 at the mixer's rate. Throws std::invalid_argument when the
-    // song's header can't be read, its music player plays none of its tracks, or an option lies out of range.
+    // Starts song `song` as the game does after the driver's init. The hardware starts as the init leaves it: the PSG's
+    // channels off, the FIFOs silent and timer 0 at the mixer's rate. Throws std::invalid_argument when the song's
+    // header can't be read, its music player plays none of its tracks, or an option is out of range.
     void Start(int song, const ArchivePlayerOptions& options = {});
 
     // Writes `value` to byte `index` of the memory that the song's memacc commands read and write (Sequencer::Memory),
@@ -95,7 +95,7 @@ public:
 
     // Whether the song plays, or its sound has yet to end: a track that hasn't ended, a channel that sounds, a reverb
     // that still echoes, or points that the FIFOs haven't played. A reverb keeps the song busy until the whole buffer
-    // holds 0 (Sequencer::MixerSilent): up to a pass of the buffer after its last sound.
+    // is 0 (Sequencer::MixerSilent): up to a pass of the buffer after its last sound.
     bool Busy() const;
 
     // The frames run since the start.

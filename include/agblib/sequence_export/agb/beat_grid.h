@@ -28,7 +28,7 @@ public:
 
     // Works out the beat from each channel's events: the frames on which its notes, rests and holds start, in order.
     // The song's first beat is the first event. `hints` are frames at which the tempo may change, such as where the
-    // channels switch to other note lengths, or loop back.
+    // channels switch to other note lengths or loop back.
     BeatGrid(const std::vector<std::vector<uint32_t>>& channels, std::vector<uint32_t> hints);
 
     // Returns the place of `frame` in quarter notes from the song's first beat, on the tempo map.
@@ -41,8 +41,8 @@ public:
     double Snap(double frame) const;
 
     // Returns the place of a marker on `frame`, such as a loop's start or end: the earliest of Snap(frame) and the
-    // places of each channel's first event on the frame or after it, so that no event from the frame on comes before
-    // the marker.
+    // places of each channel's first event on the frame or after it. No event from the frame on then comes before the
+    // marker.
     double Marker(double frame) const;
 
     // Returns the tempo map: the tempo from the song's first beat, and each change.
@@ -70,8 +70,8 @@ private:
     };
 
     // An event's place on the beat, if it's near enough to it: the frame it moves to, and how far it is in frames from
-    // the nearest of its stretch's units, which last `unit` frames, whether or not it's near enough. `free` is set if
-    // the song has no beat there.
+    // the nearest of its stretch's units, whether or not it's near enough. Each unit lasts `unit` frames. `free` is set
+    // if the song has no beat there.
     struct Place
     {
         bool found = false;
@@ -81,8 +81,9 @@ private:
         double unit = 0;
     };
 
-    // A channel's event with its ornaments, such as the quick notes of a chord played as an arpeggio, which belong to
-    // the beat it starts on. It starts on `frame` and lasts until the next one, or has a length of 0 if it's the last.
+    // A channel's event with its ornaments, such as the quick notes of a chord played as an arpeggio. The ornaments
+    // belong to the beat that the event starts on. It starts on `frame` and lasts until the next one, or has a length
+    // of 0 if it's the last.
     struct Group
     {
         uint32_t frame = 0;
@@ -121,14 +122,14 @@ private:
     // Returns the frames in a quarter note of the last stretch, or about 120 beats a minute before the first.
     double LastQuarter() const;
 
-    // Returns the units to a quarter note for a beat of `unit` frames: those of the first beat with that unit, so that
-    // a beat that comes back keeps its quarter note, or else the ones nearest the last stretch's quarter.
+    // Returns the units to a quarter note for a beat of `unit` frames: those of the first beat with that unit, or else
+    // the ones nearest the last stretch's quarter. A beat that comes back then keeps its quarter note.
     double PerQuarterFor(double unit) const;
 
-    // Adds the stretches of a part, which `groups` play. The last part's beat goes on after its end.
+    // Adds the stretches of a part that `groups` play. The last part's beat goes on after its end.
     void AddPart(const std::vector<std::vector<Group>>& groups, const Part& part, bool last);
 
-    // Adds the stretches of a part without a steady beat, which `groups` play.
+    // Adds the stretches of a part without a steady beat that `groups` play.
     void AddChangingPart(const std::vector<std::vector<Group>>& groups, const Part& part, bool last);
 
     // Adds a steady beat of `unit` frames from frame `from` to its last note on the beat, `on_beat`, and then stretches
@@ -143,8 +144,8 @@ private:
                      bool gradual);
 
     // Rounds the stretches from `start` quarter notes into the song to a whole number of units, `per_quarter` to a
-    // quarter note, or of quarter notes if a unit is longer, by changing the last of them, so that the beat after them
-    // stays on the song's grid.
+    // quarter note, or of quarter notes if a unit is longer. The last of them changes. The beat after them then stays
+    // on the song's grid.
     void WholeUnits(double start, double per_quarter);
 
     // Returns the notes from frame `from` to `to` of the channel whose notes most often start within a frame of another
@@ -167,9 +168,9 @@ private:
     std::vector<std::vector<uint32_t>> frames_; // each channel's events, in order
     double quarter_ = 0;                        // where the next stretch starts, in quarter notes
 
-    // The beats so far, as their units and their units to a quarter note: each steady part's, and the first unit of
-    // each passage whose notes set the tempo one by one. The stretches of such a passage have its notes' lengths, and
-    // one that had a later beat's unit by chance would give that beat its quarter note.
+    // The beats so far as their units and their units to a quarter note: each steady part's, and the first unit of
+    // each passage whose notes set the tempo one by one. The stretches of such a passage have its notes' lengths. One
+    // that had a later beat's unit by chance would give that beat its quarter note.
     std::vector<std::pair<double, double>> beats_;
 };
 

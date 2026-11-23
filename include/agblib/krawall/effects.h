@@ -8,7 +8,7 @@
 namespace agblib::krawall
 {
 
-// The effects of the effect column, as the module's patterns number them.
+// The effects of the effect column as the module's patterns number them.
 enum EffectNumber : int
 {
     kSpeed = 1,

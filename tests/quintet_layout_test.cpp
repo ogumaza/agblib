@@ -9,20 +9,25 @@
 #include <variant>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+#include "seqlib/testing/check.h"
 #include "xsflib/bytes.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/rom.h"
 #include "agblib/quintet/commands.h"
 #include "agblib/quintet/driver.h"
 #include "agblib/quintet/layout.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 using xsflib::testing::Check;
 
 namespace
 {
+
+using agblib::testing::agb_tests::RomOf;
+using seqlib::testing::Throws;
 
 namespace quintet = agblib::quintet;
 using agblib::agb::kRomBase;
@@ -49,6 +54,7 @@ std::vector<uint8_t> Song()
         song.push_back(uint8_t(14 + 2 * c));
         song.push_back(0);
     }
+
     for (int c = 0; c < 6; c++)
     {
         song.push_back(0x20);
@@ -91,13 +97,6 @@ quintet::DriverInfo InfoOf()
     info.song_addresses = {kRomBase + kSongs, kRomBase + kSongs + kSongBytes};
     info.effect_addresses = {kRomBase + kEffects};
     return info;
-}
-
-Rom RomOf(const std::vector<uint8_t>& bytes)
-{
-    Rom rom;
-    rom.Assign(bytes);
-    return rom;
 }
 
 // Inserts `item` at the start of the first channel of sequence `sequence`, and moves the fields that name the items
@@ -164,15 +163,9 @@ void TestGrow()
     {
         InsertFirst(layout, 0, tempo);
     }
-    bool threw = false;
-    try
-    {
-        quintet::Join(layout);
-    }
-    catch (const std::invalid_argument&)
-    {
-        threw = true;
-    }
+
+    const bool threw = Throws<std::invalid_argument>([&] { quintet::Join(layout); });
+
     Check(threw, "a list that outgrows its room");
 }
 

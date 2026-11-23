@@ -28,9 +28,6 @@ using agb::kRomBase;
 // The sample sets and samples that a byte of E1 can name.
 constexpr uint32_t kTableEntries = 256;
 
-// The semitones of a sample set of the Sword of Mana revision.
-constexpr uint32_t kSetEntries = 12;
-
 using agb::AlignUp;
 
 // The place past the last byte that the driver reads of what the regions and the driver's sample table name.
@@ -44,7 +41,7 @@ uint64_t ReachedEnd(const Rom& rom, const DriverInfo& info, std::span<const Regi
 
     const auto keep_sample = [&](uint32_t entry)
     {
-        if (rom.Contains(entry, 12) && rom.Contains(rom.U32(entry + 4)))
+        if (rom.Contains(entry, kSampleRecordBytes) && rom.Contains(rom.U32(entry + 4)))
         {
             end = std::max(end, uint64_t(rom.U32(entry + 4)) - kRomBase);
         }
@@ -59,7 +56,7 @@ uint64_t ReachedEnd(const Rom& rom, const DriverInfo& info, std::span<const Regi
             continue;
         }
 
-        for (uint32_t k = 0; rom.Contains(entry, kSetEntries * 4) && k < kSetEntries; k++)
+        for (uint32_t k = 0; rom.Contains(entry, kSetSamples * 4) && k < kSetSamples; k++)
         {
             keep_sample(rom.U32(entry + 4 * k));
         }
@@ -83,8 +80,8 @@ struct Kept
     Decoded decoded;
 };
 
-// Adds the field of each song table entry that names a kept region's list. The field lies in the run that holds the
-// table: the regions lie clear of it.
+// Adds the field of each song table entry that names a kept region's list. The field is in the run that contains the
+// table: the regions are clear of it.
 void AddSongFields(const DriverInfo& info, const std::vector<Kept>& kept, Layout& layout)
 {
     const std::optional<ntdlib::sar::Place> table = agb::RunPlaceOf(layout.pieces, info.song_table);
@@ -140,6 +137,7 @@ public:
                 {
                     throw std::invalid_argument("a region names a sequence that the layout lacks");
                 }
+
                 size += sequence->room;
             }
             else
@@ -251,7 +249,7 @@ public:
                 }
             }
 
-            // The commands hold absolute addresses. At the new place, they name the new place's bytes.
+            // The commands contain absolute addresses. At the new place, they name the new place's bytes.
             const uint32_t sequence = std::get<ntdlib::sar::SequencePiece>(pieces_[p]).sequence;
             encoded_[p] = EncodeSequence(sequences_[sequence], revision_, uint32_t(kRomBase + at));
             PlaceAt(p, at);
@@ -317,7 +315,7 @@ Layout Cut(const Rom& rom, const DriverInfo& info)
     layout.revision = info.revision;
     layout.free = FreeSpaceOf(rom, info, regions);
 
-    // Each region that comes back from its items. The runs lie between them.
+    // Each region that comes back from its items. The runs are between them.
     const uint32_t table_end = info.song_table + uint32_t(info.song_count) * 4;
     std::vector<Kept> kept;
     uint32_t at = kRomBase;
@@ -348,6 +346,7 @@ Layout Cut(const Rom& rom, const DriverInfo& info)
         kept.push_back({uint32_t(layout.pieces.size() - 1), std::move(decoded)});
         at = region.start + region.size;
     }
+
     agb::AddRomRun(rom, at, rom.End(), layout.pieces);
 
     // The song table's entries that name the kept regions' lists.

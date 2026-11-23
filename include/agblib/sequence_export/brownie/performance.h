@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of a sound of Brownie Brown's GBA driver for an editor. ntdlib's model of the driver
-// (agblib::brownie::Sequencer) plays the sound as ConvertSong does. The performance holds the notes of ConvertSong's
-// MIDI file, each with the command that started it. It also holds each channel's stretches of commands, and each
+// The performance of a sound of Brownie Brown's GBA driver for an editor. The model of the driver
+// (agblib::brownie::Sequencer) plays the sound as ConvertSong does. The performance contains the notes of ConvertSong's
+// MIDI file, each with the command that started it. It also contains each channel's stretches of commands, and each
 // channel's changes of its volume and pan.
 
 #pragma once
@@ -11,11 +11,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/brownie/driver.h"
 #include "agblib/sequence_export/agb/settings.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::brownie
 {
@@ -44,8 +45,8 @@ struct MidiPlace
 // number of whole frames nearest to a quarter note at the song's first tempo, and the one entry of `tempo` gives that
 // many frames their time. Each of the driver's channels plays on the track of the same number, and a preset is 128
 // times the note's bank plus its program. Offsets count from `base`, the address of the first byte of the region that
-// holds the sound's list (agblib::brownie::FindRegions). agblib::brownie::DecodeSong decodes the bytes from there. Such
-// a region can hold many sounds.
+// contains the sound's list (agblib::brownie::FindRegions). agblib::brownie::DecodeSong decodes the bytes from there.
+// Such a region can contain many sounds.
 struct Performance : ntdlib::sequence_export::PerformanceBase
 {
     uint32_t base = 0;
@@ -65,9 +66,9 @@ struct Performance : ntdlib::sequence_export::PerformanceBase
     std::vector<MidiPlace> midi_places;
     uint32_t midi_end_tick = 0;
 
-    // Each track's changes of its volume and pan, in the order of their ticks. The volume is the value that F2 holds,
-    // from 0 to 255. The pan runs from -64 for the left to 63 for the right. Both are 0 before a command sets them. The
-    // driver has no sends. In the Magical Vacation revision, the sample channels have no pan.
+    // Each track's changes of its volume and pan, in the order of their ticks. The volume is the value that F2
+    // contains, from 0 to 255. The pan runs from -64 for the left to 63 for the right. Both are 0 before a command sets
+    // them. The driver has no sends. In the Magical Vacation revision, the sample channels have no pan.
     std::array<std::vector<ntdlib::sequence_export::MixChange>, 16> mix;
 };
 

@@ -21,8 +21,8 @@ namespace
 // quick note of an arpeggiated chord. A channel's last event is never an ornament.
 constexpr uint32_t kOrnamentFrames = 2;
 
-// Hints within this many frames of the last tempo change are part of that change, such as an echo channel's, which
-// comes a few frames after the others'.
+// Hints within this many frames of the last tempo change are part of that change. An echo channel's hint comes a few
+// frames after the others'.
 constexpr uint32_t kHintFrames = 16;
 
 // The fewest events whose lengths can give a part's beat, or its tempo from note to note.
@@ -36,7 +36,7 @@ constexpr int kUnitSteps = 12;
 constexpr int kShortestUnit = 3 * kUnitSteps;
 constexpr int kLongestUnit = 60 * kUnitSteps;
 
-// A unit that fits nearly as many lengths as the best, within this share, fits as well, so the longest such unit wins.
+// A unit that fits nearly as many lengths as the best, within this share, fits as well. The longest such unit wins.
 constexpr double kFitSlack = 0.015;
 
 // The share of a part's lengths that can be triplets of its unit, rather than whole numbers of it.
@@ -48,8 +48,7 @@ constexpr double kSameTempo = 0.005;
 // The quarter note that the song's first tempo is folded nearest to, in frames: about 120 beats a minute.
 constexpr double kTypicalQuarter = 30;
 
-// A part's tempo changes gradually, as in a rubato, if this share of its note lengths are within this ratio of the
-// next.
+// A part's tempo changes gradually, like a rubato, if this share of its note lengths are within this ratio of the next.
 constexpr double kGradualRatio = 1.25;
 constexpr double kGradualShare = 0.8;
 
@@ -61,7 +60,7 @@ constexpr size_t kFirstUnitNotes = 9;
 constexpr size_t kDelayCheck = 3;
 
 // The notes in a row that have to be on a beat for it to start again after a change of tempo, such as a ritardando.
-// About half of all frames are near a unit of a fine beat, so a few notes can be on it by chance.
+// About half of all frames are near a unit of a fine beat. A few notes can therefore be on it by chance.
 constexpr size_t kSettleNotes = 6;
 
 // Returns how far, in frames, a length can be from a whole number of units of `unit` frames and still fit them.
@@ -133,10 +132,10 @@ double Refine(const std::map<uint32_t, int>& lengths, double unit)
 }
 
 // Returns the longest unit whose whole multiples fit nearly as many of `lengths` as the best candidate's, and sets
-// `fit` to the fraction of lengths that fit. Triplets can make that unit a third of the intended one, as 16th-note
-// triplets of 6⅔ frames do alongside 16th notes of 10 frames. So where the unit gives a steady beat, a unit three times
-// as long is taken instead if its whole multiples and triplets fit nearly as many lengths, and its whole multiples
-// alone fit most of them. `fit` then includes the triplets.
+// `fit` to the fraction of lengths that fit. Triplets can make that unit a third of the intended one: 16th-note
+// triplets of 6⅔ frames do beside 16th notes of 10 frames. Where the unit gives a steady beat, a unit three times as
+// long is therefore taken instead if its whole multiples and triplets fit nearly as many lengths, and its whole
+// multiples alone fit most of them. `fit` then includes the triplets.
 double FindUnit(const std::map<uint32_t, int>& lengths, double& fit)
 {
     std::vector<double> straight, any;
@@ -171,7 +170,7 @@ double FindUnit(const std::map<uint32_t, int>& lengths, double& fit)
 }
 
 // Returns the shortest note, in units of `unit` frames, `per_quarter` to a quarter note, that events are moved onto the
-// beat of: a 32nd note, unless that's shorter than the shortest unit, or for triplets (`share` 2/3), a 16th note, since
+// beat of: a 32nd note, unless that's shorter than the shortest unit. For triplets (`share` 2/3), it is a 16th note:
 // the triplets of shorter notes are so close together that most events would be near one.
 double Finest(double unit, double per_quarter, double share)
 {
@@ -193,7 +192,7 @@ bool SameTempo(double a, double b)
     return std::fabs(ratio / std::round(ratio) - 1) < kSameTempo;
 }
 
-// Returns the median of `values`, which mustn't be empty.
+// Returns the median of `values`. The values mustn't be empty.
 double Median(std::vector<double> values)
 {
     std::sort(values.begin(), values.end());
@@ -254,9 +253,9 @@ public:
         return distance;
     }
 
-    // Returns the note from which the notes after note `i`, which leaves the beat, settle on a beat again, or the note
-    // count if they never do. After a ritardando, notes may also fit a fine grid starting at one of its last notes. Of
-    // the next few notes from which the following notes settle on the beat, the one that they fit best is chosen.
+    // Returns the note from which the notes after note `i` settle on a beat again, or the note count if they never do.
+    // Note `i` leaves the beat. After a ritardando, notes may also fit a fine grid starting at one of its last notes.
+    // Of the next few notes from which the following notes settle on the beat, the one that they fit best is chosen.
     size_t Resettle(size_t i) const
     {
         size_t again = i;
@@ -293,8 +292,8 @@ private:
 
 std::vector<uint32_t> BeatGrid::Bounds(std::vector<uint32_t> hints, uint32_t start, uint32_t end)
 {
-    // Hints close together are one change, on the frame that most of them give, which is the beat's, where one channel
-    // may be ahead of it or behind it.
+    // Hints close together are one change, on the frame that most of them give. That frame is the beat's, where one
+    // channel may be ahead of it or behind it.
     std::sort(hints.begin(), hints.end());
     std::vector<uint32_t> bounds = {start};
     for (size_t i = 0; i < hints.size();)
@@ -311,6 +310,7 @@ std::vector<uint32_t> BeatGrid::Bounds(std::vector<uint32_t> hints, uint32_t sta
                 most = same;
                 frame = hints[j];
             }
+
             j += same;
         }
 
@@ -352,8 +352,8 @@ std::vector<BeatGrid::Part> BeatGrid::Parts(const std::vector<std::vector<Group>
         part.unit = count >= kFewestEvents ? FindUnit(lengths, fit) : 0;
         part.steady = fit >= kSteady;
 
-        // A part with the tempo of the part before goes on with its beat, as does a part too short to have a beat of
-        // its own that fits that beat. A change of beat within a part shows in its notes (see AddPart()).
+        // A part with the tempo of the part before goes on with its beat. So does a part too short to have a beat of
+        // its own, if a beat that fits it is there. A change of beat within a part shows in its notes (see AddPart()).
         if (!parts.empty() && parts.back().steady &&
             (part.steady ? SameTempo(parts.back().unit, part.unit) : Fit(lengths, parts.back().unit, true) >= kSteady))
         {
@@ -530,8 +530,8 @@ double BeatGrid::PerQuarterFor(double unit) const
 
 double BeatGrid::FitBeat(const std::vector<std::vector<Group>>& groups, const Part& part, double unit)
 {
-    // The events near a whole number of units from the part's start, which is on the beat, give the unit by least
-    // squares, which a long part pins down far more closely than the lengths of its notes do.
+    // The part starts on the beat. The events near a whole number of units from its start give the unit by least
+    // squares. A long part pins the unit down far more closely than the lengths of its notes do.
     for (int pass = 0; pass < 2; pass++)
     {
         const double tolerance = LengthTolerance(unit);
@@ -573,8 +573,8 @@ void BeatGrid::AddPart(const std::vector<std::vector<Group>>& groups, const Part
     }
 
     // A steady beat. Where the notes of the channel that agrees most with the others leave its units, and settle on
-    // them again later, as around a ritardando, the notes in between set the tempo one by one. Finer places, such as
-    // triplets', are for moving notes onto the beat, since so many of them would hide such a change.
+    // them again later, like around a ritardando, the notes in between set the tempo one by one. Finer places, such as
+    // triplets', are for moving notes onto the beat: so many of them would hide such a change.
     const double from = part.from;
     const double to = part.to;
     const double unit = FitBeat(groups, part, part.unit);
@@ -586,6 +586,7 @@ void BeatGrid::AddPart(const std::vector<std::vector<Group>>& groups, const Part
     {
         frames.push_back(g.frame);
     }
+
     const SteadyNotes notes(std::move(frames), unit, unit * per_quarter / 3);
 
     double origin = from;  // where the steady beat starts
@@ -616,8 +617,8 @@ void BeatGrid::AddPart(const std::vector<std::vector<Group>>& groups, const Part
         i = again;
     }
 
-    // The beat ends on the part's end if that's on it. The song's last part keeps its beat after its end, which may not
-    // be on the beat, such as where an echo's loop ends.
+    // The beat ends on the part's end if that's on it. The song's last part keeps its beat after its end. That end may
+    // not be on the beat, such as where an echo's loop ends.
     const double units = std::max(1.0, std::round((to - origin) / unit));
     const bool on_beat_end = std::fabs(to - origin - units * unit) <= UnitTolerance(unit);
     if (on_beat_end || last)
@@ -631,9 +632,9 @@ void BeatGrid::AddPart(const std::vector<std::vector<Group>>& groups, const Part
 
 void BeatGrid::AddChangingPart(const std::vector<std::vector<Group>>& groups, const Part& part, bool last)
 {
-    // A tempo that changes gradually follows the notes, for a whole number of their units if a part comes after, so
-    // that its beat starts on the song's grid. Otherwise the part keeps the tempo before it, without a beat to move its
-    // events onto.
+    // A tempo that changes gradually follows the notes, for a whole number of their units if a part comes after. That
+    // part's beat then starts on the song's grid. Otherwise the part keeps the tempo before it, without a beat to move
+    // its events onto.
     const double from = part.from;
     const double to = part.to;
     const double start = quarter_;
@@ -643,6 +644,7 @@ void BeatGrid::AddChangingPart(const std::vector<std::vector<Group>>& groups, co
         {
             WholeUnits(start, stretches_.back().per_quarter);
         }
+
         return;
     }
 
@@ -668,8 +670,8 @@ void BeatGrid::AddBeat(const std::vector<std::vector<Group>>& groups, double fro
         return;
     }
 
-    // The notes that set the tempo one by one last a whole number of units together, so that the beat after them stays
-    // on the song's grid.
+    // The notes that set the tempo one by one last a whole number of units together. The beat after them then stays on
+    // the song's grid.
     const double start = quarter_;
     if (FollowNotes(groups, uint32_t(on_beat), uint32_t(to), 1, false))
     {
@@ -706,8 +708,8 @@ bool BeatGrid::FollowNotes(const std::vector<std::vector<Group>>& groups, uint32
     }
 
     // Each note lasts a number of units of the note before it, in halves, and a note of a unit or more sets the unit
-    // for the next, so that a tempo that changes gradually follows the notes, and a long note keeps the tempo before
-    // it. The first unit is the median length of the first few notes.
+    // for the next. A tempo that changes gradually then follows the notes, and a long note keeps the tempo before it.
+    // The first unit is the median length of the first few notes.
     const size_t window = std::min(notes.size(), kFirstUnitNotes);
     double unit = Median(std::vector<double>(lengths.begin(), lengths.begin() + long(window)));
     const double per_quarter = PerQuarterFor(unit);
@@ -873,6 +875,7 @@ void BeatGrid::PlaceChannel(int c, const std::vector<Group>& groups)
                 anchors.push_back({frame, 0});
                 after = frame;
             }
+
             continue;
         }
 

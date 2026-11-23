@@ -46,8 +46,7 @@ private:
     std::map<std::pair<uint32_t, uint32_t>, Instrument> programs_;
 };
 
-// Returns the rate in Hz at which the player plays a sample's C-4, which is the rate that its SoundFont sample gets, on
-// key 60.
+// Returns the rate in Hz at which the player plays a sample's C-4. The SoundFont sample gets that rate, on key 60.
 uint32_t SampleRate(const Rom& rom, const DriverInfo& info, uint32_t sample);
 
 } // namespace agblib::sequence_export::krawall

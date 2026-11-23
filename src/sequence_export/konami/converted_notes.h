@@ -11,6 +11,7 @@
 #include "agblib/agb/rom.h"
 #include "agblib/konami/driver.h"
 #include "agblib/konami/sequencer.h"
+#include "agblib/sequence_export/agb/performance_steps.h"
 #include "agblib/sequence_export/agb/settings.h"
 
 namespace agblib::sequence_export::konami
@@ -31,16 +32,9 @@ struct ConvertedNote
 };
 
 // A song as its conversion plays it.
-struct ConvertedSong
+struct ConvertedSong : agb::FrameTimes
 {
     std::vector<std::string> warnings;
-    bool truncated = false;
-    bool loops = false;
-    uint32_t loop_start = 0; // frames
-    uint32_t loop_end = 0;
-    uint32_t end_frame = 0;
-    uint32_t end_tick = 0;
-    double quarter_frames = 0;                    // the frames of a quarter note at the song's first tempo
     std::vector<agblib::konami::TrackRead> reads; // each read of the tracks' data
     std::vector<ConvertedNote> notes;             // each track's notes in order, the tracks in order
 };

@@ -2,7 +2,7 @@
 
 // Tests of the cut and the join of a GBA ROM's MP2K songs (agblib/mp2k/layout.h), on small synthetic cartridges. The
 // expected places come from the rules in layout.h: a song that fits stays in its place, and one that outgrows it moves
-// to the free space with a copy of its header, which the song table then names. In a ROM of 32 MiB, such a song goes
+// to the free space with a copy of its header. The song table then names the copy. In a ROM of 32 MiB, such a song goes
 // into a filler run where the options allow it.
 
 #include <algorithm>
@@ -14,19 +14,23 @@
 #include <variant>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/sar/layout.h"
 #include "seqlib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/rom.h"
 #include "agblib/mp2k/commands.h"
 #include "agblib/mp2k/driver.h"
 #include "agblib/mp2k/layout.h"
 #include "agblib/mp2k/song.h"
 #include "agblib/testing/mp2k_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/sar/layout.h"
 
 namespace
 {
+
+using agblib::testing::agb_tests::RomOf;
+using seqlib::testing::Throws;
 
 using agblib::agb::kRomBase;
 using agblib::agb::Rom;
@@ -62,12 +66,10 @@ constexpr uint32_t kPadding = 0x38000;
 constexpr uint32_t kShortPadding = kCartSize - 16;
 constexpr uint32_t kNoPadding = kCartSize;
 
-// A cartridge with two songs. Song 0 has two tracks: track 0 calls a pattern, and track 1 repeats a note. Song 1 loops
-// on a note. The cartridge's bytes from `padding` on are 0xFF.
-Rom TwoSongs(uint32_t padding = kPadding)
+// Adds two songs to `cart`, on the voice group at `voices`. Song 0 has two tracks: track 0 calls a pattern, and track 1
+// repeats a note. Song 1 loops on a note.
+void AddTwoSongs(Cart& cart, uint32_t voices)
 {
-    Cart cart;
-    const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
     Track first;
     first.Cmd(kCmdTempo, 75).Cmd(kCmdVoice, 0).Note(24, 60, 100).Wait(24);
     const size_t call = first.Here();
@@ -84,6 +86,14 @@ Rom TwoSongs(uint32_t padding = kPadding)
     const size_t loop = looping.Here();
     looping.Note(24, 60, 100).Wait(24).Goto(loop);
     cart.Song({looping}, voices);
+}
+
+// A cartridge with the two songs of AddTwoSongs(). The cartridge's bytes from `padding` on are 0xFF.
+Rom TwoSongs(uint32_t padding = kPadding)
+{
+    Cart cart;
+    const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
+    AddTwoSongs(cart, voices);
 
     for (uint32_t a = padding; a < kCartSize; a++)
     {
@@ -93,8 +103,8 @@ Rom TwoSongs(uint32_t padding = kPadding)
     return cart.ToRom();
 }
 
-// A cartridge of `size` bytes with TwoSongs' songs. Voice 1 of their voice group plays a sample of 20 KiB of 0xFF
-// bytes, though no song selects it. The bytes of each of `runs` are 0xFF, and the cartridge's other bytes after its
+// A cartridge of `size` bytes with the songs of AddTwoSongs(). Voice 1 of their voice group plays a sample of 20 KiB of
+// 0xFF bytes, though no song selects it. The bytes of each of `runs` are 0xFF. The cartridge's other bytes after its
 // data are 0.
 Rom FillerCart(uint32_t size, const std::vector<Span>& runs)
 {
@@ -103,22 +113,7 @@ Rom FillerCart(uint32_t size, const std::vector<Span>& runs)
     const uint32_t blank = cart.Wave(std::vector<int8_t>(0x5000, -1));
     const uint32_t voices =
         cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}, {1, Cart::Voice(0, blank)}});
-    Track first;
-    first.Cmd(kCmdTempo, 75).Cmd(kCmdVoice, 0).Note(24, 60, 100).Wait(24);
-    const size_t call = first.Here();
-    first.Patt(call + 7).Wait(24).Fine();
-    first.Note(12, 62).Wait(12).Raw({kCmdPend});
-    Track second;
-    second.Cmd(kCmdVoice, 0);
-    const size_t note = second.Here();
-    second.Note(12, 64, 90).Wait(12).Rept(2, note).Fine();
-    cart.Song({first, second}, voices);
-
-    Track looping;
-    looping.Cmd(kCmdVoice, 0);
-    const size_t loop = looping.Here();
-    looping.Note(24, 60, 100).Wait(24).Goto(loop);
-    cart.Song({looping}, voices);
+    AddTwoSongs(cart, voices);
 
     for (const Span& run : runs)
     {
@@ -145,20 +140,12 @@ std::vector<uint8_t> Bytes(const Rom& rom)
     return std::vector<uint8_t>(rom.Ptr(kRomBase), rom.Ptr(kRomBase) + rom.Size());
 }
 
-Rom RomOf(std::vector<uint8_t> bytes)
-{
-    Rom rom;
-    rom.Assign(std::move(bytes));
-
-    return rom;
-}
-
 std::vector<uint8_t> JoinOf(const Layout& layout)
 {
     return Join(layout.sequences, layout.pieces, layout.fields, {.note_arguments = layout.note_arguments});
 }
 
-// The piece of the sequence piece that holds sequence `sequence`.
+// The piece of the sequence piece that contains sequence `sequence`.
 uint32_t PieceOf(const Layout& layout, uint32_t sequence)
 {
     for (uint32_t p = 0; p < layout.pieces.size(); p++)
@@ -328,9 +315,9 @@ void TestMove()
         Insert(layout, 0, 1, layout.sequences[0].items[1]);
         const Rom joined = RomOf(JoinOf(layout));
 
-        // The song goes to the first multiple of 256 bytes that lies 256 bytes into the run of 0xFF bytes, or else to
-        // the ROM's end, and its header's copy follows it. The song table names the copy, and both headers give the
-        // tracks' new addresses. After a short run, 0xFF bytes fill the ROM's growth up to the song.
+        // The song goes to the first multiple of 256 bytes that is 256 bytes into the run of 0xFF bytes, or else to the
+        // ROM's end, and its header's copy follows it. The song table names the copy, and both headers give the tracks'
+        // new addresses. After a short run, 0xFF bytes fill the ROM's growth up to the song.
         const uint32_t song = kRomBase + (padding == kPadding        ? kPadding + kFreeSpaceMargin
                                           : padding == kShortPadding ? kCartSize + kFreeSpaceMargin
                                                                      : kCartSize);
@@ -360,6 +347,31 @@ void TestMove()
         SEQLIB_CHECK_EQ(again.sequences.size(), 2);
         SEQLIB_CHECK(JoinOf(again) == Bytes(joined));
     }
+}
+
+// A floor of the free space past the ROM's end puts a song that moves at the floor, with 0xFF bytes before it. A floor
+// before the free space changes nothing.
+void TestFreeFloor()
+{
+    const Rom rom = TwoSongs(kNoPadding);
+    const DriverInfo info = Detect(rom);
+    Layout layout = Cut(rom, info);
+    Insert(layout, 0, 1, layout.sequences[0].items[1]);
+    const uint64_t floor = kCartSize + 0x1002;
+
+    const Rom joined = RomOf(Join(layout.sequences, layout.pieces, layout.fields,
+                                  {.note_arguments = layout.note_arguments, .free_floor = floor}));
+    const std::vector<uint8_t> early = Join(layout.sequences, layout.pieces, layout.fields,
+                                            {.note_arguments = layout.note_arguments, .free_floor = 0x100});
+
+    SongHeader header;
+    SEQLIB_REQUIRE(ReadSong(joined, info, 0, header));
+    SEQLIB_REQUIRE_EQ(header.tracks.size(), 2);
+    SEQLIB_CHECK_EQ(header.tracks[0], kRomBase + kCartSize + 0x1004);
+    SEQLIB_CHECK(DecodesTo(joined, header, layout.sequences[0]));
+    SEQLIB_CHECK(std::all_of(joined.Ptr(kRomBase + kCartSize), joined.Ptr(header.tracks[0]),
+                             [](uint8_t b) { return b == 0xFF; }));
+    SEQLIB_CHECK(early == JoinOf(layout));
 }
 
 void TestHeaderSharedBySongs()
@@ -406,6 +418,7 @@ void TestOverlap()
             other.push_back(uint8_t(word >> (8 * b)));
         }
     }
+
     cart.Put32(kSongTable + 8, cart.Place(other));
     cart.Put32(kSongTable + 12, 0);
     const Rom rom = cart.ToRom();
@@ -419,8 +432,8 @@ void TestOverlap()
 
 void TestTableAfterSongs()
 {
-    // A copy of the song table after the songs serves as the table. Its entries' fields lie in the last run, and a
-    // song that moves changes its entry there.
+    // A copy of the song table after the songs serves as the table. Its entries' fields are in the last run, and a song
+    // that moves changes its entry there.
     std::vector<uint8_t> bytes = Bytes(TwoSongs());
     constexpr uint32_t kTable = kPadding - 0x100;
     std::copy_n(bytes.begin() + (kSongTable - kRomBase), 16, bytes.begin() + kTable);
@@ -459,6 +472,7 @@ void TestOpaque()
             header.push_back(uint8_t(word >> (8 * b)));
         }
     }
+
     cart.Put32(kSongTable, cart.Place(header));
     const Rom rom = cart.ToRom();
     const Layout layout = Cut(rom, Detect(rom));
@@ -470,7 +484,7 @@ void TestOpaque()
 
 void TestTableInSong()
 {
-    // The song table lies between a song's track and its header. The song stays in the bytes.
+    // The song table is between a song's track and its header. The song stays in the bytes.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
     Track track;
@@ -485,6 +499,7 @@ void TestTableInSong()
             header.push_back(uint8_t(word >> (8 * b)));
         }
     }
+
     cart.Put32(table, cart.Place(header));
     const Rom rom = cart.ToRom();
     DriverInfo info;
@@ -512,6 +527,7 @@ void TestFillerRuns()
         {
             runs.push_back(end);
         }
+
         const Rom rom = FillerCart(0x80000, runs);
         SEQLIB_CHECK(FillerRuns(rom, Detect(rom)) == taken);
 
@@ -532,6 +548,7 @@ void TestFillerRuns()
     {
         track[1 + i] = uint8_t(pattern >> (8 * i));
     }
+
     std::copy(track.begin(), track.end(), bytes.begin() + (first.tracks[0] - kRomBase));
     const Rom reached = RomOf(bytes);
     SEQLIB_CHECK(FillerRuns(reached, info).empty());
@@ -550,15 +567,8 @@ void TestFiller()
     SEQLIB_REQUIRE(ReadSong(rom, info, 1, second));
     Insert(layout, 0, 1, layout.sequences[0].items[1]);
 
-    bool refused = false;
-    try
-    {
-        JoinOf(layout);
-    }
-    catch (const std::invalid_argument&)
-    {
-        refused = true;
-    }
+    bool refused = Throws<std::invalid_argument>([&] { JoinOf(layout); });
+
     SEQLIB_CHECK(refused);
 
     // With filler, the song goes 256 bytes into the run, and its header's copy follows it. The ROM keeps its size, and
@@ -599,25 +609,19 @@ void TestFiller()
     const Rom short_run = FillerCart(kLargestRom, {{0x38000, kLeastFillerRun - 1}});
     Layout cramped = Cut(short_run, Detect(short_run));
     Insert(cramped, 0, 1, cramped.sequences[0].items[1]);
-    refused = false;
-    try
-    {
-        Join(cramped.sequences, cramped.pieces, cramped.fields, JoinOptions{.filler = true});
-    }
-    catch (const std::invalid_argument&)
-    {
-        refused = true;
-    }
+    refused = Throws<std::invalid_argument>(
+        [&] { Join(cramped.sequences, cramped.pieces, cramped.fields, JoinOptions{.filler = true}); });
+
     SEQLIB_CHECK(refused);
 
-    // Where the free space at the ROM's end holds the song, the option changes nothing.
+    // Where the free space at the ROM's end has room for the song, the option changes nothing.
     const Rom small = TwoSongs();
     Layout grown = Cut(small, Detect(small));
     Insert(grown, 0, 1, grown.sequences[0].items[1]);
     SEQLIB_CHECK(Join(grown.sequences, grown.pieces, grown.fields, JoinOptions{.filler = true}) == JoinOf(grown));
 }
 
-// Whether `joined` holds `rom`'s bytes but for the byte at `address`.
+// Whether `joined` has `rom`'s bytes but for the byte at `address`.
 bool DiffersOnlyAt(const Rom& rom, const Rom& joined, uint32_t address)
 {
     if (joined.Size() != rom.Size())
@@ -650,8 +654,7 @@ void TestHeaderTracks()
     SEQLIB_CHECK(HeaderTracks(layout.pieces, layout.fields) == std::vector<uint32_t>({0, 2, 0, 1, 0}));
 
     // Song 1 gains a second track: a copy of its first track's commands, after them. The song goes into the free space,
-    // and the copy of its header holds both tracks. The header in its place keeps one track, at the song's new
-    // address.
+    // and the copy of its header lists both tracks. The header in its place keeps one track, at the song's new address.
     Layout added = layout;
     const uint32_t piece = PieceOf(added, 1);
     std::vector<Command>& items = added.sequences[1].items;
@@ -660,6 +663,7 @@ void TestHeaderTracks()
     {
         end++;
     }
+
     const uint32_t copied = end + 1;
     std::vector<Command> copy(items.begin(), items.begin() + copied);
     for (Command& command : copy)
@@ -669,6 +673,7 @@ void TestHeaderTracks()
             command.target += copied;
         }
     }
+
     items.insert(items.begin() + copied, copy.begin(), copy.end());
     added.fields.push_back({{piece + 1, 12}, {0, 0}, {piece, copied, true}});
     SEQLIB_CHECK_EQ(HeaderTracks(added.pieces, added.fields)[piece], 2);
@@ -722,21 +727,15 @@ void TestHeaderTracks()
     SEQLIB_REQUIRE(ReadSongHeader(moved, first.address, old));
     SEQLIB_CHECK(old.tracks == header.tracks);
 
-    // A header holds 16 tracks at most.
+    // A header lists 16 tracks at most.
     Layout many = layout;
     for (uint32_t track = 1; track < 17; track++)
     {
         many.fields.push_back({{piece + 1, 8 + 4 * track}, {0, 0}, {piece, 0, true}});
     }
-    bool refused = false;
-    try
-    {
-        JoinOf(many);
-    }
-    catch (const std::invalid_argument&)
-    {
-        refused = true;
-    }
+
+    const bool refused = Throws<std::invalid_argument>([&] { JoinOf(many); });
+
     SEQLIB_CHECK(refused);
     many.fields.pop_back();
     SEQLIB_REQUIRE(ReadSong(RomOf(JoinOf(many)), info, 1, header));
@@ -769,6 +768,7 @@ void TestShortNotes()
                 found.push_back(int(item.key));
             }
         }
+
         return found;
     };
     SEQLIB_CHECK(keys(layout.sequences[0]) == std::vector<int>({60, 50}));
@@ -787,15 +787,9 @@ void TestShortNotes()
             break;
         }
     }
-    bool refused = false;
-    try
-    {
-        JoinOf(longer);
-    }
-    catch (const std::invalid_argument&)
-    {
-        refused = true;
-    }
+
+    const bool refused = Throws<std::invalid_argument>([&] { JoinOf(longer); });
+
     SEQLIB_CHECK(refused);
 }
 
@@ -805,16 +799,7 @@ void TestRefusals()
     const Layout layout = Cut(rom, Detect(rom));
     const auto refuses = [](const Layout& changed)
     {
-        try
-        {
-            JoinOf(changed);
-        }
-        catch (const std::invalid_argument&)
-        {
-            return true;
-        }
-
-        return false;
+        return Throws<std::invalid_argument>([&] { JoinOf(changed); });
     };
 
     Layout padding = layout;
@@ -840,7 +825,7 @@ void TestRefusals()
     SEQLIB_CHECK(refuses(backwards));
 }
 
-// Join's free space starts on the first multiple of kFreeSpaceMargin that lies kFreeSpaceMargin bytes or more into the
+// Join's free space starts on the first multiple of kFreeSpaceMargin that is kFreeSpaceMargin bytes or more into the
 // run of 0xFF bytes at the ROM's end, or else at the ROM's end, on a multiple of 4 bytes. Given the ROM's last bytes
 // and their offset, the run counts only those bytes.
 void TestFreeSpaceStart()
@@ -864,6 +849,7 @@ int main()
     TestRoundTrip();
     TestInPlace();
     TestMove();
+    TestFreeFloor();
     TestHeaderSharedBySongs();
     TestOverlap();
     TestTableAfterSongs();

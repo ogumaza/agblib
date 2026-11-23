@@ -43,6 +43,7 @@ void TestLoops()
             markers.push_back({uint32_t(e.tick), std::string(e.bytes.begin() + 3, e.bytes.end())});
         }
     }
+
     const std::vector<std::pair<uint32_t, std::string>> kMarkers = {{12 * kMidiTicks, "loopStart"},
                                                                     {36 * kMidiTicks, "loopEnd"}};
     SEQLIB_CHECK(markers == kMarkers);
@@ -82,11 +83,12 @@ void TestHang()
     {
         hang = e;
     }
+
     SEQLIB_REQUIRE(hang.has_value());
     SEQLIB_CHECK_EQ(hang->TrackIndex(), 1);
     SEQLIB_CHECK(steps >= 1 && steps < 60);
 
-    // The second track's address: the song's header holds the address of each track from its eighth byte. Its loop
+    // The second track's address: the song's header contains the address of each track from its eighth byte. Its loop
     // starts past its voice, its volume and its wait, and the track goes round the two commands of the loop.
     const uint32_t header = rom.U32(kSongTable);
     const uint32_t track = rom.U32(header + 12);
@@ -129,9 +131,9 @@ void TestLoopStarts()
 
 void TestLoopStartsAtSecondPass()
 {
-    // A track sets tempo 75 on tick 12, just before its loop, and tempo 60 halfway through the loop's 24 ticks, which
-    // the next pass keeps. The first pass starts at tempo 75 and the later ones at 60, so the marked loop starts at the
-    // second pass, at tick 36, and the song plays the first pass before it.
+    // A track sets tempo 75 on tick 12, just before its loop, and tempo 60 halfway through the loop's 24 ticks. The
+    // next pass keeps tempo 60. The first pass starts at tempo 75 and the later ones at 60. The marked loop therefore
+    // starts at the second pass, at tick 36, and the song plays the first pass before it.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
     Track t;
@@ -154,6 +156,7 @@ void TestLoopStartsAtSecondPass()
             markers.push_back({uint32_t(e.tick), std::string(e.bytes.begin() + 3, e.bytes.end())});
         }
     }
+
     const std::vector<std::pair<uint32_t, std::string>> kMarkers = {{36 * kMidiTicks, "loopStart"},
                                                                     {60 * kMidiTicks, "loopEnd"}};
     SEQLIB_CHECK(r.ok && !r.silent);
@@ -178,9 +181,11 @@ void TestLoopLevelsAtSecondPass()
         {
             t.Cmd(kCmdPan, 0x40);
         }
+
         t.Note(12, 60, 100).Wait(12).Cmd(kCmdPan, song == 2 ? 0x42 : 0x7F).Note(12, 62, 100).Wait(12).Goto(loop);
         cart.Song({t}, voices);
     }
+
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
     ConvertSettings opt = TempSettings("loop_levels");
@@ -204,7 +209,7 @@ void TestLoopLevelsWithDroppedNote()
 {
     // Two tracks loop from tick 12 for 24 ticks, at one volume and pan throughout. Track 0 plays a note on square 1 at
     // tick 30 that lasts past the loop's end. Track 1 plays square 1 as its loop starts. The channel is free in the
-    // first pass. In the later ones, track 0's note holds it. The driver then drops track 1's note.
+    // first pass. In the later ones, track 0's note plays on it. The driver then drops track 1's note.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{1, Cart::Voice(1, 2, 60, {0, 0, 15, 0})}});
     Track first;
@@ -231,6 +236,7 @@ void TestLoopLevelsWithDroppedNote()
     {
         ons.push_back(uint32_t(e.tick));
     }
+
     SEQLIB_CHECK((ons == std::vector<uint32_t>{12 * kMidiTicks}));
 }
 
@@ -266,7 +272,7 @@ void TestLoopLengths()
 
 void TestLoopAfterTie()
 {
-    // In both songs, one track loops 24 ticks from the start, and another, without a loop, holds a tie and ends at tick
+    // In both songs, one track loops 24 ticks from the start, and another, without a loop, plays a tie and ends at tick
     // 96. In the first song only the track's end releases the tie, so the loop starts there. In the second, an end of
     // tie releases it at tick 30, where the loop starts.
     Cart cart;
@@ -294,10 +300,11 @@ void TestLoopAfterTie()
 }
 
 // A track's volume is 100 when its loop starts the first time, and the loop sets 60 for its second note. In song 0 the
-// loop sets 100 again as it starts, and in song 1 just before it jumps back, in the tick of the loop's end, which the
-// next pass starts on. Either way the marked pass gives the levels of volume 100 again at its start: CC10 64 and CC11
-// 112. A player that jumps back there from volume 60 then plays at volume 100. In song 2 the loop doesn't set it again.
-// The game then plays the later passes' first note at 60, and so does such a player. Nothing is written again.
+// loop sets 100 again as it starts. In song 1 it sets 100 just before it jumps back, in the tick of the loop's end,
+// which the next pass starts on. Either way the marked pass gives the levels of volume 100 again at its start: CC10 64
+// and CC11 112. A player that jumps back there from volume 60 then plays at volume 100. In song 2 the loop doesn't set
+// it again. The game then plays the later passes' first note at 60, and so does such a player. Nothing is written
+// again.
 void TestLoopSettingsAgain()
 {
     Cart cart;
@@ -311,6 +318,7 @@ void TestLoopSettingsAgain()
         {
             t.Cmd(kCmdVol, 100);
         }
+
         t.Note(12, 60, 100).Wait(12).Cmd(kCmdVol, 60).Note(12, 62, 100).Wait(12);
         if (song == 1)
         {
@@ -318,6 +326,7 @@ void TestLoopSettingsAgain()
         }
         cart.Song({t.Goto(loop)}, voices);
     }
+
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
 
@@ -354,9 +363,11 @@ void TestSettingsAgain()
         {
             writer.SetSettingsAgain();
         }
+
         writer.SetLevels(at, 0.5, 0.25);
         writer.SetBend(at, 1);
     }
+
     const MidiEvents m = seqlib::midi::Read(file.Encode());
 
     std::vector<std::pair<uint64_t, int>> settings;
@@ -367,6 +378,7 @@ void TestSettingsAgain()
             settings.emplace_back(tick, bytes[1]);
         }
     }
+
     std::vector<uint64_t> bends;
     for (const auto& e : m.Find(0xE0))
     {
@@ -382,8 +394,8 @@ void TestSettingsAgain()
 void TestHourLimit()
 {
     // A song asked to play its loop of 3000 ticks, 50 s, a hundred times stops where the model gives up, after 216000
-    // frames. The loop starts 12 ticks in, so the limit falls in the middle of a note: the song's length, its MIDI file
-    // and that note all end there.
+    // frames. The loop starts 12 ticks in. The limit therefore falls in the middle of a note: the song's length, its
+    // MIDI file and that note all end there.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
     Track t;
@@ -414,6 +426,7 @@ void TestHourLimit()
             last = std::max(last, e.tick);
         }
     }
+
     const auto offs = m.Find(0x80);
     SEQLIB_CHECK(last <= 216001 * kMidiTicks);
     SEQLIB_CHECK(!offs.empty() && offs.back().tick >= 215999 * kMidiTicks);
@@ -424,7 +437,7 @@ void TestSilentEndAfterLastSound()
     // A note of 24 ticks at a tick a frame, a wait, a volume change and the end. The voice's release of 0 stops the
     // note's sound a frame after its release. After a wait of 600 ticks, the change comes 9.6 s after the sound has
     // died away, and the song ends at the change. After a wait of 720 ticks, it comes 11.6 s after, more than
-    // kMaxSilentEndSeconds. The song then ends a tick after the sound, and its MIDI file holds nothing later.
+    // kMaxSilentEndSeconds. The song then ends a tick after the sound, and its MIDI file contains nothing later.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
     for (int wait : {600, 720})
@@ -439,6 +452,7 @@ void TestSilentEndAfterLastSound()
                        .Fine()},
                   voices);
     }
+
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
 
@@ -456,6 +470,7 @@ void TestSilentEndAfterLastSound()
             last = std::max(last, e.tick);
         }
     }
+
     SEQLIB_CHECK(m.Find(0x90).size() == 1 && last < 30 * kMidiTicks);
 }
 

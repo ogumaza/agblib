@@ -21,11 +21,11 @@ namespace agblib::logikstate
 // The groups of the drivers' code that play GBAMOD30 modules.
 enum class Mod30Group
 {
-    kA,      // GBAModPlay 2002 with 10 channel records of 0x80 bytes, as in Super Puzzle Fighter II
-    kB,      // GBAModPlay 2002 with 8 records of 0x90 bytes, as in Stuntman
-    kC,      // GBAModPlay 2003 with layout C, as in Medal of Honor: Infiltrator
-    kCPrime, // group C's player with LS_Play's start-up and mixers, as in Asterix & Obelix XXL
-    kD,      // GBAModPlay 2003 with layout B and LS_Play's player, as in Knights' Kingdom
+    kA,      // GBAModPlay 2002 with 10 channel records of 0x80 bytes as in Super Puzzle Fighter II
+    kB,      // GBAModPlay 2002 with 8 records of 0x90 bytes as in Stuntman
+    kC,      // GBAModPlay 2003 with layout C as in Medal of Honor: Infiltrator
+    kCPrime, // group C's player with LS_Play's start-up and mixers as in Asterix & Obelix XXL
+    kD,      // GBAModPlay 2003 with layout B and LS_Play's player as in Knights' Kingdom
     kE1,     // LS_Play 2003 with headers of 12 bytes in the bank
     kE2,     // LS_Play 2003
     kE3,     // LS_Play 2003 with 8 channels
@@ -65,7 +65,7 @@ enum class Mod30LinearForm
 {
     kAmigaOnly,   // only the Amiga form runs, and it moves nothing that the linear step uses
     kOwnPeriod,   // the linear period has a field of its own
-    kNoteField,   // the note's field holds the linear period
+    kNoteField,   // the note's field contains the linear period
     kSlideOffset, // as kNoteField, and the slide to a note moves the linear slide's offset
 };
 
@@ -280,9 +280,9 @@ private:
     uint32_t PatternBlock(uint32_t order) const;
     // The play routine's start of the module, at order 0.
     void Start();
-    // Mixes a frame of samples, as the mix loop does.
+    // Mixes a frame of samples as the mix loop does.
     void MixFrame();
-    // Mixes `samples` samples of the channels from `first` to `end`, as mixer mode 0 does.
+    // Mixes `samples` samples of the channels from `first` to `end` as mixer mode 0 does.
     void MixChannels(int first, int end, uint32_t samples);
     // Runs a row and a tick where they fall due, and returns the samples up to the next of them, at most to the frame's
     // end. `done` counts the frame's samples so far.
@@ -292,7 +292,7 @@ private:
     int32_t ListChannels(int end, int32_t samples, int& listed);
     // Advances the channels of a pass of mixer mode 1.
     void AdvanceListed(int end, int32_t samples);
-    // Moves a channel `samples` samples on, as the mixer of mode 0 does.
+    // Moves a channel `samples` samples on as the mixer of mode 0 does.
     void Advance(Mod30Channel& ch, uint32_t samples);
     void Row();
     // Reads the next cell of channel `c`. Row 0 starts the streams from the order's pattern.

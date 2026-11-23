@@ -15,20 +15,20 @@
 // samples a frame in floating point. The mode keeps the console's samples, steps, levels and echo, and lifts the limits
 // of the mixer's arithmetic:
 //
-// - The samples lie on the scale of the console's 8-bit bytes. Nothing wraps, saturates or rounds a sum. A voice's
+// - The samples are on the scale of the console's 8-bit bytes. Nothing wraps, saturates or rounds a sum. A voice's
 //   level on a FIFO follows the build's scale without its rounding: the product over 128 or over 16, or in a build
 //   with a table of levels, the table's span at the level over 255.
 // - A sample's position moves on at the console's step for the time that the frame takes: the step times the frame's
 //   cycles over the cycles of a console's point. The console's points fall in whole blocks, and a frame's blocks can
-//   differ. A voice's samples lie at even shares of the frame's move. The band-limited interpolator
+//   differ. A voice's samples are at even shares of the frame's move. The band-limited interpolator
 //   (ntdlib::wave::SincKernel) takes the sample's points around each position. A looped sample's points repeat its
 //   loop. Before a sample's start and past its end, the points are 0. A coded sample's points are those that the
 //   console's decoder gives on a first pass, and a pass of its loop.
 // - A voice's level on each FIFO ramps across the frame from its value in the last frame: sample i of n takes
 //   from + i * ((to - from) / n). A note that starts takes its levels at once.
 // - An echo bus keeps its feedback and its delay in the console's blocks, in the time that those blocks take. Its line
-//   holds floating-point samples. A bus's input is the console's choice for each voice. A value in a line below 2^-16
-//   becomes 0.
+//   contains floating-point samples. A bus's input is the console's choice for each voice. A value in a line below
+//   2^-16 becomes 0.
 // - A note's samples start in the frame that starts the note, and end with its voice.
 //
 // Each operation takes its operands in a fixed order, and every platform gives the same samples.
@@ -50,7 +50,7 @@
 namespace agblib::konami
 {
 
-// What the driver keeps in a DirectSound voice's record. A build's records hold only some of the fields.
+// What the driver keeps in a DirectSound voice's record. A build's records contain only some of the fields.
 struct OutputVoice
 {
     uint32_t position = 0;   // the address of the sample's next byte
@@ -84,9 +84,9 @@ struct OutputEcho
     uint32_t routing = 0;      // the routing that the mixer's mask takes from the bus
     uint32_t routed = 0;       // the voices that F9 routes to the bus: bits (11 - voice) * 2, and bit 30 if any
     uint8_t delay_blocks = 0;  // the delay in blocks
-    uint8_t delay = 0;         // the delay's present value
+    uint8_t delay = 0;         // the delay's current value
     uint8_t position = 0;      // the block that the mixer reads
-    uint8_t feedback = 0;      // the feedback's present value
+    uint8_t feedback = 0;      // the feedback's current value
     uint8_t feedback_goal = 0; // the feedback's goal
     uint8_t delay_goal = 0;    // the delay's goal
     int8_t countdown = 0;      // the frames until a silent bus clears its line
@@ -119,7 +119,7 @@ public:
     void Play(int song, const Request& request = Request());
 
     // Runs a frame of the sequencer and the output stage. Returns false if the output stage didn't run: the song has
-    // stopped. SoundWrites() holds the frame's stores.
+    // stopped. SoundWrites() contains the frame's stores.
     bool Frame();
 
     // The last frame's stores to the sound registers before the FIFOs, in order: the PSG's registers, the sound control
@@ -142,7 +142,7 @@ public:
     const std::vector<FifoTimerChange>& TimerChanges() const;
 
     // The points of its time that a FIFO's new byte waits behind, at the frame's stores: what the console's mixer and
-    // DMA hold back. The stores of a frame reach the next block that an interrupt mixes. That block joins the FIFO a
+    // DMA holds back. The stores of a frame reach the next block that an interrupt mixes. That block joins the FIFO a
     // block later, behind 16 bytes. A ring mixer's bytes play once the DMA comes round the ring. In the revision
     // without a mixer, the FIFOs start from the note's stores.
     uint32_t FifoLead() const;

@@ -13,6 +13,7 @@
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/sequence_export/agb/performance_steps.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/sequence_export/ubimilan/soundfont.h"
 #include "agblib/ubimilan/driver.h"
@@ -22,7 +23,6 @@
 namespace agblib::sequence_export::ubimilan
 {
 
-using agblib::agb::kFrameRate;
 using agblib::agb::Rom;
 using agblib::ubimilan::DriverInfo;
 using agblib::ubimilan::kKitChannel;
@@ -69,23 +69,7 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
 
     const ConvertedSong converted = ConvertedNotes(rom, info, song, settings);
     perf.warnings = converted.warnings;
-    perf.truncated = converted.truncated;
-    perf.end_tick = converted.end_frame;
-    perf.seconds = double(converted.end_frame) / kFrameRate;
-    perf.midi_end_tick = converted.end_tick;
-    if (converted.loops)
-    {
-        perf.loop = seqlib::midi::Performance::Loop{converted.loop_start, converted.loop_end};
-        perf.loops = settings.loops;
-    }
-
-    perf.timebase = uint32_t(std::max(std::lround(converted.quarter_frames), 1L));
-    if (converted.quarter_frames <= 0)
-    {
-        perf.timebase = 24;
-    }
-
-    perf.tempo.push_back({0, 60 * kFrameRate / perf.timebase});
+    agb::SetFrameTimes(perf, converted, settings.loops);
     for (size_t channel = 0; channel < perf.tracks.size(); channel++)
     {
         perf.track_names[channel] = TrackNameOf(int(channel));
@@ -134,6 +118,7 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
             command.offset = n.command - converted.reads[n.read].base;
             command.stretch = n.read;
         }
+
         const uint32_t id = uint32_t(perf.note_commands.size()) + 1;
         perf.note_commands.push_back(command);
         perf.midi_places.push_back({n.on_tick, n.off_tick});

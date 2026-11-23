@@ -60,6 +60,7 @@ void DumpTrack(const Rom& rom, uint32_t at, uint32_t end, std::string& text)
         {
             status = rom.U8(at++);
         }
+
         std::snprintf(line, sizeof line, "  %8llu %08X %02X", static_cast<unsigned long long>(tick), unsigned(at),
                       unsigned(status));
         text += line;
@@ -109,7 +110,7 @@ uint32_t ReadVariable(const Rom& rom, uint32_t& at)
 
 bool ReadSongFile(const Rom& rom, uint32_t address, SongFile& file, std::string& error)
 {
-    // The start routine skips "MThd", reads the header's length, then the format, the track count and the division.
+    // The start routine skips "MThd", reads the header's length, then the track count and division (not the format).
     if (!rom.Contains(address, 14) || BigEndian32(rom, address) != 0x4D546864u)
     {
         error = "no MIDI file at " + Hex(address);
@@ -163,6 +164,7 @@ bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::strin
         {
             error = "song " + std::to_string(song) + " has no record";
         }
+
         return false;
     }
 

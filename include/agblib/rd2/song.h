@@ -13,7 +13,7 @@
 namespace agblib::rd2
 {
 
-// A command of a track, as the driver reads it.
+// A command of a track as the driver reads it.
 struct Command
 {
     uint8_t op = 0;          // the command's first byte
@@ -23,7 +23,7 @@ struct Command
     bool note = false;       // 00-BF
     bool wait = false;       // C0 and C1
     bool end = false;        // FF
-    uint32_t target = 0;     // F0's, F4's and F8's address, as an offset from the sequence's start
+    uint32_t target = 0;     // F0's, F4's and F8's address as an offset from the sequence's start
     uint8_t track = 0;       // the player's track that F8 starts
     bool has_length = false; // a note gives a length and velocity, or C1 a wait, and the track keeps them
     std::string text;
@@ -34,8 +34,8 @@ struct Command
 Command DecodeCommand(const Rom& rom, const DriverInfo& info, uint32_t address, uint16_t length, uint8_t velocity,
                       uint16_t wait);
 
-// Writes a text listing of every command of each track of a sequence, as the driver plays them. Returns false and sets
-// `error` on failure. A sound effect's listing holds its track and the tracks that its F8s start.
+// Writes a text listing of every command of each track of a sequence as the driver plays them. Returns false and sets
+// `error` on failure. A sound effect's listing contains its track and the tracks that its F8s start.
 bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::string& path, std::string& error);
 
 } // namespace agblib::rd2

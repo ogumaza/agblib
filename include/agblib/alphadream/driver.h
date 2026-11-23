@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-// Detection of AlphaDream's sound driver, which Mario & Luigi: Superstar Saga plays its music with, and the readers of
-// its songs, instruments and samples.
+// Detection of AlphaDream's sound driver and the readers of its songs, instruments and samples. Mario & Luigi:
+// Superstar Saga plays its music with the driver.
 
 #pragma once
 
@@ -27,7 +27,7 @@ constexpr int kDefaultDivisor = 0x4B;
 // The key that a sample plays at its rate, and that a fixed-pitch sample always plays at.
 constexpr int kRootKey = 60;
 
-// The versions of the driver, by the games that hold them.
+// The versions of the driver, by the games that contain them.
 enum class Version
 {
     kSuperstarSaga, // A88E
@@ -42,7 +42,7 @@ struct DriverInfo
     uint32_t start_routine = 0;    // starts song r1 on player r0
     uint32_t song_table = 0;       // a pointer a song
     int song_count = 0;            // the entries before the table's first 0 or the table of sound effects
-    uint32_t effect_table = 0;     // the table of sound effects, which follows the song table, or 0 if not found
+    uint32_t effect_table = 0;     // the table of sound effects after the song table, or 0 if not found
     uint32_t instrument_table = 0; // a halfword a instrument: the offset of its regions from the table
     int instrument_count = 0;
     uint32_t sample_table = 0; // a word a sample: the offset of its header from the table
@@ -74,12 +74,12 @@ struct Region
 // Returns the regions of instrument `instrument`, in the driver's order.
 std::vector<Region> Regions(const Rom& rom, const DriverInfo& info, int instrument);
 
-// Finds the first region of instrument `instrument` whose range holds `key`, as the routine at 0x0819A8EC does.
+// Finds the first region of instrument `instrument` whose range contains `key` as the routine at 0x0819A8EC does.
 // Returns false if there's none.
 bool FindRegion(const Rom& rom, const DriverInfo& info, int instrument, int key, Region& out);
 
-// A sample's header: 4 bytes whose last one holds the loop flag (0x40), the rate in 1024ths of a hertz at key 60, the
-// loop's start and the end in points, then the points, unsigned 8-bit.
+// A sample's header: 4 bytes whose last one contains the loop flag (0x40), the rate in 1024ths of a hertz at key 60,
+// the loop's start and the end in points, then the points, unsigned 8-bit.
 struct SampleHeader
 {
     uint32_t address = 0;
@@ -88,7 +88,7 @@ struct SampleHeader
     uint32_t loop_start = 0;
     uint32_t end = 0;
     uint32_t data = 0;
-    bool empty = false; // the table's entry is 0, so the header is the table itself
+    bool empty = false; // the table's entry is 0: the header is the table itself
 };
 
 // Reads sample `number`, without its bit 15. Returns false if it's outside the table or its points aren't in the ROM.

@@ -97,8 +97,8 @@ void TestDungeonDiceSequencer()
         m.Put16(kPeriods + 2 * p, uint16_t(0x4000 - p));
     }
 
-    // Song 1. Square 1: a call of 1 command from the fragment after the end, with duty byte 10 first, which is also the
-    // wait after the call, note (vol 9, note 0x20), then 260 duty bytes of 07, each followed by a wait of 1, and a
+    // Song 1. Square 1: a call of 1 command from the fragment after the end, with duty byte 10 first (also the wait
+    // after the call), note (vol 9, note 0x20), then 260 duty bytes of 07, each followed by a wait of 1, and a
     // stop. The fragment: wait 3, note (vol 5, note 0x24), wait 6.
     constexpr uint32_t kBase1 = kRomBase + 0x280;
     std::vector<uint8_t> calls = {0x00, 0xF5, 0x00, 0x00, 0x01, 0x10, 0xE9, 0x20, 0x01};
@@ -106,6 +106,7 @@ void TestDungeonDiceSequencer()
     {
         calls.insert(calls.end(), {0x07, 0x01});
     }
+
     calls.push_back(0xFF);
     calls[2] = uint8_t(calls.size());
     calls[3] = uint8_t(calls.size() >> 8);
@@ -161,7 +162,7 @@ void TestDungeonDiceSequencer()
     SEQLIB_CHECK(frames[19][0].vol == 0 && frames[19][0].trig == 1 && frames[19][0].b2 == 0);
 
     // Voice 0's note plays sample 5, and its note on voice 1 goes into voice 1's record. F9 fades voice 1 out from the
-    // next frame on, since voice 1's track has had its turn.
+    // next frame on: voice 1's track has had its turn.
     SEQLIB_CHECK(frames[0][4].b2 == 5 && frames[0][4].pitch == 0 && frames[0][4].flags == 1);
     SEQLIB_CHECK(frames[0][5].b2 == 7 && frames[0][5].vol == 6 && frames[0][5].trig == 1);
     SEQLIB_CHECK(frames[4][5].vol == 6 && frames[5][5].vol == 4 && frames[7][5].vol == 1);
@@ -177,9 +178,9 @@ void TestDungeonDiceSequencer()
     SEQLIB_CHECK(frames[4][1].b2 == 0x80 && frames[4][1].trig == 1);
     SEQLIB_CHECK(frames[24][1].b2 == 0xC0 && frames[24][1].vol == 7);
 
-    // F5's duty byte starts the call, whose note has it, and the note after the call comes 16 frames after the call
-    // returns. The driver keeps the call's return position, so the 256th command after the call takes the track back
-    // there, and the track never reaches its stop.
+    // F5's duty byte starts the call, and the call's note has it. The note after the call comes 16 frames after the
+    // call returns. The driver keeps the call's return position. The 256th command after the call therefore takes the
+    // track back there, and the track never reaches its stop.
     SEQLIB_CHECK(starts == (std::vector<std::pair<int, int>>{{3, 0x10}, {19, 0x10}, {290, 0x07}}));
     SEQLIB_CHECK_EQ(stopped_at, -1);
 }
@@ -231,6 +232,7 @@ Image DungeonDiceImage()
     {
         m.Put8(kDdmSamples + 0x100 + i, uint8_t(i * 4));
     }
+
     m.Put8(kDdmMap + 5, 3);
     m.Put16(kDdmPeriods + 2 * (24 * 16 + 1), 1677);
     m.Put16(kDdmPeriods + 2 * (28 * 16 + 1), 1331);
@@ -242,10 +244,12 @@ Image DungeonDiceImage()
     {
         m.Put16(kDdmFreq + 2 * p, uint16_t(0x8000 | std::min<uint32_t>(44 + p, 2047)));
     }
+
     for (uint32_t i = 0; i < 12; i++)
     {
         m.Put16(kDdmFreq + 2 * (1152 + i), uint16_t(0x8010 + 0x10 * i));
     }
+
     for (uint32_t i = 0; i < 288; i++)
     {
         m.Put16(kDdmFreq + 2 * (1164 + i), uint16_t(0x8000 | std::min<uint32_t>(44 + 4 * i, 2047)));
@@ -257,6 +261,7 @@ Image DungeonDiceImage()
         m.Put8(kDdmWaves + i, i < 8 ? 0xFF : 0x00);
         m.Put8(kDdmWaves + 16 + i, uint8_t(i * 0x11));
     }
+
     constexpr uint16_t kCodes[16] = {0x0000, 0x6000, 0x6000, 0x4000, 0x4000, 0x4000, 0x8000, 0x8000,
                                      0x8000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000};
     for (uint32_t v = 0; v < 16; v++)
@@ -287,6 +292,7 @@ void TestDungeonDiceLoopDelay()
         {
             m.Put16(kPeriods + 2 * p, uint16_t(0x4000 - p));
         }
+
         const Rom rom = m.ToRom();
         DriverInfo info = SongsAt(kTable);
         info.revision = Revision::kDungeonDiceMonsters;
@@ -386,7 +392,8 @@ void TestDungeonDiceConversion()
 
     const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
 
-    // Each track's note-ons (frame, key, program), bends (frame, value) and pans after the first, which centres it.
+    // Each track's note-ons (frame, key, program), bends (frame, value) and pans after the first. The first centres
+    // the track.
     std::map<std::string, std::vector<std::array<int, 3>>> notes;
     std::map<std::string, std::vector<std::pair<uint32_t, int>>> bends;
     std::map<std::string, int> program;
@@ -399,14 +406,17 @@ void TestDungeonDiceConversion()
         {
             program[e.track] = e.data1;
         }
+
         if (kind == 0x90 && e.data2 > 0)
         {
             notes[e.track].push_back({int(e.frame), e.data1, program[e.track]});
         }
+
         if (kind == 0xE0 && e.frame > 0)
         {
             bends[e.track].emplace_back(e.frame, e.data1 | (e.data2 << 7));
         }
+
         if (kind == 0xB0 && e.data1 == cc::kPan && !centred.insert(e.track).second)
         {
             pans[e.track].push_back(e.data2);

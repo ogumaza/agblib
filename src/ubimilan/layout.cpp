@@ -13,6 +13,7 @@
 
 #include "xsflib/bytes.h"
 
+#include "agblib/agb/cut_steps.h"
 #include "agblib/ubimilan/commands.h"
 #include "agblib/ubimilan/song.h"
 
@@ -78,6 +79,7 @@ uint32_t LastRead(const Rom& rom, const DriverInfo& info, const std::map<uint32_
     {
         last = std::max(last, address + size);
     };
+
     mark(info.kit_table, kKitTableBytes);
     mark(info.kit, kKitBytes);
     for (const auto& [address, sequence] : sequences)
@@ -141,28 +143,18 @@ Layout Cut(const Rom& rom, const DriverInfo& info)
     {
         return address + size <= from || address >= to;
     };
-    CutSequence* reader = nullptr;
-    uint32_t read_to = 0;
-    for (auto& [address, sequence] : sequences)
+
+    const auto size_of = [](const CutSequence& sequence)
     {
-        if (!clear_of(address, sequence.size, info.resource_table, table_end) ||
-            !clear_of(address, sequence.size, info.bank, info.bank + kBankHeader))
-        {
-            sequence.usable = false;
-        }
+        return sequence.size;
+    };
 
-        if (reader && address < read_to)
-        {
-            sequence.usable = false;
-            reader->usable = false;
-        }
-
-        if (!reader || address + sequence.size > read_to)
-        {
-            reader = &sequence;
-            read_to = address + sequence.size;
-        }
-    }
+    const auto stays = [&](uint32_t address, uint32_t bytes)
+    {
+        return !clear_of(address, bytes, info.resource_table, table_end) ||
+               !clear_of(address, bytes, info.bank, info.bank + kBankHeader);
+    };
+    agb::MarkReadTwice(sequences, size_of, stays);
 
     // The runs between the sequences.
     uint32_t at = kRomBase;

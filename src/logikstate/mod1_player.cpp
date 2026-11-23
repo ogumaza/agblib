@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "xsflib/bytes.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/logikstate/driver.h"
 #include "agblib/logikstate/player.h"
@@ -20,8 +22,8 @@
 namespace agblib::logikstate
 {
 
-using parts::Put;
 using parts::RecordBytes;
+using parts::TakeSlideTarget;
 using parts::VibratoWave;
 
 namespace
@@ -147,6 +149,7 @@ void Mod1Player::Mix()
                 on_step_(true);
             }
         }
+
         if (tick_left_ == 0)
         {
             if (row_left_ != row_samples_)
@@ -157,6 +160,7 @@ void Mod1Player::Mix()
                     on_step_(false);
                 }
             }
+
             tick_left_ = tick_samples_;
         }
 
@@ -168,6 +172,7 @@ void Mod1Player::Mix()
                 Advance(channels_[size_t(c)], run);
             }
         }
+
         done += run;
         left -= int32_t(run);
         row_left_ -= run;
@@ -229,17 +234,17 @@ bool Mod1Player::Playing() const
 std::vector<uint8_t> Mod1Player::Globals() const
 {
     std::vector<uint8_t> out;
-    Put(out, order_, 2);
-    Put(out, place_, 2);
-    Put(out, row_samples_, 4);
-    Put(out, row_left_, 4);
-    Put(out, tick_samples_, 4);
-    Put(out, tick_left_, 4);
-    Put(out, tick_, 2);
-    Put(out, arpeggio_tick_, 2);
-    Put(out, broke_, 1);
-    Put(out, first_order_, 2);
-    Put(out, last_order_, 2);
+    xsflib::AppendLe16(out, uint16_t(order_));
+    xsflib::AppendLe16(out, place_);
+    xsflib::AppendLe32(out, row_samples_);
+    xsflib::AppendLe32(out, row_left_);
+    xsflib::AppendLe32(out, tick_samples_);
+    xsflib::AppendLe32(out, uint32_t(tick_left_));
+    xsflib::AppendLe16(out, tick_);
+    xsflib::AppendLe16(out, arpeggio_tick_);
+    out.push_back(uint8_t(broke_));
+    xsflib::AppendLe16(out, first_order_);
+    xsflib::AppendLe16(out, last_order_);
 
     return out;
 }
@@ -294,6 +299,7 @@ void Mod1Player::Row()
         {
             order_ = first_order_;
         }
+
         place_ = 0;
     }
 }
@@ -306,16 +312,7 @@ void Mod1Player::ReadRowCell(Channel& ch, uint32_t address)
     // reader tests the effect's low 4 bits alone.
     if ((cell.effect & 0xF) == kSlideToNote)
     {
-        if (cell.pitch != kNoPitch)
-        {
-            ch.slide_target = int16_t(cell.pitch);
-        }
-        cell.pitch = kNoPitch;
-        if (cell.sample != 0)
-        {
-            ch.volume = module_.samples[cell.sample - 1u].volume;
-        }
-        cell.sample = 0;
+        TakeSlideTarget(ch, cell, module_);
     }
 
     ch.effect = -1;
@@ -329,6 +326,7 @@ void Mod1Player::ReadRowCell(Channel& ch, uint32_t address)
             ch.sample = uint16_t(cell.sample - 1);
             ch.volume = module_.samples[ch.sample].volume;
         }
+
         const Sample& header = module_.samples[ch.sample];
         ch.length = header.length;
         ch.loop_start = header.loop_start;
@@ -393,6 +391,7 @@ void Mod1Player::RowEffect(Channel& ch, uint16_t effect, uint8_t operand)
             {
                 ch.slide_speed = speed;
             }
+
             if (ch.slide_target == int32_t(ch.pitch))
             {
                 ch.slide_step = 0;
@@ -498,6 +497,7 @@ void Mod1Player::Tick()
             {
                 ch.vibrato_position = 0;
             }
+
             ch.vibrato = int16_t((VibratoWave(ch.vibrato_position) * int32_t(ch.vibrato_depth)) >> 8);
             ch.vibrato_position = uint16_t((ch.vibrato_position + ch.vibrato_speed) & 0x3F);
             break;

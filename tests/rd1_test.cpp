@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// Unit tests for Nintendo R&D1's MIDI-file driver. They build small synthetic cartridges in memory, so no game ROM is
+// Unit tests for Nintendo R&D1's MIDI-file driver. They build small synthetic cartridges in memory. No game ROM is
 // needed.
 
 #include <algorithm>
@@ -172,6 +172,7 @@ private:
         {
             bytes_.push_back(uint8_t(0x80 | (delta >> 7)));
         }
+
         bytes_.push_back(uint8_t(delta & 0x7F));
     }
 
@@ -551,11 +552,13 @@ void TestConversion()
             const int kStep = 120 * 256 * kDivision / 3600;
             SEQLIB_CHECK(std::abs(micros - FrameSeconds(double(kFrames) / kStep) * 1e6) < 1);
         }
+
         if (bytes.size() > 1 && bytes[1] == 0x06)
         {
             markers.push_back(tick);
         }
     }
+
     SEQLIB_CHECK(tempo_found);
     SEQLIB_CHECK(markers == std::vector<uint64_t>({24 * 20, 72 * 20}));
 
@@ -573,7 +576,7 @@ void TestConversion()
     const Sf2Records sf = ReadSf2(sum.sf2_path);
     SEQLIB_CHECK_EQ(sf.Count("phdr", 38), 2);
 
-    // The mixer echoes every sample voice, so the track sends the echo's first setting to the reverb.
+    // The mixer echoes every sample voice. The track therefore sends the echo's first setting to the reverb.
     int sends = 0;
     for (const auto& [tick, bytes] : midi.Find(0xB0))
     {
@@ -583,6 +586,7 @@ void TestConversion()
             sends++;
         }
     }
+
     SEQLIB_CHECK(sends > 0);
 }
 
@@ -591,12 +595,12 @@ void TestConversion()
 // plays at the channel's level 98 and velocity 127, with an envelope at its full level and a release that ends the note
 // at once. The voice's level v is 98 x 127 x 127 >> 14 = 96, and the PSG's volume is the smaller of 15 and (96 >> 3) +
 // (96 >> 4). The zone plays 3v/16 = 18.09 at velocity 127. The note's level is therefore 127 x 15 / 18.09 = 105.3, and
-// its MIDI velocity 127 x sqrt(105.3 / 127) = 116. The channel's CC10 of 40 enables the PSG's left side alone, so the
-// track pans hard left. Channel 3 plays key 69 on square 1 with a rising sweep. The driver writes 2048 - 131072 / 440 =
-// 1751. The sweep's first step makes that 1751 + 1751 / 16 = 1860, 7.92 semitones up. Its second makes 1976, and the
-// hardware's check of the step after, 2099, passes the top and turns the channel off. The track's bend range is 8, so
-// the step bends to 16299. The note ends at the second step, within a frame of its start and long before the end that
-// its file gives. The bend goes back to the middle there.
+// its MIDI velocity 127 x sqrt(105.3 / 127) = 116. The channel's CC10 of 40 enables the PSG's left side alone, and the
+// track therefore pans hard left. Channel 3 plays key 69 on square 1 with a rising sweep. The driver writes 2048 -
+// 131072 / 440 = 1751. The sweep's first step makes that 1751 + 1751 / 16 = 1860, 7.92 semitones up. Its second makes
+// 1976, and the hardware's check of the step after, 2099, passes the top and turns the channel off. The track's bend
+// range is 8, and the step therefore bends to 16299. The note ends at the second step, within a frame of its start and
+// long before the end that its file gives. The bend goes back to the middle there.
 void TestBend()
 {
     const Cart cart;
@@ -647,6 +651,7 @@ void TestBend()
         {
             sweep_bends.push_back(value);
         }
+
         if (tick == swept_off[0].tick && value == 8192)
         {
             back_at = tick;
@@ -673,6 +678,7 @@ void TestBend()
             sends++;
         }
     }
+
     SEQLIB_CHECK(sends > 0);
 }
 
@@ -846,6 +852,7 @@ void TestPerformance()
     {
         SEQLIB_CHECK(t == 1 || perf.tracks[t].empty());
     }
+
     SEQLIB_CHECK(perf.track_names[1] == "Channel 1");
 
     SEQLIB_CHECK(perf.note_commands == std::vector<ntdlib::sequence_export::NoteCommand>({{63, 0}, {71, 0}, {71, 1}}));

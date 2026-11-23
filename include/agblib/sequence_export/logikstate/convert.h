@@ -9,6 +9,7 @@
 
 #include "agblib/agb/rom.h"
 #include "agblib/logikstate/driver.h"
+#include "agblib/sequence_export/agb/module_conversion.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/sequence_export/logikstate/soundfont.h"
 
@@ -31,12 +32,7 @@ SongReport ConvertSong(const Rom& rom, const DriverInfo& info, int song, const C
                        InstrumentSet* shared);
 
 // A song's files in memory, and the report of their conversion.
-struct SongFiles
-{
-    SongReport report;
-    std::vector<uint8_t> midi;
-    std::vector<uint8_t> sf2;
-};
+using SongFiles = agblib::sequence_export::agb::ModuleSongFiles;
 
 // Converts one song as ConvertSong() does with a SoundFont of its own, and returns the files' bytes in place of writing
 // them. The report names no paths, and `settings.out_dir` and `settings.base_name` don't matter. The files are whole

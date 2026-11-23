@@ -18,6 +18,8 @@
 #include "agblib/agb/apu.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/output_peaks.h"
+#include "agblib/agb/player_steps.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/alphadream/commands.h"
 #include "enhanced_mix.h"
 
@@ -25,9 +27,6 @@ namespace agblib::alphadream
 {
 namespace
 {
-
-constexpr uint32_t kRegFifoVolumes = 0x04000082; // SOUNDCNT_H's low byte
-constexpr uint32_t kRegSoundCntHigh = 0x04000083;
 
 // A channel's record: +0 its status, +1 its envelope's level, +2 its sample, +4 its place in 1024ths of a point, +8
 // its right volume, +9 its left, +0xA its fine tune and +0xB its key.
@@ -133,7 +132,7 @@ void ArchivePlayer::Arm(const ArchivePlayerOptions& options)
     }
 
     apu.SetSequencer(options.sequencer_step, options.sequencer_cycles);
-    apu.SetTimer(apu.Register(kRegSoundCntHigh) >> 2 & 1, period_, period_);
+    apu.SetTimer(apu.Register(agb::kRegSoundCntHHigh) >> 2 & 1, period_, period_);
 
     // The enhanced mode's first mix plays where the console's does: after the FIFOs' bytes and the first half.
     enhanced_.reset();
@@ -198,7 +197,7 @@ void ArchivePlayer::StartNote(int track, int instrument, uint8_t key, uint8_t ve
     Begin(options);
 
     // The song: the header with the one track, then the tempo, the instrument, the volume and the pan. A loop of tied
-    // notes with a wait of a tick holds the note.
+    // notes with a wait of a tick contains the note.
     const uint8_t volume = uint8_t((255 * velocity + 63) / 127);
     const bool note_volume = info_.version != Version::kSuperstarSaga;
     const uint16_t mask = uint16_t(1u << track);
@@ -215,6 +214,7 @@ void ArchivePlayer::StartNote(int track, int instrument, uint8_t key, uint8_t ve
     {
         song.push_back(volume);
     }
+
     song.push_back(1);
 
     const uint32_t jump = uint32_t(song.size()) - kAuditionTrack;
@@ -228,6 +228,7 @@ void ArchivePlayer::StartNote(int track, int instrument, uint8_t key, uint8_t ve
     {
         release_bytes_.push_back(volume);
     }
+
     release_bytes_.push_back(kEnd);
 
     agb::System& gba = driver_.Gba();
@@ -266,20 +267,14 @@ GameDriver& ArchivePlayer::Driver()
 
 void ArchivePlayer::RunFrame(std::vector<int16_t>& out)
 {
-    if (enhanced_)
-    {
-        throw std::logic_error("the song plays in the enhanced mode");
-    }
+    agb::CheckPlainFrame(bool(enhanced_));
 
     Frame(&out, nullptr);
 }
 
 void ArchivePlayer::RunFrame(std::vector<float>& out)
 {
-    if (started_ && !enhanced_)
-    {
-        throw std::logic_error("the song doesn't play in the enhanced mode");
-    }
+    agb::CheckEnhancedFrame(started_, bool(enhanced_));
 
     Frame(nullptr, &out);
 }
@@ -291,7 +286,7 @@ void ArchivePlayer::RunFrame()
 
 uint32_t ArchivePlayer::SilentTracks() const
 {
-    return muted_ | (soloed_ ? ~soloed_ : 0);
+    return agb::SilentTracksOf(muted_, soloed_);
 }
 
 void ArchivePlayer::ApplyPsgMutes()
@@ -365,18 +360,7 @@ void ArchivePlayer::AfterMix()
 
 void ArchivePlayer::RunHardware(uint64_t cycles, std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (out)
-    {
-        apu_.Run(cycles, *out);
-    }
-    else if (enhanced_out)
-    {
-        apu_.Run(cycles, *enhanced_out);
-    }
-    else
-    {
-        apu_.Run(cycles);
-    }
+    agb::RunApu(apu_, cycles, out, enhanced_out);
 }
 
 void ArchivePlayer::RunTransfers(uint64_t until)
@@ -400,8 +384,10 @@ void ArchivePlayer::RunTransfers(uint64_t until)
             {
                 bytes[f].push_back(int8_t(gba.Load(sources_[f] + i, 1)));
             }
+
             sources_[f] += uint32_t(kTransferBytes);
         }
+
         Queue(bytes);
         fifo_bytes_ += kTransferBytes;
     }
@@ -443,8 +429,8 @@ bool ArchivePlayer::Sounding()
         }
     }
 
-    // A FIFO's output holds the byte that the timer took last. The last byte that wasn't 0 sounds until the timer takes
-    // the byte after it.
+    // A FIFO's output contains the byte that the timer took last. The last byte that wasn't 0 sounds until the timer
+    // takes the byte after it.
     const uint64_t taken = queued_ - apu_.Queued(0);
 
     return !apu_.PsgSilent() || (last_sound_ && taken <= *last_sound_ + 1);
@@ -452,10 +438,7 @@ bool ArchivePlayer::Sounding()
 
 void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (!started_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(started_);
 
     metering_ = metered_ && (out || enhanced_out);
     const size_t first_sample = out ? out->size() : enhanced_out ? enhanced_out->size() : 0;
@@ -470,10 +453,12 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
     {
         apu_.Store(write.address, write.size, write.value);
     }
+
     if (driver_.DmaRestarted())
     {
         sources_ = {driver_.Half(0, 0), driver_.Half(1, 0)};
     }
+
     RunTransfers(start + store_cycle_);
     RunHardware(store_cycle_, out, enhanced_out);
 
@@ -483,12 +468,14 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
     {
         apu_.Store(write.address, write.size, write.value);
     }
+
     if (enhanced_)
     {
         enhanced_->Frame(mixed_channels_, enhanced_out != nullptr);
         apu_.QueueEnhanced(0, enhanced_->Out()[0]);
         apu_.QueueEnhanced(1, enhanced_->Out()[1]);
     }
+
     RunTransfers(start + agb::kFrameCycles);
     RunHardware(agb::kFrameCycles - store_cycle_, out, enhanced_out);
     frames_++;
@@ -515,8 +502,8 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
 ArchivePlayer::TrackParts ArchivePlayer::EnhancedParts() const
 {
     // A FIFO's sample counts 4 or 2 times in the output's 10 bits, and 64 times that on the scale of 16-bit samples.
-    const uint8_t volumes = apu_.Register(kRegFifoVolumes);
-    const uint8_t sides = apu_.Register(kRegSoundCntHigh);
+    const uint8_t volumes = apu_.Register(agb::kRegSoundCntH);
+    const uint8_t sides = apu_.Register(agb::kRegSoundCntHHigh);
     TrackParts parts = {};
     for (const MixChannel& channel : mixed_channels_)
     {
@@ -535,6 +522,7 @@ ArchivePlayer::TrackParts ArchivePlayer::EnhancedParts() const
             {
                 part[1] = std::max(part[1], rounded);
             }
+
             if (sides >> (4 * f + 1) & 1)
             {
                 part[0] = std::max(part[0], rounded);
@@ -551,8 +539,8 @@ ArchivePlayer::TrackParts ArchivePlayer::ChannelParts() const
     // envelope's level over 256. FIFO A takes the left side and FIFO B the right. The output's byte takes the mix's
     // bits from bit 8 on, and plays at 4 or 2 times in the output's 10 bits: the FIFO's volume at 100% or 50%.
     // SOUNDCNT_H's high byte puts each FIFO on its sides, the right in the low bit.
-    const uint8_t volumes = apu_.Register(kRegFifoVolumes);
-    const uint8_t sides = apu_.Register(kRegSoundCntHigh);
+    const uint8_t volumes = apu_.Register(agb::kRegSoundCntH);
+    const uint8_t sides = apu_.Register(agb::kRegSoundCntHHigh);
     TrackParts parts = {};
     for (const MixChannel& channel : mixed_channels_)
     {
@@ -587,6 +575,7 @@ ArchivePlayer::TrackParts ArchivePlayer::ChannelParts() const
             {
                 part[1] = std::max(part[1], value);
             }
+
             if (sides >> (4 * f + 1) & 1)
             {
                 part[0] = std::max(part[0], value);
@@ -618,22 +607,12 @@ bool ArchivePlayer::Busy() const
 
 void ArchivePlayer::MuteTrack(int track, bool mute)
 {
-    if (track < 0 || track >= kTracks)
-    {
-        throw std::out_of_range("a song has at most " + std::to_string(kTracks) + " tracks");
-    }
-
-    muted_ = mute ? muted_ | 1u << track : muted_ & ~(1u << track);
+    agb::SetTrackBit(muted_, track, mute, kTracks);
 }
 
 void ArchivePlayer::SoloTrack(int track, bool solo)
 {
-    if (track < 0 || track >= kTracks)
-    {
-        throw std::out_of_range("a song has at most " + std::to_string(kTracks) + " tracks");
-    }
-
-    soloed_ = solo ? soloed_ | 1u << track : soloed_ & ~(1u << track);
+    agb::SetTrackBit(soloed_, track, solo, kTracks);
 }
 
 void ArchivePlayer::MeterTracks(bool on)
@@ -649,10 +628,7 @@ void ArchivePlayer::MeterTracks(bool on)
 
 ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot* previous) const
 {
-    if (!started_)
-    {
-        throw std::logic_error("no song has started");
-    }
+    agb::CheckStarted(started_);
 
     Snapshot snapshot;
     snapshot.owner_ = this;
@@ -679,10 +655,7 @@ ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot* previous) const
 
 void ArchivePlayer::Restore(const Snapshot& snapshot)
 {
-    if (snapshot.owner_ != this)
-    {
-        throw std::invalid_argument("the snapshot is another player's");
-    }
+    agb::CheckSnapshotOwner(snapshot.owner_ == this);
 
     driver_.Gba().Restore(snapshot.system_);
     apu_ = snapshot.apu_;

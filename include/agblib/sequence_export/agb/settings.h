@@ -38,8 +38,8 @@ struct SongVersion
 // A song's length, loop points, track count and conversion result. Only InspectSong() gives the song's address.
 struct SongReport
 {
-    bool ok = false;        // converted, or skipped for playing no notes
-    bool silent = false;    // no notes on the chosen tracks, so nothing was written
+    bool ok = false;        // converted, or skipped as silent
+    bool silent = false;    // nothing written: no notes on the chosen tracks, or with MP2K none that sound
     uint32_t address = 0;   // the song's data in the ROM: its header, or a Konami song's sequence data
     double seconds = 0;     // duration including the requested number of loop passes
     double loop_start = -1; // seconds; -1 if the song doesn't loop

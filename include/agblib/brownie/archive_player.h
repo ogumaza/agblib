@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// Plays a sound of a GBA ROM with Brownie Brown's driver on ntdlib's models: the driver (brownie::Sequencer) on the
+// Plays a sound of a GBA ROM with Brownie Brown's driver on the models of the driver (brownie::Sequencer) and of the
 // GBA's sound hardware (agb::Apu), frame by frame. The driver's stores go to the PSG's registers, and its bytes to the
 // FIFOs.
 //
@@ -10,7 +10,7 @@
 // the console:
 //
 // - The Sword of Mana revision runs its mixer from the interrupts of both FIFOs' DMA, at 1,024 cycles a point. Each run
-//   makes 16 points of each FIFO behind the 32 that the FIFO holds. A frame's first block therefore lies 32 to 48
+//   makes 16 points of each FIFO behind the 32 that the FIFO contains. A frame's first block is therefore 32 to 48
 //   points from the front of the queue, and the FIFOs start with 48 points of silence. Timer 0 runs from the first note
 //   on, and stops when the driver stops it. What the FIFOs hold at that stop plays when the timer starts again.
 // - The Magical Vacation revision runs each FIFO on a timer of its own, whose period changes with the FIFO's notes. The
@@ -35,7 +35,7 @@
 //   loses them too.
 // - In the Magical Vacation revision, a muted track's FIFO takes zeros in place of the track's bytes.
 // - The Sword of Mana revision's mixer rounds the sum of its voices, and the sum wraps in 8 bits. A mute takes the
-//   voice's points out of the sum, with any wrap that they caused. A sum of two muted parts can lie a step from the
+//   voice's points out of the sum, with any wrap that they caused. A sum of two muted parts can be a step from the
 //   whole.
 
 #pragma once
@@ -59,7 +59,7 @@ namespace agblib::brownie
 // What the driver and the hardware start from, beyond the sound.
 struct ArchivePlayerOptions
 {
-    // The cycle of each frame at which the driver's routine makes its stores. It lies below agb::kFrameCycles.
+    // The cycle of each frame at which the driver's routine makes its stores. It is below agb::kFrameCycles.
     uint32_t store_cycle = agb::kFrameCycles / 6;
 
     // The frame sequencer's phase at the sound's start: see agb::Apu::SetSequencer.
@@ -71,7 +71,7 @@ struct ArchivePlayerOptions
 };
 
 // The points that the Sword of Mana revision's FIFOs start with, and the points that a frame's first block waits behind
-// on average once the mixer runs: a block of 16 lies 32 to 48 points from the front of the queue.
+// on average once the mixer runs: a block of 16 is 32 to 48 points from the front of the queue.
 inline constexpr uint32_t kFifoLeadPoints = 48;
 inline constexpr uint32_t kMeanWaitPoints = 40;
 
@@ -85,7 +85,7 @@ public:
     ArchivePlayer& operator=(const ArchivePlayer&) = delete;
 
     // Starts sound `song` from the state that the game's init leaves. Throws std::invalid_argument when the sound can't
-    // be played or an option lies out of range.
+    // be played or an option is out of range.
     void Start(int song, const ArchivePlayerOptions& options = {});
 
     // Runs one frame of the driver and of the hardware, and adds the frame's samples to `out` at Rate(), left then
@@ -148,7 +148,7 @@ public:
     }
 
     // While any track is soloed, leaves every track that isn't out of the output, in the same way as a mute. A mute
-    // still holds on a soloed track.
+    // still applies on a soloed track.
     void SoloTrack(int track, bool solo);
     bool IsTrackSoloed(int track) const
     {
@@ -173,7 +173,7 @@ public:
         return output_peaks_;
     }
 
-    // What Restore() takes to go back to a place in the sound. A snapshot holds the driver's whole state and the
+    // What Restore() takes to go back to a place in the sound. A snapshot contains the driver's whole state and the
     // hardware's FIFOs: tens of kilobytes.
     class Snapshot
     {
@@ -191,7 +191,7 @@ public:
         uint64_t mixed_cycles_ = 0;
     };
 
-    // Takes a snapshot. `previous` is there for the interface that ntdlib's archive players share: a snapshot stands
+    // Takes a snapshot. `previous` is there for the interface that the agblib archive players share: a snapshot stands
     // alone. Throws std::logic_error before a start.
     Snapshot Save(const Snapshot* previous = nullptr) const;
 

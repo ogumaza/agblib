@@ -12,6 +12,7 @@
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/warnings.h"
 #include "agblib/quintet/driver.h"
 #include "agblib/quintet/song.h"
@@ -57,6 +58,7 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, int song)
         Write(fifo.timer, 4, 0);
         Write(fifo.dma_control, 2, 0);
     }
+
     for (Channel& ch : channels_)
     {
         ResetChannel(ch);
@@ -91,6 +93,7 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, int song)
             {
                 image_[kSoundcntH] = 0x730E;
             }
+
             ch.position = data;
         }
 
@@ -215,7 +218,7 @@ void Sequencer::ResetPsg()
     image_[kNr50] = 0xFF77;
     image_[kSoundcntH] = 0x730E;
     shadow_ = image_;
-    Write(kSoundbias, 2, (soundbias_ & 0x3FFF) | uint32_t(traits_.soundbias_resolution) << 14);
+    Write(agb::kRegSoundBias, 2, (soundbias_ & 0x3FFF) | uint32_t(traits_.soundbias_resolution) << 14);
 }
 
 void Sequencer::ReadNotes(int c)
@@ -230,6 +233,7 @@ void Sequencer::ReadNotes(int c)
             AddEvent(c, Event::kEnd);
             return;
         }
+
         if (rom_.U8(ch.position) == 0xFF)
         {
             RecordRead(c, ch.position);
@@ -282,12 +286,14 @@ void Sequencer::ReadNotes(int c)
         {
             stretches_[stretch_[size_t(c)] - 1].last = last;
         }
+
         RestartEffects(ch, note);
         if (note >= 0)
         {
             const Event::Kind kind = note <= 11 ? Event::kNote : note == 12 ? Event::kPlayAgain : Event::kRest;
             AddEvent(c, kind, NoteIndex(ch, note, c >= kPcmA ? kPcmPitchEntries : kFrequencyEntries), at);
         }
+
         ticks_[size_t(c)] += ticks;
         WaitTicks(ch, ticks);
 
@@ -299,7 +305,7 @@ void Sequencer::ReadNotes(int c)
 
 bool Sequencer::FollowEnd(int c)
 {
-    // At the loop point itself, FF reads nothing more in this frame or any later one. The channel holds its note.
+    // At the loop point itself, FF reads nothing more in this frame or any later one. The channel contains its note.
     Channel& ch = channels_[size_t(c)];
     if (ch.position == ch.loop)
     {
@@ -323,6 +329,7 @@ bool Sequencer::FollowEnd(int c)
         {
             StopFifo(c - kPcmA);
         }
+
         AddEvent(c, Event::kEnd);
         return false;
     }
@@ -336,6 +343,7 @@ bool Sequencer::FollowEnd(int c)
     {
         Reseed();
     }
+
     AddEvent(c, Event::kLoop);
 
     return true;
@@ -357,6 +365,7 @@ void Sequencer::StartNote(int c, int note)
         {
             PcmNoteOn(c);
         }
+
         if (ch.slide_next)
         {
             ch.slide_time = 0;
@@ -427,6 +436,7 @@ uint16_t Sequencer::NoteTicks(Channel& ch, uint8_t first, int value, uint32_t& l
             last = ch.position + 1;
             ch.position += 2;
         }
+
         if (rom_.U8(ch.position) == dot)
         {
             last = ch.position++;
@@ -549,6 +559,7 @@ void Sequencer::RunCommand(int c, uint8_t command)
                 other.ticks = 0;
             }
         }
+
         AddEvent(c, Event::kTempo);
         break;
 
@@ -741,7 +752,7 @@ void Sequencer::RunCommand(int c, uint8_t command)
         break;
 
     case 0xE8:
-        Write(kSoundbias, 2, uint32_t(arg() << 14) | (soundbias_ & 0x3FFF));
+        Write(agb::kRegSoundBias, 2, uint32_t(arg() << 14) | (soundbias_ & 0x3FFF));
         break;
 
     case 0xE9:
@@ -835,6 +846,7 @@ void Sequencer::Audition(int channel, uint8_t instrument, int index, uint8_t vol
     {
         channels_[size_t(c)].position = c == channel ? std::max<uint32_t>(channels_[size_t(c)].position, 1) : 0;
     }
+
     audition_ = {channel, true, false, instrument, index, volume};
 }
 
@@ -856,6 +868,7 @@ void Sequencer::RunAudition(int c)
         audition_ = {};
         return;
     }
+
     if (!audition_.start)
     {
         return;
@@ -885,6 +898,7 @@ void Sequencer::RunAudition(int c)
         ch.switch_delay = 0;
         break;
     }
+
     ch.volume = audition_.volume;
     ch.transpose = 0;
     ch.transpose2 = 0;
@@ -928,6 +942,7 @@ void Sequencer::RecordRead(int c, uint32_t address)
         s.loop = stretches_[stretch - 1].loop;
         s.split = split;
     }
+
     stretches_.push_back(s);
     stretch = stretches_.size();
     jumped = false;

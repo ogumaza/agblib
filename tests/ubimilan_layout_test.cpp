@@ -12,16 +12,18 @@
 #include <variant>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/sar/layout.h"
+#include "seqlib/testing/check.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/rom.h"
 #include "agblib/testing/ubimilan_image.h"
 #include "agblib/ubimilan/commands.h"
 #include "agblib/ubimilan/driver.h"
 #include "agblib/ubimilan/layout.h"
 #include "agblib/ubimilan/output.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/sar/layout.h"
 
 namespace
 {
@@ -29,10 +31,12 @@ namespace
 namespace ubimilan = agblib::ubimilan;
 using agblib::agb::kRomBase;
 using agblib::agb::Rom;
+using agblib::testing::agb_tests::RomOf;
 using agblib::testing::ubimilan_image::kBank;
 using agblib::testing::ubimilan_image::TestImage;
 using ntdlib::commands::Command;
 using ntdlib::commands::Kind;
+using seqlib::testing::Throws;
 using ubimilan::DriverInfo;
 using ubimilan::Layout;
 
@@ -42,28 +46,6 @@ DriverInfo Detect(const Rom& rom)
     std::string error;
     XSFLIB_CHECK(ubimilan::DetectDriver(rom, {}, info, error));
     return info;
-}
-
-template <typename Function>
-bool Refuses(Function function)
-{
-    try
-    {
-        function();
-    }
-    catch (const std::invalid_argument&)
-    {
-        return true;
-    }
-
-    return false;
-}
-
-Rom RomOf(const std::vector<uint8_t>& bytes)
-{
-    Rom rom;
-    rom.Assign(std::vector<uint8_t>(bytes));
-    return rom;
 }
 
 std::vector<uint8_t> BytesOf(const Rom& rom)
@@ -211,8 +193,8 @@ void TestSequencesThatStay()
     XSFLIB_CHECK(ubimilan::Join(kept_layout) == BytesOf(kept_rom));
 
     // A sequence's bytes can read as sequences by themselves: a note's key as a kind, and a countdown's high byte as an
-    // end. Each of them stays, and so does the sequence that holds them. The second lies past the first's end, and
-    // still in the sequence that holds both.
+    // end. Each of them stays, and so does the sequence that contains them. The second is past the first's end, and
+    // still in the sequence that contains both.
     TestImage nested;
     const uint8_t kind = uint8_t(ubimilan::kSequence);
     const int holder = nested.AddSequence({
@@ -220,6 +202,7 @@ void TestSequencesThatStay()
         0x90, kind, 0x40, 0x00, 0x00, 0xE0, 0x00, 0xFC,             // the second's too
         0xFC,
     });
+
     nested.AddPiece(0, {holder});
     MoveResource(nested, nested.AddSample({1, 2, 3, 4}), nested.Resource(holder) + 4 + 3);
     MoveResource(nested, nested.AddSample({1, 2, 3, 4}), nested.Resource(holder) + 4 + 11);
@@ -258,7 +241,7 @@ void TestSequencesThatStay()
 
 void TestSequenceBeforeTheBank()
 {
-    // A sequence can end where the bank starts. The fields' places then lie in the run after it.
+    // A sequence can end where the bank starts. The fields' places are then in the run after it.
     TestImage image;
     image.AddPiece(0, {image.AddSequence({0x00, 0x00, 0xFC})});
     const int before = image.AddSample({1, 2, 3, 4});
@@ -290,7 +273,7 @@ void TestGrowth()
     const DriverInfo grown_info = Detect(grown);
 
     // The table's entry names the sequence's new place. The ROM's zeros don't end with 0xFF. The last bytes of the
-    // image are zeros. The free space therefore lies inside them.
+    // image are zeros. The free space is therefore inside them.
     const uint32_t address = ubimilan::ResourceAddress(grown, grown_info, pieces.first);
     XSFLIB_CHECK(address != ubimilan::ResourceAddress(rom, info, pieces.first));
     XSFLIB_CHECK(address == kRomBase + layout.free.start);
@@ -342,7 +325,7 @@ void TestShrinking()
 
 void TestPlaces()
 {
-    // Each sequence's 16 bytes end on a word. The two places therefore lie side by side.
+    // Each sequence's 16 bytes end on a word. The two places are therefore side by side.
     TestImage image;
     const std::vector<uint8_t> commands = {0x00, 0x00, 0xE0, 0x00, 0x00, 0xE0, 0x00, 0x00, 0xE0, 0x00, 0x00, 0xFC};
     const int a = image.AddSequence(commands);
@@ -381,8 +364,8 @@ void TestPlaces()
     XSFLIB_CHECK(ubimilan::ResourceAddress(joined, joined_info, a) == place_a);
     XSFLIB_CHECK(ubimilan::ResourceAddress(joined, joined_info, b) == free);
 
-    // The largest goes first. All three places lie side by side and hold 63 bytes: c's 34 bytes go first, a's 19 after
-    // them, and b's 19 find no room.
+    // The largest goes first. All three places are side by side and have room for 63 bytes: c's 34 bytes go first, a's
+    // 19 after them, and b's 19 find no room.
     joined = join(1, 1, 1);
     joined_info = Detect(joined);
     XSFLIB_CHECK(ubimilan::ResourceAddress(joined, joined_info, c) == place_a);
@@ -408,8 +391,8 @@ void TestPlaces()
 
 void TestFreeSpace()
 {
-    // Without a run of 0xFF or of zeros at its end, the free space lies at the ROM's end, on a multiple of 4 bytes, and
-    // the ROM grows to hold the sequence.
+    // Without a run of 0xFF or of zeros at its end, the free space is at the ROM's end, on a multiple of 4 bytes, and
+    // the ROM grows to fit the sequence.
     TwoPieces pieces;
     std::vector<uint8_t> bytes = BytesOf(pieces.image.ToRom());
     bytes.push_back(0x11);
@@ -424,8 +407,8 @@ void TestFreeSpace()
     const DriverInfo grown_info = Detect(grown);
     XSFLIB_CHECK(ubimilan::ResourceAddress(grown, grown_info, pieces.first) == kRomBase + layout.free.start);
 
-    // In a run of 0xFF, it lies 256 bytes or more into the run, on a multiple of 256 bytes, and the bytes that the ROM
-    // grows by hold 0xFF up to a sequence that lies past its end.
+    // In a run of 0xFF, it is 256 bytes or more into the run, on a multiple of 256 bytes. The bytes that the ROM grows
+    // by are 0xFF up to a sequence past its end.
     bytes = BytesOf(pieces.image.ToRom());
     const uint32_t end = uint32_t(bytes.size());
     bytes.resize(end + 0x10, 0xFF);
@@ -447,7 +430,7 @@ void TestFreeSpace()
 
 void TestFreeSpacePastWhatTheDriverReads()
 {
-    // The run at the ROM's end can hold bytes that the driver reads. The free space lies past them, by the margin.
+    // The run at the ROM's end can contain bytes that the driver reads. The free space is past them, by the margin.
     const auto base = []
     {
         TestImage image;
@@ -476,7 +459,7 @@ void TestFreeSpacePastWhatTheDriverReads()
     const DriverInfo piece_info = Detect(piece_rom);
     XSFLIB_CHECK(ubimilan::Cut(piece_rom, piece_info).free.start >= at - kRomBase + 8 + 2 * 300 + 256);
 
-    // The kit's entries and the kit table's. Where they run past the ROM's end, the free space lies past its end too.
+    // The kit's entries and the kit table's. Where they run past the ROM's end, the free space is past its end too.
     const TestImage plain = base();
     const Rom plain_rom = plain.ToRom();
     DriverInfo kit_info = Detect(plain_rom);
@@ -493,58 +476,58 @@ void TestRefusals()
     const Rom rom = pieces.image.ToRom();
     const Layout layout = ubimilan::Cut(rom, Detect(rom));
 
-    // A piece that names a sequence that the layout lacks.
+    // A piece that names a sequence that the layout doesn't have.
     Layout bad = layout;
     bad.sequences.clear();
     bad.sequences.shrink_to_fit();
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
 
     // A piece of padding.
     bad = layout;
     bad.pieces.push_back(ntdlib::sar::Padding{4});
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
 
     // A field outside a run.
     bad = layout;
     bad.fields[0].at.piece = 1;
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
     bad = layout;
     bad.fields[0].to.piece = 100;
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
 
     // A field that runs past its run's end.
     bad = layout;
     bad.fields[0].at.offset = uint32_t(std::get<std::vector<uint8_t>>(bad.pieces[0]).size()) - 2;
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
 
-    // A place in a sequence, in a GBA ROM's pieces, which have no such places.
+    // A place in a sequence, in a GBA ROM's pieces. Those pieces have no such places.
     bad = layout;
     bad.fields[0].from.sequence = true;
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
 
     // An item of a run, and an item past a sequence's first.
     bad = layout;
     bad.fields[0].to.piece = 0;
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
     bad = layout;
     bad.fields[0].to.offset = 1;
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
 
     // A ROM past 32 MiB.
     bad = layout;
     bad.pieces.push_back(std::vector<uint8_t>(ubimilan::kLargestRom, 0));
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
 
     // Sequences that don't fit in 32 MiB.
     bad = layout;
     bad.free.start = ubimilan::kLargestRom - 4;
     Grow(bad.sequences[0], 4);
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
 
     // An item that the driver doesn't have.
     bad = layout;
     bad.sequences[0].items.pop_back();
-    XSFLIB_CHECK(Refuses([&] { ubimilan::Join(bad); }));
+    XSFLIB_CHECK(Throws<std::invalid_argument>([&] { ubimilan::Join(bad); }));
 }
 
 } // namespace

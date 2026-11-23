@@ -31,7 +31,10 @@ struct DriverOverrides
     int song_count = 0;
 };
 
-// A music player: the driver plays each song on one of these, which the song table names.
+// The bytes of an entry of the music player table: the player's MusicPlayerInfo, its tracks and their count.
+constexpr uint32_t kPlayerEntrySize = 12;
+
+// A music player: the driver plays each song on one of these. The song table names it.
 struct Player
 {
     int track_count = 0; // the most tracks it plays; a song's other tracks stay silent
@@ -73,7 +76,7 @@ struct DriverInfo
     int reverb = 0;                    // 0-127
     int rate_index = 4;                // 1-12, the setting of the mixer's rate
     int samples_per_frame = 224;       // the mixer's output for a frame
-    int mix_rate = 13379;              // Hz, as the driver works it out
+    int mix_rate = 13379;              // Hz as the driver works it out
     uint32_t step_scale = 627;         // the mixer's step for each Hz of a sample's rate, in 2^-23 points
     uint8_t dac_bits = 0x40;           // the output's resolution: bits 6 and 7 of the sound bias register's high byte
     bool special_samples = false;      // the mixer can play samples backwards, and compressed samples
@@ -81,7 +84,7 @@ struct DriverInfo
     bool camelot_sequencer = false;    // Camelot's changes to how a note takes a channel and sets its volume and rate
     bool camelot_top_priority = false; // the notes of a player whose priority is 120 take a priority of 255
     bool camelot_mixer = false;        // Camelot's mixer, with straight-line releases and synth voices
-    int camelot_output_points = 2;     // the output stage's points for each of Camelot's mixer's points
+    int camelot_output_points = 2;     // the output stage's points for each point of Camelot's mixer
     int camelot_echo = 53;             // the echo's level from each side's old output to the same side, over 128
     int camelot_cross_echo = -8;       // the echo's level from each side's old output to the other side, over 128
     int camelot_tap = 176;             // how far back in the mixer's points the left side takes the right side's output

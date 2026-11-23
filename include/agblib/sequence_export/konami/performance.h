@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of a song of Konami's GBA driver for an editor. ntdlib's model of the driver
-// (agblib::konami::Sequencer) plays the song as ConvertSong does. The performance holds the notes of ConvertSong's MIDI
-// file, each with the command that started it. It also holds each track's stretches of commands, and each track's
-// changes of its volume and pan.
+// The performance of a song of Konami's GBA driver for an editor. The agblib model of the driver
+// (agblib::konami::Sequencer) plays the song as ConvertSong does. The performance contains the notes of ConvertSong's
+// MIDI file, each with the command that started it. It also contains each track's stretches of commands, and each
+// track's changes of its volume and pan.
 
 #pragma once
 
@@ -11,11 +11,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/konami/driver.h"
 #include "agblib/sequence_export/agb/settings.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::konami
 {
@@ -77,8 +78,8 @@ struct Performance : ntdlib::sequence_export::PerformanceBase
     uint32_t midi_end_tick = 0;
 
     // Each track's changes of its volume and pan, in the order of their ticks. The volume is the value that the command
-    // holds: what it runs up to depends on the revision and the track. The pan runs from -64 for the left to 63 for the
-    // right. Both are 0 before a command sets them. The driver has no sends. Dungeon Dice Monsters and the sample
+    // contains: what it runs up to depends on the revision and the track. The pan runs from -64 for the left to 63 for
+    // the right. Both are 0 before a command sets them. The driver has no sends. Dungeon Dice Monsters and the sample
     // tracks of the Eternal Duelist and Captain Tsubasa revisions have no pan of a track.
     std::array<std::vector<ntdlib::sequence_export::MixChange>, 16> mix;
 };

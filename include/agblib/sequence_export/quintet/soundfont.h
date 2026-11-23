@@ -32,8 +32,8 @@ using agblib::sequence_export::agb::WaveShapes;
 namespace sf2 = seqlib::sf2;
 
 // A PCM sound: the bytes of a sample that a FIFO plays from a note's start until the driver stops or loops it, and then
-// those it plays on each pass through the loop. The driver stops or loops a FIFO at the end of a frame, so each pass
-// lasts a whole number of frames.
+// those it plays on each pass through the loop. The driver stops or loops a FIFO at the end of a frame. Each pass
+// therefore lasts a whole number of frames.
 struct PcmSound
 {
     bool operator<(const PcmSound& o) const
@@ -71,18 +71,18 @@ public:
         return banks_;
     }
 
-    // Each returns the index of the SF2 sample for a sound, which is made on first use and shared afterwards. A square
-    // or wave sample plays its waveform at middle C on its root key; a noise sample is rendered at 65536 Hz, and loops
-    // its end if it goes on unchanged; a PCM sample plays at its recorded rate on key 60. PcmSample() returns -1 for a
-    // sound with nothing to play.
+    // Each returns the index of the SF2 sample for a sound. The sample is made on first use and shared afterwards. A
+    // square or wave sample plays its waveform at middle C on its root key; a noise sample is rendered at 65536 Hz, and
+    // loops its end if it goes on unchanged; a PCM sample plays at its recorded rate on key 60. PcmSample() returns -1
+    // for a sound with nothing to play.
     int SquareSample(int duty);
     int WaveSample(const WaveShape& shape);
     int NoiseSample(const NoiseSound& sound);
     int PcmSample(const PcmSound& sound);
 
-    // Each returns the name and zones of a square or wave instrument whose notes switch from duty or wave shape
-    // `first` to `second` after `frames` frames (PsgSamples::SquareInstrument() and WaveInstrument()). The zones follow
-    // `tuning`. `shapes` holds the wave shapes by number.
+    // Each returns the name and zones of a square or wave instrument whose notes switch from duty or wave shape `first`
+    // to `second` after `frames` frames (PsgSamples::SquareInstrument() and WaveInstrument()). The zones follow
+    // `tuning`. `shapes` contains the wave shapes by number.
     NamedZones SquareInstrument(int first, int frames, int second, const KeyTuning& tuning);
     NamedZones WaveInstrument(const WaveShapes& shapes, int first, int frames, int second, const KeyTuning& tuning);
 

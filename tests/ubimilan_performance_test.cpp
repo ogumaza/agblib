@@ -14,6 +14,7 @@
 #include <system_error>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
 #include "seqlib/midi/reader.h"
 #include "xsflib/testing/check.h"
 
@@ -28,7 +29,6 @@
 #include "agblib/ubimilan/commands.h"
 #include "agblib/ubimilan/driver.h"
 #include "agblib/ubimilan/sequencer.h"
-#include "ntdlib/commands/sequence.h"
 
 namespace
 {
@@ -113,6 +113,7 @@ TestImage OnePass(int flags)
         0x89, 40,   0,    0x01, 0x00, // 21: on frame 10, the end on frame 12
         0xFC,                         // 26
     });
+
     image.AddPiece(flags, {sequence});
     return image;
 }
@@ -151,7 +152,7 @@ void TestRecords()
         XSFLIB_CHECK(t == 0 || t == 9 || perf.tracks[t].empty());
     }
 
-    // A channel's instruments lie in the bank of the channel's number.
+    // A channel's instruments are in the bank of the channel's number.
     const auto first_preset = [](const std::vector<TrackEvent>& events)
     {
         for (const TrackEvent& event : events)
@@ -284,9 +285,9 @@ void TestPasses()
 void TestSecondPassLoops()
 {
     // A piece's first countdown of n runs its first command n frames in. Each later countdown takes n + 1. The first
-    // pass's note therefore lies a frame nearer its start than the note of each later pass. The first pass runs its
-    // note on frame 2 and its end on frame 6. The second pass starts there, with its note on frame 9 and its end on
-    // frame 13. The loop runs from the second pass's start.
+    // pass's note is therefore a frame nearer its start than the note of each later pass. The first pass runs its note
+    // on frame 2 and its end on frame 6. The second pass starts there, with its note on frame 9 and its end on frame
+    // 13. The loop runs from the second pass's start.
     TestImage image;
     image.SetKey(40, image.AddSample(std::vector<int8_t>(40000, 64)));
     image.AddPiece(1, {image.AddSequence({0x02, 0x00, 0x99, 40, 64, 0x03, 0x00, 0xFC})});

@@ -80,8 +80,8 @@ constexpr const char* kNoiseLookup = "48xx 3915 1809 780D";
 // The wave channel's level lookup: ldr r0, =table; mov r2, ip; lsrs r1, r2, #2; lsls r1, r1, #1; adds r1, r1, r0.
 constexpr const char* kWaveLevelLookup = "48xx 4662 0891 0049 1809";
 
-// The pitch table's values for keys 60 to 71, in Hz. The table holds 128 of them, from 8 Hz for key 0 to 12544 Hz for
-// key 127.
+// The pitch table's values for keys 60 to 71, in Hz. The table contains 128 of them, from 8 Hz for key 0 to 12544 Hz
+// for key 127.
 constexpr uint16_t kPitchOctave[12] = {262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494};
 constexpr uint32_t kPitchOctaveKey = 60;
 
@@ -139,6 +139,7 @@ bool FindEchoCall(const Rom& rom, DriverInfo& info)
         {
             after_init = BlTarget(rom, call - back - 2) == info.init_routine;
         }
+
         if (!after_init)
         {
             continue;
@@ -169,7 +170,7 @@ bool FindEchoCall(const Rom& rom, DriverInfo& info)
     return false;
 }
 
-// Returns true if `at` holds an instrument record of a type that the note-on routine plays.
+// Returns true if `at` contains an instrument record of a type that the note-on routine plays.
 bool IsInstrument(const Rom& rom, uint32_t at)
 {
     if (!rom.Contains(at, 8))
@@ -219,8 +220,8 @@ bool IsBank(const Rom& rom, uint32_t at)
     return found > 0;
 }
 
-// Returns the pitch table: 128 u16 values on a 2-byte boundary that hold kPitchOctave at key 60, 8 at key 0 and 12544
-// at key 127. Returns 0 if there's none.
+// Returns the pitch table: 128 u16 values on a 2-byte boundary that contain kPitchOctave at key 60, 8 at key 0 and
+// 12544 at key 127. Returns 0 if there's none.
 uint32_t FindPitchTable(const Rom& rom)
 {
     uint8_t octave[sizeof kPitchOctave];
@@ -272,6 +273,7 @@ bool FindRoutines(const Rom& rom, DriverInfo& info, std::string& error)
         info.lfo_routine = FindFirstThumb(rom, kGroupLfoRoutine);
         info.group_levels = info.lfo_routine != 0;
     }
+
     if (info.lfo_routine)
     {
         info.sine_table = ThumbLiteral(rom, info.lfo_routine + kLfoSine);
@@ -283,6 +285,7 @@ bool FindRoutines(const Rom& rom, DriverInfo& info, std::string& error)
     {
         return false;
     }
+
     if (!info.start_routine || !info.init_routine || !rom.Contains(info.sine_table, 512))
     {
         error = "found the play routine of Nintendo R&D1's sound driver at " + Hex(info.play_routine) +
@@ -332,6 +335,7 @@ bool FindTables(const Rom& rom, DriverInfo& info, std::string& error)
             info.bank_count = b + 1;
         }
     }
+
     if (!info.bank_count)
     {
         error = "found Nintendo R&D1's sound driver, but not its instrument banks";
@@ -352,15 +356,18 @@ bool ReadInit(const Rom& rom, const DriverOverrides& overrides, DriverInfo& info
         {
             players = at;
         }
+
         if (!players_end && MatchesAt(rom, at, kInitPlayersEnd))
         {
             players_end = at;
         }
+
         if (!voices && MatchesAt(rom, at, kInitVoices))
         {
             voices = at;
         }
     }
+
     if (!players || !players_end || !voices || info.mix_rate < 4000 || info.mix_rate > 65536)
     {
         error = "found Nintendo R&D1's sound driver, but not how its init sets the players and the mixer up";
@@ -400,6 +407,7 @@ int CountSongs(const Rom& rom, DriverInfo& info)
         {
             break;
         }
+
         const uint32_t record = rom.U32(entry);
         if (record != 0 && !IsRecord(rom, record))
         {

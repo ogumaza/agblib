@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-// Plays a piece of music of a GBA ROM with Ubisoft Milan's driver on ntdlib's models: the driver and its mixer
-// (ubimilan::Output) on the GBA's sound hardware (agb::Apu), frame by frame. The driver's stores go to the PSG's
+// Plays a piece of music of a GBA ROM with Ubisoft Milan's driver on the models of the driver and its mixer
+// (ubimilan::Output) and of the GBA's sound hardware (agb::Apu), frame by frame. The driver's stores go to the PSG's
 // registers, and its bytes to both FIFOs.
 //
 // A frame runs the hardware up to the driver's routines, makes their stores, queues what the frame's runs of the mixer
@@ -54,7 +54,7 @@ inline constexpr uint32_t kFifoLeadPoints = 48;
 // What the driver and the hardware start from, beyond the song.
 struct ArchivePlayerOptions
 {
-    // The cycle of each frame at which the driver's routines make their stores. It lies below agb::kFrameCycles.
+    // The cycle of each frame at which the driver's routines make their stores. It is below agb::kFrameCycles.
     uint32_t store_cycle = agb::kFrameCycles / 6;
 
     // The frame sequencer's phase at the song's start: see agb::Apu::SetSequencer.
@@ -75,7 +75,7 @@ public:
     ArchivePlayer& operator=(const ArchivePlayer&) = delete;
 
     // Starts song `song` from the state that the game's start leaves. Throws std::invalid_argument when the song can't
-    // be played or an option lies out of range.
+    // be played or an option is out of range.
     void Start(int song, const ArchivePlayerOptions& options = {});
 
     // Runs one frame of the driver and of the hardware, and adds the frame's samples to `out` at Rate(), left then
@@ -137,7 +137,7 @@ public:
     }
 
     // While any track is soloed, leaves every track that isn't out of the output, in the same way as a mute. A mute
-    // still holds on a soloed track.
+    // still applies on a soloed track.
     void SoloTrack(int track, bool solo);
     bool IsTrackSoloed(int track) const
     {
@@ -149,7 +149,7 @@ public:
 
     // The last frame's largest part of track `track`'s channels on each side, left then right, on the scale of 16-bit
     // samples: on the output's scale at the FIFOs' volume and the PSG's. 0 without meters and after a frame without
-    // samples. The FIFOs' lead lasts less than a frame, and a frame's samples hold points of the frame before. Track
+    // samples. The FIFOs' lead lasts less than a frame, and a frame's samples contain points of the frame before. Track
     // 9's peak therefore takes in the points that both frames mixed, and falls to 0 a frame after a mute.
     std::array<int32_t, 2> TrackPeaks(int track) const
     {
@@ -163,7 +163,7 @@ public:
         return output_peaks_;
     }
 
-    // What Restore() takes to go back to a place in the song. A snapshot holds the driver's whole state and the
+    // What Restore() takes to go back to a place in the song. A snapshot contains the driver's whole state and the
     // hardware's FIFOs: a few kilobytes.
     class Snapshot
     {
@@ -178,7 +178,7 @@ public:
         bool enhanced_ = false;
     };
 
-    // Takes a snapshot. `previous` is there for the interface that ntdlib's archive players share: a snapshot stands
+    // Takes a snapshot. `previous` is there for the interface that the agblib archive players share: a snapshot stands
     // alone. Throws std::logic_error before a start.
     Snapshot Save(const Snapshot* previous = nullptr) const;
 

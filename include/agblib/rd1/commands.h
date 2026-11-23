@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 
 // The Standard MIDI Files that Nintendo R&D1's GBA driver plays, in the common form of `ntdlib::commands`. A sequence
-// holds a song's whole MIDI file in the order of its bytes: the header chunk, then each track chunk. The decoder reads
-// each track as the driver does, from its first delta time to its end of track. The encoder writes the items back, and
-// gives the same bytes for a file that the decoder read.
+// contains a song's whole MIDI file in the order of its bytes: the header chunk, then each track chunk. The decoder
+// reads each track as the driver does, from its first delta time to its end of track. The encoder writes the items
+// back, and gives the same bytes for a file that the decoder read.
 //
 // The chunks:
-//   kTimebase   the header chunk. `value` is the division, in ticks a quarter note. `bytes` holds the chunk's bytes,
+//   kTimebase   the header chunk. `value` is the division, in ticks a quarter note. `bytes` contains the chunk's bytes,
 //               with zeros in place of the chunk's length, the number of tracks and the division. The encoder writes
 //               those into its copy. A header without bytes takes 6 bytes of data and format 1.
 //   kOpenTrack  a track chunk's header, with kTrackChunk in `encoding.opcode`, the track's number in `index` and the
-//               item after it in `target`. `bytes` holds the chunk's 8 bytes of header, with zeros in place of the
+//               item after it in `target`. `bytes` contains the chunk's 8 bytes of header, with zeros in place of the
 //               chunk's length. The encoder writes the length into its copy, and numbers the tracks in order. A track
 //               chunk without bytes takes "MTrk".
 //   kData       the bytes after a track's end that its chunk's length counts. The driver never reads them.
@@ -31,10 +31,10 @@
 //   kProgram    Cn
 //   kPitchBend  En, 14 bits
 //   kTempo      FF 51 with 3 bytes: `value` is the beats a minute that the driver takes from the microseconds a
-//               quarter note, truncated. `bytes` holds the 3 bytes where they give the value
+//               quarter note, truncated. `bytes` contains the 3 bytes where they give the value
 //   kLoopStart  FF 06 with the one byte '['
 //   kLoopEnd    FF 06 with the one byte ']'
-//   kEnd        FF 2F: the track's end. `bytes` holds its data, normally none
+//   kEnd        FF 2F: the track's end. `bytes` contains its data, normally none
 //   kOther      the other events, with their bytes after the status byte and the length in `bytes`: the other
 //               controllers, An, Dn, F0 and F1 to FE, and the other meta events, with 0xFF00 plus the type in
 //               `encoding.opcode`. So does a channel event whose bytes after its status byte aren't all below 0x80
@@ -52,7 +52,7 @@
 // A pan's unit is a position from the centre, at 64. A bend's unit is a fraction of the bend's range, and a bend
 // range's unit is the cent. The other values stay in the driver's units.
 //
-// What the driver's bytes can't hold:
+// What the driver's bytes can't contain:
 //   - A note's length. A note sounds from its kNote to the next kNoteOff of its key on the track's channel.
 //   - More than 31 tracks. A player plays as many tracks as it has channels, and its song's other tracks never play.
 //   - Calls, jumps and repeats. A song's one loop runs from the frame of its first '[' to its ']', and takes every
@@ -69,11 +69,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+
 #include "agblib/agb/encoded.h"
 #include "agblib/agb/rom.h"
 #include "agblib/rd1/driver.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace agblib::rd1
 {
@@ -92,7 +93,7 @@ struct Decoded
 {
     ntdlib::commands::Sequence sequence;
     std::vector<uint32_t> tracks; // the item of each track chunk's header
-    uint32_t size = 0;            // the file's bytes: its header chunk and its track chunks
+    uint32_t size = 0;            // the file's bytes: its header's fields and its whole track chunks
 
     // The file can't be read safely: a header that the driver reads otherwise than its length says, a chunk that runs
     // past the bytes, a track that reads a byte before any status byte or past its chunk's end, or items that don't
@@ -117,7 +118,7 @@ uint32_t SequenceAddress(const Rom& rom, const DriverInfo& info, int sequence);
 // The sequence that song `song` plays. Throws std::out_of_range for an entry without a record that the driver plays.
 int SequenceOfSong(const Rom& rom, const DriverInfo& info, int song);
 
-// Decodes sequence `sequence`. Its bytes run from its start to the end of its last track chunk, or to the ROM's end.
+// Decodes sequence `sequence`: from its start to the end of its last whole track chunk, or of the header's fields.
 // Throws std::out_of_range past SequenceCount().
 Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence);
 
@@ -127,13 +128,13 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence);
 using Encoded = agb::Encoded;
 
 // Encodes `sequence`, in the driver's values nearest its units. Throws std::invalid_argument for a command that the
-// bytes can't hold, and for a file that the driver wouldn't read as its items say: one that doesn't start with its
+// bytes can't contain, and for a file that the driver wouldn't read as its items say: one that doesn't start with its
 // header, more than kMaxTracks tracks, an event outside a track, a track without an end, a track that reaches data, an
 // event after a track's end, or a kOther item that the driver reads as a track's end, a tempo, a loop marker or a note.
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence);
 
 // The offset of each item of `sequence` in its bytes, then the end. The items don't have to read back as a file. Throws
-// std::invalid_argument for a command that the bytes can't hold.
+// std::invalid_argument for a command that the bytes can't contain.
 std::vector<uint32_t> ItemOffsets(const ntdlib::commands::Sequence& sequence);
 
 // The scale of the value of a command of `kind` (ntdlib::commands::UnitOf). A note's velocity takes the unchanged

@@ -4,12 +4,12 @@
 // Each MIDI file that a song's record names and that the decoder reads (commands.h) becomes a sequence piece. The ROM's
 // other bytes become runs: the song table, the records and their names, the bank table, the banks, the instrument
 // records, the drum kits' and the key splits' tables, the samples, the driver's tables and everything else. Each
-// record's first word holds its file's address, and becomes a field. The pieces of a ROM join to give the ROM back byte
-// for byte.
+// record's first word contains its file's address, and becomes a field. The pieces of a ROM join to give the ROM back
+// byte for byte.
 //
 // The driver finds a MIDI file only through a record. A file can therefore be anywhere in the ROM, on a multiple of 4
 // bytes. A file whose bytes fit its place stays there, with zeros after them. A file that outgrows its place moves. Its
-// place then holds zeros, or another file that moved. A file that moves goes, largest first, into the first of these
+// place then contains zeros, or another file that moved. A file that moves goes, largest first, into the first of these
 // places with room for it, where neighbouring places count as one. Failing that, it goes into the free space at the
 // ROM's end, and the ROM grows when the files there run past its end.
 //
@@ -23,11 +23,12 @@
 #include <span>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/sar/layout.h"
+
 #include "agblib/agb/layout.h"
 #include "agblib/agb/rom.h"
 #include "agblib/rd1/driver.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/sar/layout.h"
 
 namespace agblib::rd1
 {
@@ -54,8 +55,8 @@ struct Layout
     std::vector<ntdlib::commands::Sequence> sequences; // in the order of their places
     std::vector<ntdlib::sar::Piece> pieces;            // in the order of the ROM's bytes: runs and sequence pieces
 
-    // The records' fields, in the order of the records' places. Each holds the address of its third place, the file's
-    // first item: 0x08000000 plus the distance from its second place, the ROM's first byte.
+    // The records' fields, in the order of the records' places. Each contains the address of its third place, the
+    // file's first item: 0x08000000 plus the distance from its second place, the ROM's first byte.
     std::vector<ntdlib::sar::Field> fields;
 
     FreeSpace free;
@@ -82,7 +83,7 @@ std::vector<uint8_t> Join(const Layout& layout, const JoinOptions& options = {})
 // then runs of zeros in the order of their places. A filler run is part of a run of kLeastFillerRun or more bytes of
 // 0xFF or of zeros. A run at the ROM's end is Join's free space, and doesn't count. The filler run starts
 // kFreeSpaceMargin bytes or more into the run, on a multiple of kFreeSpaceMargin, and ends kFreeSpaceMargin bytes
-// before the run's end. A run that holds a byte that the driver reads doesn't count. Those bytes are the driver's
+// before the run's end. A run that contains a byte that the driver reads doesn't count. Those bytes are the driver's
 // tables, the song table, the records and their names, the MIDI files, the banks, the instrument records, the kits' and
 // the splits' tables and the samples. Zeros can be data of the game, such as blank pictures. Nothing shows that the
 // game's other code doesn't read a filler run.

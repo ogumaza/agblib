@@ -155,7 +155,7 @@ struct Simulation
     bool truncated = false; // cut off at kMaxFrames
 };
 
-// Returns the level of a side: the driver's pan law, which keeps the nearer side at the full 127.
+// Returns the level of a side: the driver's pan law. It keeps the nearer side at the full 127.
 void PanSides(int pan, double& left, double& right)
 {
     left = pan <= 63 ? 127 : 254 - 2 * pan;
@@ -223,6 +223,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, const SongRecord& re
             sim.notes[n].off = tick;
             sim.notes[n].off_frame = frame;
         }
+
         sounding[size_t(channel)].clear();
     };
 
@@ -321,6 +322,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, const SongRecord& re
                 {
                     end_notes(c, e.tick, frame);
                 }
+
                 if (loop_ends.size() >= passes)
                 {
                     stop_tick = e.tick;
@@ -356,6 +358,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, const SongRecord& re
             {
                 pan += r.Swing() >> 1;
             }
+
             PanSides(std::clamp(pan, 0, 127), s.left, s.right);
             s.left = seq.ChannelLevel(c) * s.left / (127.0 * 127.0);
             s.right = seq.ChannelLevel(c) * s.right / (127.0 * 127.0);
@@ -420,8 +423,10 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, const SongRecord& re
             n.off = sim.end;
             n.off_frame = sim.end_frame;
         }
+
         kept.push_back(n);
     }
+
     sim.notes = std::move(kept);
 
     return sim;
@@ -429,7 +434,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, const SongRecord& re
 
 // Returns true if the notes of a looping song's second pass start as those of its first: the same keys at the same
 // ticks from the pass's start, with the same velocity and program, and within 2 of the same level and pan. The driver
-// keeps the channels' settings when it goes back to the loop's start, so that a pass can leave them to the next.
+// keeps the channels' settings when it goes back to the loop's start. A pass can therefore leave them to the next.
 bool FirstPassRepeats(const Simulation& sim)
 {
     if (!sim.loops)
@@ -524,7 +529,7 @@ private:
     int scale_;
 };
 
-// Returns the PSG's volume (0-15) at a voice's level `v`, as the driver works it out (0x080F28F8).
+// Returns the PSG's volume (0-15) at a voice's level `v` as the driver works it out (0x080F28F8).
 int PsgVolume(int v)
 {
     return std::min(15, (v >> 3) + (v >> 4));
@@ -537,7 +542,7 @@ double WaveVolume(int volume)
     return 15 * (1 + (volume >> 2)) / 4.0;
 }
 
-// Returns the envelope's level (0-127) in each frame of a voice from its note-on, as the driver steps it (0x080F1B74):
+// Returns the envelope's level (0-127) in each frame of a voice from its note-on as the driver steps it (0x080F1B74):
 // `held` frames before the note's end, then the release, and at most `limit` frames. The driver writes the PSG's
 // volume from the level before the frame's step, and turns the voice off in the frame whose step ends it (0x080F2B96).
 // A level can end the voice only in the fall or the release.
@@ -585,6 +590,7 @@ std::vector<int> EnvelopeLevels(const InstrumentRecord& r, uint32_t held, uint32
             ends = level <= 0;
             break;
         }
+
         if (ends)
         {
             break;
@@ -597,7 +603,7 @@ std::vector<int> EnvelopeLevels(const InstrumentRecord& r, uint32_t held, uint32
 }
 
 // Returns the level (0 to 1) of a zone with envelope `env` in each of `frames` frames from its note-on, with the
-// note's end after `held` frames, as a SoundFont player plays it. The attack rises in a straight line. The decay and
+// note's end after `held` frames as a SoundFont player plays it. The attack rises in a straight line. The decay and
 // the release fall 96 dB in their times, in a straight line in decibels, and the sustain keeps its attenuation. Each
 // frame's level is the root of its mean square over four points.
 std::vector<double> ZoneLevels(const VolumeEnvelope& env, uint32_t held, uint32_t frames)
@@ -611,7 +617,7 @@ std::vector<double> ZoneLevels(const VolumeEnvelope& env, uint32_t held, uint32_
     const double hold = seconds(env.hold);
     const double decay = seconds(env.decay);
     const double release = seconds(env.release);
-    const double sustain = env.sustain / 960.0; // the sustain's attenuation, as a share of 96 dB
+    const double sustain = env.sustain / 960.0; // the sustain's attenuation as a share of 96 dB
     const double frame = FrameSeconds(1);
     const double off = held * frame;
 
@@ -638,6 +644,7 @@ std::vector<double> ZoneLevels(const VolumeEnvelope& env, uint32_t held, uint32_
             const double a = share >= 1 ? 0 : level * std::pow(10.0, -share * 96 / 20);
             sum += a * a;
         }
+
         levels.push_back(std::sqrt(sum / 4));
     }
 
@@ -693,11 +700,11 @@ int ReleaseLevel(const Note& n)
     return levels.size() > held ? levels[held] : -1;
 }
 
-// Moves the end of a song without a loop back to where its last sound dies away, when the end lies more than
-// kMaxSilentEndSeconds later. A note's voice sounds while the driver's envelope keeps it on (EnvelopeLevels()), and
-// its zone sounds until its release ends after the MIDI note's end. A note without an instrument plays nothing. The
-// song then ends with the frame after the later of the two. A voice whose release doesn't end within kMaxRelease
-// frames keeps the end.
+// Moves the end of a song without a loop back to where its last sound dies away, when the end is more than
+// kMaxSilentEndSeconds later. A note's voice sounds while the driver's envelope keeps it on (EnvelopeLevels()), and its
+// zone sounds until its release ends after the MIDI note's end. A note without an instrument plays nothing. The song
+// then ends with the frame after the later of the two. A voice whose release doesn't end within kMaxRelease frames
+// keeps the end.
 void EndWithLastSound(const Rom& rom, const DriverInfo& info, const SongRecord& record, Simulation& sim)
 {
     if (sim.loops)
@@ -944,6 +951,7 @@ std::vector<Setting> ChannelSettings(int c, const std::vector<Note>& notes, cons
                 apply(moved);
             }
         }
+
         apply(s);
         current = &s;
     }
@@ -982,6 +990,7 @@ uint32_t NoteOff(const std::vector<Note>& notes, const Note& n, const Ticks& tic
                 break;
             }
         }
+
         off = std::max(off, late);
     }
 
@@ -991,7 +1000,7 @@ uint32_t NoteOff(const std::vector<Note>& notes, const Note& n, const Ticks& tic
 // Writes channel `c`'s track. It starts with the channel's bank and first program, CC7 at 127, the reverb's send of its
 // first note and no chorus. The mixer echoes every sample voice: each pass starts from its output of 1568 samples
 // before (0x080F0224). The PSG plays outside the mixer. A sample note sends the echo's first setting to the reverb, and
-// a PSG note sends 0. CC91 changes at a note where the send differs. Notes hold their velocities and the channel's
+// a PSG note sends 0. CC91 changes at a note where the send differs. Notes keep their velocities, and the channel's
 // level goes to CC10 and CC11 (ChannelSettings()). The channel's first settings come at tick 0, and all of them come
 // again at the loop's start. A player that goes back there then has the settings that the model has.
 void WriteChannel(MidiTrack& mt, int c, int midi_channel, const std::vector<Note>& notes, const Simulation& sim,
@@ -1017,6 +1026,7 @@ void WriteChannel(MidiTrack& mt, int c, int midi_channel, const std::vector<Note
     {
         return n.part.kind == InstrumentKind::kPsg ? 0 : sim.echo;
     };
+
     mt.Bank(0, midi_channel, record.bank);
     mt.Program(0, midi_channel, program);
     mt.Control(0, midi_channel, cc::kVolume, 127);
@@ -1058,6 +1068,7 @@ void WriteChannel(MidiTrack& mt, int c, int midi_channel, const std::vector<Note
     {
         widest = std::max(widest, std::abs(s.semitones));
     }
+
     const int range = BendRangeFor(widest, kSmallBend);
     if (range)
     {
@@ -1077,6 +1088,7 @@ void WriteChannel(MidiTrack& mt, int c, int midi_channel, const std::vector<Note
             mt.Control(at, midi_channel, cc::kPan, cc10);
             pan = cc10;
         }
+
         if (cc11 != expression)
         {
             mt.Control(at, midi_channel, cc::kExpression, cc11);
@@ -1113,15 +1125,18 @@ void WriteChannel(MidiTrack& mt, int c, int midi_channel, const std::vector<Note
         {
             at = 0;
         }
+
         if (!restated && at >= loop_start && last)
         {
             pan = expression = bend = -1;
             write(loop_start, *last);
             restated = true;
         }
+
         write(at, s);
         last = &s;
     }
+
     if (!restated && last)
     {
         pan = expression = bend = -1;
@@ -1157,6 +1172,7 @@ void WriteChannel(MidiTrack& mt, int c, int midi_channel, const std::vector<Note
 
                 semitones = s.semitones;
             }
+
             mt.PitchBend(w.end, midi_channel, BendValue(semitones, range));
         }
     }
@@ -1186,6 +1202,7 @@ void WriteChannel(MidiTrack& mt, int c, int midi_channel, const std::vector<Note
             mt.Program(on, midi_channel, n.program);
             current = n.program;
         }
+
         if (reverb != send(n))
         {
             reverb = send(n);
@@ -1218,6 +1235,7 @@ bool WriteMidi(const std::string& path, const std::string& title, const std::str
         {
             conductor.Tempo(at, ticks.Tempo(t.step));
         }
+
         first = false;
     }
 
@@ -1228,6 +1246,7 @@ bool WriteMidi(const std::string& path, const std::string& title, const std::str
         conductor.Meta(ticks.Of(sim.loop_end, sim.loop_end_frame), 0x06, "loopEnd");
         conductor.RepeatTempo(loop_start);
     }
+
     conductor.SetEnd(end);
 
     const std::array<int, kNoteChannels> channels = MidiChannels(sim);
@@ -1268,6 +1287,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
     {
         used[size_t(n.channel)] = true;
     }
+
     report.tracks = int(std::count(used.begin(), used.end(), true));
 
     report.seconds = FrameSeconds(sim.end_frame);
@@ -1276,6 +1296,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
         report.loop_start = FrameSeconds(sim.loop_start_frame);
         report.loop_end = FrameSeconds(sim.loop_end_frame);
     }
+
     if (!sim.tempos.empty() && sim.tempos.front().step)
     {
         report.bpm = 60 / FrameSeconds(sim.division * 256.0 / sim.tempos.front().step);
@@ -1360,6 +1381,7 @@ ConvertedSong ConvertedNotes(const Rom& rom, const DriverInfo& info, int song, c
     {
         out.tempos.emplace_back(change.tick, change.step);
     }
+
     out.reads = std::move(sim.reads);
 
     // The MIDI file's order: each channel's notes in turn. A note ends at the song's tick nearest its end in the file.

@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "agblib/agb/sound_registers.h"
 #include "sequencer_internal.h"
 
 namespace agblib::quintet
@@ -106,6 +107,7 @@ void Sequencer::Output()
             {
                 LoadWave(wave, wave.wave);
             }
+
             if (loaded_waves_[1] != wave.wave_high)
             {
                 LoadWave(wave, wave.wave_high);
@@ -119,6 +121,7 @@ void Sequencer::Output()
             {
                 Write(kImageRegisters[r], 2, image[size_t(r)]);
             }
+
             if (p == kSquare1)
             {
                 Write(kImageRegisters[last], 2, image[size_t(last)]);
@@ -220,8 +223,8 @@ void Sequencer::LoadWave(Channel& ch, uint8_t wave)
         ch.wave = wave;
     }
 
-    // The wave RAM's writes go to the bank that isn't playing, so the driver selects the other bank, writes the wave
-    // and puts NR30 back as it read it, which leaves the channel off.
+    // The wave RAM's writes go to the bank that isn't playing. The driver therefore selects the other bank, writes the
+    // wave and puts NR30 back as it read it. The channel stays off.
     const uint8_t nr30 = uint8_t(nr30_ & 0x7F);
     uint8_t select = 0;
     if (wave & 0x80)
@@ -239,7 +242,7 @@ void Sequencer::LoadWave(Channel& ch, uint8_t wave)
     const uint32_t data = info_.waves + (wave & 0x7Fu) * 16 + 2;
     for (uint32_t i = 0; i < 16; i++)
     {
-        Write(kWaveRam + i, 1, rom_.U8(data + i));
+        Write(agb::kRegWaveRam + i, 1, rom_.U8(data + i));
     }
 
     Write(kImageRegisters[kNr30], 1, nr30);
@@ -260,7 +263,8 @@ void Sequencer::SelectMacro(Channel& ch, uint8_t macro)
 
 void Sequencer::SelectSample(int c, uint8_t sample)
 {
-    // The loaded sample is remembered by its number alone, so a bank switch takes a sample of another number to show.
+    // The loaded sample is remembered by its number alone. A bank switch therefore takes a sample of another number to
+    // show.
     const int f = c - kPcmA;
     LoadSample(f, SampleAddress(channels_[size_t(c)].sample_bank & 1, sample));
     channels_[size_t(c)].wave = sample;
@@ -304,8 +308,8 @@ void Sequencer::LoadSample(int f, uint32_t sample)
         return;
     }
 
-    // A sample's header holds its size, header included, and its rate. The driver plays 64 bytes fewer, less 0.6%: 256
-    // bytes fewer in the S revision.
+    // A sample's header contains its size, header included, and its rate. The driver plays 64 bytes fewer, less 0.6%:
+    // 256 bytes fewer in the S revision.
     const uint32_t size = rom_.U32(sample);
     const uint32_t length = DivideUnsigned((size - traits_.sample_trim) * 994, 1000);
     fifo.end = length;
@@ -416,7 +420,7 @@ void Sequencer::Write(uint32_t address, int size, uint32_t value)
     {
         soundcnt_h_ = uint16_t(value & kSoundcntHRead);
     }
-    else if (address == kSoundbias)
+    else if (address == agb::kRegSoundBias)
     {
         soundbias_ = uint16_t(value);
     }
@@ -448,10 +452,11 @@ void Sequencer::Write(uint32_t address, int size, uint32_t value)
             }
         }
     }
-    if (address >= kWaveRam && address < kWaveRam + 16)
+
+    if (address >= agb::kRegWaveRam && address < agb::kRegWaveRam + 16)
     {
         const size_t bank = ((hardware_.registers[kNr30] >> 6) & 1) ^ 1;
-        hardware_.wave_ram[bank][address - kWaveRam] = uint8_t(value);
+        hardware_.wave_ram[bank][address - agb::kRegWaveRam] = uint8_t(value);
     }
 }
 

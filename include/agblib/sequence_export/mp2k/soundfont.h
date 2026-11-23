@@ -30,7 +30,8 @@ namespace sf2 = seqlib::sf2;
 // Returns the SoundFont envelope that comes closest to a voice's envelope in the driver.
 VolumeEnvelope EnvelopeFor(const DriverInfo& info, const Voice& voice);
 
-// The synth voices of Camelot's mixer, which plays a sample of no length as a wave it makes from the sample's data.
+// The synth voices of Camelot's mixer. The mixer plays a sample of no length as a wave that it makes from the sample's
+// data.
 enum class Synth
 {
     kNone,
@@ -65,7 +66,7 @@ public:
     }
 
     // Returns the index of the SoundFont instrument for the voice at `address`, or -1 if it has nothing to play. A
-    // pulse or saw synth voice gets a zone for each key it plays, with a sample made for that key, so this adds the
+    // pulse or saw synth voice gets a zone for each key that it plays, with a sample made for that key. This adds the
     // zone for `key` if the instrument plays it with one of those.
     int InstrumentFor(uint32_t address, int key);
 
@@ -98,8 +99,8 @@ private:
     // for a voice that has nothing to play. Returns false for one that has nothing to play.
     bool AddZone(sf2::Instrument& instrument, const Voice& voice, int low, int high, int fixed_key, int rhythm_pan);
 
-    // Adds a zone to instrument `instrument`, which plays the voice at `address`, for `key`, if the voice plays it with
-    // a pulse or saw synth voice and the instrument has no zone for it.
+    // Adds a zone for `key` to instrument `instrument`, the instrument of the voice at `address`, if the voice plays
+    // the key with a pulse or saw synth voice and the instrument has no zone for it.
     void AddSynthKey(int instrument, uint32_t address, int key);
 
     const Rom& rom_;

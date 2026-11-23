@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "agblib/agb/sound_registers.h"
 #include "sequencer_internal.h"
 
 namespace agblib::rd2
@@ -74,13 +75,14 @@ int Sequencer::AllocateVoice(uint8_t voice_class, uint8_t priority)
     {
         StopVoice(v);
     }
+
     x.state = kVoicePlaying;
     x.priority = priority;
 
     return v;
 }
 
-// Takes sample voices out of use until `count` are left, as the driver's request 0x0304 does. The driver allocates each
+// Takes sample voices out of use until `count` are left as the driver's request 0x0304 does. The driver allocates each
 // one as a note of the highest priority would. That takes the first free voice, or else the first voice that plays. The
 // driver then takes the voice off the list of voices that play and keeps it on a separate list. Neither the notes nor
 // the mixer use that list.
@@ -100,7 +102,7 @@ int Sequencer::NewSampleVoice()
 
 int Sequencer::GrownPsgVoice(uint8_t voice_class)
 {
-    // A kind's voices each lie in a unit of their own. A new one takes the next unit that holds none of the kind's.
+    // A kind's voices are each in a unit of their own. A new one takes the next unit that has none of the kind's.
     int units = 0;
     for (size_t v = kVoices; v < voices_.size(); v++)
     {
@@ -110,6 +112,7 @@ int Sequencer::GrownPsgVoice(uint8_t voice_class)
             {
                 return int(v);
             }
+
             units++;
         }
     }
@@ -126,9 +129,9 @@ int Sequencer::GrownPsgVoice(uint8_t voice_class)
     {
         // The new unit starts as the driver's init leaves the console's PSG, each channel with its pan on both sides.
         std::array<uint8_t, 0x40>& registers = grown_registers_.emplace_back();
-        registers[kNr10 - kRegisters] = 0x08;
-        registers[kNr12 - kRegisters] = 0xF0;
-        registers[kNr51 - kRegisters] = 0xFF;
+        registers[agb::kRegNr10 - agb::kRegSound1CntL] = 0x08;
+        registers[agb::kRegNr12 - agb::kRegSound1CntL] = 0xF0;
+        registers[agb::kRegNr51 - agb::kRegSound1CntL] = 0xFF;
         grown_waves_.push_back(0);
     }
 
@@ -161,6 +164,7 @@ void Sequencer::Unlink(int v, int& head)
     {
         head = x.next;
     }
+
     if (x.next >= 0)
     {
         voices_[size_t(x.next)].prev = x.prev;
@@ -176,6 +180,7 @@ void Sequencer::PushFront(int v, int& head)
     {
         voices_[size_t(head)].prev = v;
     }
+
     head = v;
 }
 
@@ -214,6 +219,7 @@ void Sequencer::InsertActive(int v)
     {
         voices_[size_t(at)].prev = v;
     }
+
     x.prev = before;
     if (before >= 0)
     {
@@ -258,6 +264,7 @@ void Sequencer::UnlinkFromTrack(int v)
     {
         voices_[size_t(x.track_next)].track_prev = x.track_prev;
     }
+
     if (x.track_prev >= 0)
     {
         voices_[size_t(x.track_prev)].track_next = x.track_next;
@@ -276,7 +283,7 @@ const Track& Sequencer::TrackOf(const Voice& v) const
 }
 
 // Releases a voice's note: a sample or wave voice fades out by itself, and a square or noise channel fades with its
-// envelope. That frees the voice at once. A track in legato holds its notes.
+// envelope. That frees the voice at once. A track in legato contains its notes.
 void Sequencer::Release(int v)
 {
     Voice& x = voices_[size_t(v)];
@@ -303,21 +310,22 @@ void Sequencer::Release(int v)
         const uint8_t envelope = step ? uint8_t((x.volume << 4) | step) : 0;
         if (x.type == kSquare1Type)
         {
-            Write(kNr12, 1, envelope);
-            Write(kNr13, 2, frequency | 0x8000);
-            Write(kNr11, 1, ReadBack(kNr11, 1) & 0xC0);
+            Write(agb::kRegNr12, 1, envelope);
+            Write(agb::kRegNr13, 2, frequency | 0x8000);
+            Write(agb::kRegNr11, 1, ReadBack(agb::kRegNr11, 1) & 0xC0);
         }
         else if (x.type == kSquare2Type)
         {
-            Write(kNr22, 1, envelope);
-            Write(kNr23, 2, frequency | 0x8000);
-            Write(kNr21, 1, ReadBack(kNr21, 1) & 0xC0);
+            Write(agb::kRegNr22, 1, envelope);
+            Write(agb::kRegNr23, 2, frequency | 0x8000);
+            Write(agb::kRegNr21, 1, ReadBack(agb::kRegNr21, 1) & 0xC0);
         }
         else if (x.type == kNoiseType)
         {
-            Write(kNr42, 1, envelope);
-            Write(kNr44, 1, 0x80);
+            Write(agb::kRegNr42, 1, envelope);
+            Write(agb::kRegNr44, 1, 0x80);
         }
+
         x.state = kVoiceFree;
     }
 
@@ -327,6 +335,7 @@ void Sequencer::Release(int v)
     {
         x.pan = tracks_[size_t(x.track)].pan;
     }
+
     UnlinkFromTrack(v);
 }
 
@@ -348,22 +357,22 @@ void Sequencer::StopVoice(int v)
         break;
 
     case kSquare1Type:
-        Write(kNr12, 1, kNoEnvelope);
-        Write(kNr14, 1, 0xC0);
+        Write(agb::kRegNr12, 1, kNoEnvelope);
+        Write(agb::kRegNr14, 1, 0xC0);
         break;
 
     case kSquare2Type:
-        Write(kNr22, 1, kNoEnvelope);
-        Write(kNr24, 1, 0xC0);
+        Write(agb::kRegNr22, 1, kNoEnvelope);
+        Write(agb::kRegNr24, 1, 0xC0);
         break;
 
     case kWaveType:
-        Write(kNr30, 1, 0);
+        Write(agb::kRegNr30, 1, 0);
         break;
 
     case kNoiseType:
-        Write(kNr42, 1, kNoEnvelope);
-        Write(kNr44, 1, 0xC0);
+        Write(agb::kRegNr42, 1, kNoEnvelope);
+        Write(agb::kRegNr44, 1, 0xC0);
         break;
 
     default:

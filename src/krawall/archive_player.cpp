@@ -15,6 +15,7 @@
 #include "agblib/agb/apu.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/output_peaks.h"
+#include "agblib/agb/player_steps.h"
 #include "agblib/krawall/driver.h"
 #include "agblib/krawall/player.h"
 
@@ -42,7 +43,7 @@ std::vector<uint8_t> SoundRegisters(bool stereo)
     return registers;
 }
 
-// The mixes that the FIFOs hold at most before a frame mixes no more, and the mixes after the player and the mixer
+// The mixes that the FIFOs contain at most before a frame mixes no more, and the mixes after the player and the mixer
 // channels have stopped that the piece still sounds for.
 constexpr size_t kQueuedMixes = 2;
 constexpr int kTailMixes = 3;
@@ -83,10 +84,7 @@ void ArchivePlayer::StartNote(int song, uint16_t instrument, uint8_t note, const
 
 void ArchivePlayer::ReleaseNote()
 {
-    if (!player_)
-    {
-        throw std::logic_error("no piece has started");
-    }
+    agb::CheckStarted(bool(player_), "piece");
 
     player_->ReleaseAudition();
 }
@@ -128,10 +126,7 @@ void ArchivePlayer::Begin(Player player, const ArchivePlayerOptions& options)
 
 const Player& ArchivePlayer::Driver() const
 {
-    if (!player_)
-    {
-        throw std::logic_error("no piece has started");
-    }
+    agb::CheckStarted(bool(player_), "piece");
 
     return *player_;
 }
@@ -153,20 +148,14 @@ bool ArchivePlayer::Busy() const
 
 void ArchivePlayer::RunFrame(std::vector<int16_t>& out)
 {
-    if (enhanced_)
-    {
-        throw std::logic_error("the piece plays in the enhanced mode");
-    }
+    agb::CheckPlainFrame(enhanced_, "piece");
 
     Frame(&out, nullptr);
 }
 
 void ArchivePlayer::RunFrame(std::vector<float>& out)
 {
-    if (player_ && !enhanced_)
-    {
-        throw std::logic_error("the piece doesn't play in the enhanced mode");
-    }
+    agb::CheckEnhancedFrame(bool(player_), enhanced_, "piece");
 
     Frame(nullptr, &out);
 }
@@ -178,15 +167,12 @@ void ArchivePlayer::RunFrame()
 
 uint32_t ArchivePlayer::SilentTracks() const
 {
-    return soloed_ ? (muted_ | ~soloed_) : muted_;
+    return agb::SilentTracksOf(muted_, soloed_);
 }
 
 void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (!player_)
-    {
-        throw std::logic_error("no piece has started");
-    }
+    agb::CheckStarted(bool(player_), "piece");
 
     // The game mixes when the DMA has caught up with its mixes.
     const bool metering = metered_ && (out || enhanced_out);
@@ -220,18 +206,7 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
         player_->SkipFrame();
     }
 
-    if (out)
-    {
-        apu_.Run(agb::kFrameCycles, *out);
-    }
-    else if (enhanced_out)
-    {
-        apu_.Run(agb::kFrameCycles, *enhanced_out);
-    }
-    else
-    {
-        apu_.Run(agb::kFrameCycles);
-    }
+    agb::RunApu(apu_, agb::kFrameCycles, out, enhanced_out);
     frames_++;
 
     output_peaks_ = {};
@@ -283,10 +258,7 @@ std::array<int32_t, 2> ArchivePlayer::TrackPeaks(int track) const
 
 ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 {
-    if (!player_)
-    {
-        throw std::logic_error("no piece has started");
-    }
+    agb::CheckStarted(bool(player_), "piece");
 
     Snapshot snapshot;
     snapshot.owner_ = this;
@@ -300,10 +272,7 @@ ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 
 void ArchivePlayer::Restore(const Snapshot& snapshot)
 {
-    if (snapshot.owner_ != this || !snapshot.player_)
-    {
-        throw std::invalid_argument("the snapshot is another player's");
-    }
+    agb::CheckSnapshotOwner(snapshot.owner_ == this && snapshot.player_);
 
     player_.reset();
     player_.emplace(*snapshot.player_);

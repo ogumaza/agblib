@@ -3,10 +3,13 @@
 // Tests of the enhanced mode of rd2::ArchivePlayer (agblib/rd2/output.h) on small synthetic cartridges. No game ROM is
 // needed. Each expected value follows a rule of the enhanced mode, and the comments give the rule.
 
+#include "agb_test_util.h"
 #include "rd2_player_test_util.h"
 
 namespace
 {
+
+using agblib::testing::agb_tests::NearPrinted;
 
 constexpr size_t kEnhanced = kEnhancedFrameSamples;
 
@@ -34,17 +37,6 @@ ArchivePlayerOptions EnhancedOptions()
     return options;
 }
 
-bool Near(float value, double expected, double within = 0.002)
-{
-    const bool near = std::fabs(double(value) - expected) <= within;
-    if (!near)
-    {
-        std::printf("%f, expected %f\n", double(value), expected);
-    }
-
-    return near;
-}
-
 // The enhanced mode's level of a voice on the left and the right: a value of the sample on the scale of 8-bit samples.
 double EnhancedLeft(const VoiceMix& mix)
 {
@@ -59,8 +51,7 @@ double EnhancedRight(const VoiceMix& mix)
 void TestEnhancedGain()
 {
     // 804 samples a frame. A point's value comes through the voice's levels: the pan's part times the volume over
-    // 32768, on the scale of 8-bit samples. Full scale lies at 128. The sound starts after the same time as on the
-    // console.
+    // 32768, on the scale of 8-bit samples. Full scale is 128. The sound starts after the same time as on the console.
     Cart cart;
     FillFirst(cart, 64);
     cart.Sequences({{HeldTrack(0x10)}});
@@ -87,11 +78,12 @@ void TestEnhancedGain()
     {
         XSFLIB_CHECK(std::fabs(out[i]) < 0.03f);
     }
-    XSFLIB_CHECK(Near(out[2 * (kEnhancedStart + 64)], left));
-    XSFLIB_CHECK(Near(out[2 * (kEnhancedStart + 64) + 1], right));
+
+    XSFLIB_CHECK(NearPrinted(out[2 * (kEnhancedStart + 64)], left));
+    XSFLIB_CHECK(NearPrinted(out[2 * (kEnhancedStart + 64) + 1], right));
     for (size_t i = 2 * (kEnhancedStart + 64); i < out.size(); i += 2)
     {
-        XSFLIB_CHECK(Near(out[i], left) && Near(out[i + 1], right));
+        XSFLIB_CHECK(NearPrinted(out[i], left) && NearPrinted(out[i + 1], right));
     }
 
     // The console's mode refuses the enhanced mode's frames.
@@ -112,6 +104,7 @@ void TestEnhancedDoesNotWrap()
     {
         tracks.push_back(TrackData().Bytes({0xE0, 0xFF, 0xC3, 0, 0xC2, kHeld}).Note(60, 100, 127).Wait(100).End());
     }
+
     cart.Sequences({tracks});
     const Game game(cart);
     ArchivePlayer player(game.rom, game.info);
@@ -126,7 +119,7 @@ void TestEnhancedDoesNotWrap()
     }
 
     XSFLIB_CHECK(sum > 1.5);
-    XSFLIB_CHECK(Near(out[out.size() - 2], sum, 0.01));
+    XSFLIB_CHECK(NearPrinted(out[out.size() - 2], sum, 0.01));
 }
 
 void TestEnhancedNoteStart()
@@ -143,6 +136,7 @@ void TestEnhancedNoteStart()
     {
         track.Note(60, 2, 127).Wait(kNoteFrames);
     }
+
     cart.Sequences({{track.End()}});
     const Game game(cart);
     ArchivePlayer player(game.rom, game.info);
@@ -185,12 +179,13 @@ void TestEnhancedRamp()
     {
         ramp++;
     }
+
     XSFLIB_CHECK(ramp == 3 && levels[3] < levels[2] / 2.0);
     const size_t first = kEnhancedStart + size_t(ramp) * kEnhanced;
-    XSFLIB_CHECK(Near(out[2 * (first - 8)], levels[2]));
-    XSFLIB_CHECK(Near(out[2 * (first + kEnhanced / 4)], levels[2] + (levels[3] - levels[2]) / 4.0));
-    XSFLIB_CHECK(Near(out[2 * (first + kEnhanced / 2)], levels[2] + (levels[3] - levels[2]) / 2.0));
-    XSFLIB_CHECK(Near(out[2 * (first + kEnhanced + 8)], levels[3]));
+    XSFLIB_CHECK(NearPrinted(out[2 * (first - 8)], levels[2]));
+    XSFLIB_CHECK(NearPrinted(out[2 * (first + kEnhanced / 4)], levels[2] + (levels[3] - levels[2]) / 4.0));
+    XSFLIB_CHECK(NearPrinted(out[2 * (first + kEnhanced / 2)], levels[2] + (levels[3] - levels[2]) / 2.0));
+    XSFLIB_CHECK(NearPrinted(out[2 * (first + kEnhanced + 8)], levels[3]));
 }
 
 void TestEnhancedRate()
@@ -243,7 +238,7 @@ void TestEnhancedEcho()
     XSFLIB_CHECK(std::fabs(out[2 * (start + 16)]) > 0.1f);
     for (size_t i = start + 16; i < start + 400; i++)
     {
-        XSFLIB_CHECK(Near(out[2 * (i + delay)], 0.5 * double(out[2 * i]), 0.001));
+        XSFLIB_CHECK(NearPrinted(out[2 * (i + delay)], 0.5 * double(out[2 * i]), 0.001));
     }
 
     ArchivePlayer dry(game.rom, game.info);
@@ -251,8 +246,8 @@ void TestEnhancedEcho()
     const std::vector<float> dry_out = EnhancedFrames(dry, 60);
     for (size_t i = start + 16; i < start + 400; i++)
     {
-        XSFLIB_CHECK(Near(dry_out[2 * i], double(out[2 * i]), 0.001));
-        XSFLIB_CHECK(Near(dry_out[2 * (i + delay)], 0.0, 0.001));
+        XSFLIB_CHECK(NearPrinted(dry_out[2 * i], double(out[2 * i]), 0.001));
+        XSFLIB_CHECK(NearPrinted(dry_out[2 * (i + delay)], 0.0, 0.001));
     }
 }
 
@@ -267,6 +262,7 @@ void TestEnhancedGrownVoices()
     {
         tracks.push_back(HeldTrack(0));
     }
+
     cart.Sequences({tracks});
     const Game game(cart);
     ArchivePlayer player(game.rom, game.info);
@@ -275,15 +271,15 @@ void TestEnhancedGrownVoices()
     const std::vector<VoiceMix>& mixes = player.Driver().Song()->Mixes();
     XSFLIB_CHECK(mixes.size() == 8);
     const double one = 16.0 * EnhancedLeft(mixes.at(0)) / 128.0;
-    XSFLIB_CHECK(Near(out[out.size() - 2], 8.0 * one));
+    XSFLIB_CHECK(NearPrinted(out[out.size() - 2], 8.0 * one));
 
     player.MuteTrack(7, true);
     out = EnhancedFrames(player, 3);
-    XSFLIB_CHECK(Near(out[out.size() - 2], 7.0 * one));
+    XSFLIB_CHECK(NearPrinted(out[out.size() - 2], 7.0 * one));
     player.SoloTrack(7, true);
     player.MuteTrack(7, false);
     out = EnhancedFrames(player, 3);
-    XSFLIB_CHECK(Near(out[out.size() - 2], one));
+    XSFLIB_CHECK(NearPrinted(out[out.size() - 2], one));
 
     // The console's mode keeps to its voices.
     ArchivePlayer console(game.rom, game.info);
@@ -367,6 +363,7 @@ void TestEnhancedFramesWithoutMixing()
     {
         XSFLIB_CHECK(b[i] == 0.0f);
     }
+
     for (size_t i = 2 * (kEnhancedStart + 64); i < a.size(); i++)
     {
         XSFLIB_CHECK(a[i] == b[i]);
@@ -395,12 +392,12 @@ void TestEnhancedSnapshotsAndMutes()
     // of 16-bit samples, and the output's peak on the same scale.
     player.MuteTrack(1, true);
     std::vector<float> muted = EnhancedFrames(player, 3);
-    XSFLIB_CHECK(Near(muted[muted.size() - 2], left) && Near(muted[muted.size() - 1], 0.0));
+    XSFLIB_CHECK(NearPrinted(muted[muted.size() - 2], left) && NearPrinted(muted[muted.size() - 1], 0.0));
     player.MuteTrack(1, false);
     player.SoloTrack(1, true);
     player.MeterTracks(true);
     muted = EnhancedFrames(player, 3);
-    XSFLIB_CHECK(Near(muted[muted.size() - 2], 0.0) && Near(muted[muted.size() - 1], right));
+    XSFLIB_CHECK(NearPrinted(muted[muted.size() - 2], 0.0) && NearPrinted(muted[muted.size() - 1], right));
     XSFLIB_CHECK(std::fabs(player.TrackPeaks(1)[1] - right * 32768.0) < 200.0);
     XSFLIB_CHECK(player.TrackPeaks(1)[0] == 0 && player.TrackPeaks(0)[0] == 0);
     XSFLIB_CHECK(std::fabs(player.OutputPeaks()[1] - right * 32768.0) < 200.0);

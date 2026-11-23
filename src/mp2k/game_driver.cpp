@@ -34,16 +34,13 @@ constexpr uint32_t kMainSize = 12;
 constexpr uint16_t kPushLr = 0xB500;
 constexpr uint16_t kInitPush = 0xB570;
 
-// The init's call of m4aSoundMode lies at most this far before the literal pool that holds the music player table's
+// The init's call of m4aSoundMode is at most this far before the literal pool that contains the music player table's
 // address. The init starts at most this far before the call.
 constexpr uint32_t kInitReach = 0x200;
 
 // After m4aSoundVSync loads kSoundInfoPointer, it checks the SoundInfo's ident and then counts down the DMA counter
-// with ldrb rX, [rY, #4] and subs rX, #1. The count down lies within this many instructions of the load.
+// with ldrb rX, [rY, #4] and subs rX, #1. The count down is within this many instructions of the load.
 constexpr int kVsyncReach = 12;
-
-// A music player's entry in the player table: the player's structure, its tracks and their number.
-constexpr uint32_t kPlayerEntrySize = 12;
 
 // Camelot's SoundMain opens with adr r1, pool and ldm r1!, {r0, r2, r3}: the stack's limit, kIdent and
 // kSoundInfoPointer. Within kCamelotMainReach, it loads the buffer with ldr r5, =buffer, and the copy of the DMA
@@ -104,7 +101,7 @@ uint32_t Nearest(const std::vector<uint32_t>& candidates, uint32_t target)
     return best;
 }
 
-// Returns the start of the routine that holds `at`: the nearest push of the link register before it, within
+// Returns the start of the routine that contains `at`: the nearest push of the link register before it, within
 // kInitReach, with no return in between. Returns 0 when there's none.
 uint32_t RoutineHolding(const Rom& rom, uint32_t at)
 {
@@ -125,7 +122,7 @@ uint32_t RoutineHolding(const Rom& rom, uint32_t at)
 }
 
 // Finds the init from its call of m4aSoundMode with the mode that detection found: ldr r0, =mode and a bl, before the
-// literal pool that holds the music player table's address. Returns 0 when there's none. Sets `sound_mode` to the
+// literal pool that contains the music player table's address. Returns 0 when there's none. Sets `sound_mode` to the
 // call's target, m4aSoundMode, in the init that it returns.
 uint32_t FindInitFromMode(const Rom& rom, const DriverInfo& info, uint32_t& sound_mode)
 {
@@ -178,6 +175,7 @@ bool InRam(uint32_t address, uint32_t size)
     {
         return address >= base && address - base <= region - size;
     };
+
     return inside(agb::kEwramBase, agb::kEwramSize) || inside(agb::kIwramBase, agb::kIwramSize);
 }
 
@@ -211,6 +209,7 @@ bool ReadOutputCall(const Rom& rom, uint32_t call, GameRoutines& routines)
             return true;
         }
     }
+
     return false;
 }
 
@@ -227,12 +226,14 @@ bool FindCamelotRoutines(const Rom& rom, const std::vector<uint32_t>& vsyncs, Ga
         {
             continue;
         }
+
         const uint32_t pool = ThumbLiteralAddress(rom, at);
         if (rom.Contains(pool, 12) && rom.U32(pool + 4) == kIdent && rom.U32(pool + 8) == kSoundInfoPointer)
         {
             main = at;
         }
     }
+
     if (!main)
     {
         error = "no routine has the shape of Camelot's SoundMain";
@@ -248,12 +249,14 @@ bool FindCamelotRoutines(const Rom& rom, const std::vector<uint32_t>& vsyncs, Ga
             routines.pcm_buffer = ThumbLiteral(rom, at);
             routines.counter_copy = ThumbLiteral(rom, at + 2) + 1;
         }
+
         if (rom.U16(at) == kLoadR3Next && rom.U16(at + 2) == kBxR3)
         {
             mixer = ThumbLiteral(rom, at) & ~1u;
             break;
         }
     }
+
     if (!mixer || !routines.pcm_buffer || !InRam(routines.pcm_buffer, 4 * kPcmBufferSize) ||
         !InRam(routines.counter_copy, 1))
     {
@@ -276,6 +279,7 @@ bool FindCamelotRoutines(const Rom& rom, const std::vector<uint32_t>& vsyncs, Ga
             break;
         }
     }
+
     if (!routines.copy_size)
     {
         error = "no DMA transfer copies Camelot's mixer";
@@ -289,6 +293,7 @@ bool FindCamelotRoutines(const Rom& rom, const std::vector<uint32_t>& vsyncs, Ga
             break;
         }
     }
+
     if (!routines.output)
     {
         error = "no call of SoundMain is followed by a call of Camelot's output stage";
@@ -311,6 +316,7 @@ bool FindCamelotRoutines(const Rom& rom, const std::vector<uint32_t>& vsyncs, Ga
         error = "no routine has m4aSoundVSync's shape";
         return false;
     }
+
     return true;
 }
 
@@ -325,7 +331,7 @@ bool FindGameRoutines(const Rom& rom, const DriverInfo& info, GameRoutines& rout
         return false;
     }
 
-    // A game can hold more than one copy of the driver, such as in the programs that it sends to other consoles. The
+    // A game can contain more than one copy of the driver, such as in the programs that it sends to other consoles. The
     // game plays its music through the copy nearest to the routine that starts a song.
     std::vector<uint32_t> mains;
     std::vector<uint32_t> vsyncs;
@@ -361,6 +367,7 @@ bool FindGameRoutines(const Rom& rom, const DriverInfo& info, GameRoutines& rout
         error = "no routine has SoundMain's shape";
         return false;
     }
+
     const uint32_t vsync = Nearest(vsyncs, info.song_start);
     if (!vsync)
     {
@@ -383,6 +390,7 @@ bool FindGameRoutines(const Rom& rom, const DriverInfo& info, GameRoutines& rout
             }
         }
     }
+
     if (!init)
     {
         error = "no routine has m4aSoundInit's shape";
@@ -400,7 +408,7 @@ bool FindGameRoutines(const Rom& rom, const DriverInfo& info, GameRoutines& rout
 GameDriver::GameDriver(const Rom& rom, const DriverInfo& info, const GameRoutines& routines)
     : rom_(rom), info_(info), routines_(routines), system_(rom)
 {
-    // Camelot's mixer lies in the code that the game's boot code copies to IWRAM.
+    // Camelot's mixer is in the code that the game's boot code copies to IWRAM.
     for (uint32_t i = 0; i < routines_.copy_size; i += 4)
     {
         system_.Store(routines_.copy_destination + i, 4, system_.Load(routines_.copy_source + i, 4));
@@ -518,12 +526,14 @@ void GameDriver::Frame(std::vector<int8_t>& right, std::vector<int8_t>& left)
     {
         system_.Store(routines_.counter_copy, 1, counter);
     }
+
     const uint32_t mixed = system_.Call(routines_.main | 1);
     if (routines_.output && mixed == 0)
     {
         const std::array<uint32_t, 1> args{routines_.output_argument};
         system_.Call(routines_.output | 1, args);
     }
+
     recording_ = false;
     system_.HoldVcount(std::nullopt);
 
@@ -585,6 +595,7 @@ GameChannel GameDriver::ReadChannel(uint32_t address)
     {
         return uint8_t(system_.Load(address + offset, 1));
     };
+
     const auto u32 = [&](uint32_t offset)
     {
         return system_.Load(address + offset, 4);

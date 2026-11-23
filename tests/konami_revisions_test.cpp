@@ -149,6 +149,7 @@ void TestWct2004Sequencer()
         SEQLIB_CHECK_EQ(frames[f][0].vol, 2 * (f + 1));
         SEQLIB_CHECK_EQ(frames[f][0].trig, 1);
     }
+
     SEQLIB_CHECK_EQ(frames[4][0].flags, kOutStop);
 
     // The call sets the duty byte, waits 2, plays the fragment's note, and then waits the 5 after the call instead of
@@ -215,6 +216,7 @@ void TestCallDump()
         SEQLIB_CHECK(line_at(s, kBase + 0x06).find("  7  D9 30 ") != std::string::npos);
         SEQLIB_CHECK(line_at(s, kBase + 0x09).find(" 10  FD ") != std::string::npos);
     }
+
     SEQLIB_CHECK(listings[0].find("call       1 commands at +0x000A, duty 75%") != std::string::npos);
     SEQLIB_CHECK(listings[1].find("call       1 commands at +0x000A, duty 12.5%") != std::string::npos);
 }
@@ -253,6 +255,7 @@ void TestWct2004Panning()
         {
             pan[e.track] = e.data2;
         }
+
         if ((e.status & 0xF0) == 0x90 && e.data2 > 0)
         {
             notes[e.track].emplace_back(e.data1, pan.count(e.track) ? pan[e.track] : 64);
@@ -304,6 +307,66 @@ void TestEternalDuelistDecoding()
     SEQLIB_CHECK(at(8, 0).op == Op::kDuty && at(8, 0).value == 2);
 }
 
+// Song 1 of the sequencer tests of Eternal Duelist and Captain Tsubasa. Voice 0: a call of 1 command from the
+// fragment after the end, wait 2, note (vol 9, sample 7), wait 1, then 260 commands that do nothing, each followed by a
+// wait of 1, and the end. The fragment: wait 3, note (vol 5, sample 11), wait 6.
+void PutCallSong(Image& m, uint32_t table, Revision revision)
+{
+    constexpr uint32_t kBase1 = kRomBase + 0x280;
+    std::vector<uint8_t> calls = {0x00, 0x9F, 0x00, 0x00, 0x01, 0x02, 0xA9, 0x07, 0x01};
+    for (int i = 0; i < 260; i++)
+    {
+        calls.insert(calls.end(), {0x07, 0x01});
+    }
+
+    calls.push_back(0xFD);
+    calls[2] = uint8_t(calls.size());
+    calls[3] = uint8_t(calls.size() >> 8);
+    calls.insert(calls.end(), {0x03, 0xA5, 0x0B, 0x06});
+
+    m.Song(table, 1, kBase1, 0x220, {{4, 0x00}}, revision);
+    m.PutBytes(kBase1, calls);
+    m.PutBytes(kBase1 + 0x220, {0x00, 0xFD});
+}
+
+// What the sequencer tests of Eternal Duelist and Captain Tsubasa check: song 0's first 34 frames, the frame where it
+// loops and whether it's still valid after them, and the frames of song 1's first 270 where voice 0 starts a note.
+struct CallSongsRun
+{
+    bool valid = false;
+    std::vector<std::array<TrackOutput, kTracks>> frames;
+    int looped_at = -1;
+    std::vector<int> starts;
+};
+
+CallSongsRun RunCallSongs(const Image& m, uint32_t table, Revision revision)
+{
+    const Rom rom = m.ToRom();
+    DriverInfo info = SongsAt(table);
+    info.revision = revision;
+    Wct2004Sequencer seq(rom, info, 0);
+    Wct2004Sequencer calling(rom, info, 1);
+
+    CallSongsRun run;
+    for (int f = 0; f < 34; f++)
+    {
+        run.frames.push_back(seq.Step());
+        run.looped_at = run.looped_at < 0 && seq.LoopedLastFrame() ? f : run.looped_at;
+    }
+
+    run.valid = seq.Valid();
+
+    for (int f = 0; f < 270; f++)
+    {
+        if (calling.Step()[4].flags == kOutNoteOn)
+        {
+            run.starts.push_back(f);
+        }
+    }
+
+    return run;
+}
+
 void TestEternalDuelistSequencer()
 {
     // Song 0. Square 1: NR51 bits 10, loop point, PSG note (vol 8, note 0x30), wait 4, note 0x24 at the same volume,
@@ -321,64 +384,28 @@ void TestEternalDuelistSequencer()
     m.PutBytes(kBase + 0x50, {0x00, 0xE0, 0x20, 0xFE});
     m.PutBytes(kBase + 0x60, {0x00, 0xFD});
 
-    // Song 1. Voice 0: a call of 1 command from the fragment after the end, wait 2, note (vol 9, sample 7), wait 1,
-    // then 260 commands that do nothing, each followed by a wait of 1, and the end. The fragment: wait 3, note (vol 5,
-    // sample 11), wait 6.
-    constexpr uint32_t kBase1 = kRomBase + 0x280;
-    std::vector<uint8_t> calls = {0x00, 0x9F, 0x00, 0x00, 0x01, 0x02, 0xA9, 0x07, 0x01};
-    for (int i = 0; i < 260; i++)
-    {
-        calls.insert(calls.end(), {0x07, 0x01});
-    }
-    calls.push_back(0xFD);
-    calls[2] = uint8_t(calls.size());
-    calls[3] = uint8_t(calls.size() >> 8);
-    calls.insert(calls.end(), {0x03, 0xA5, 0x0B, 0x06});
-    m.Song(kTable, 1, kBase1, 0x220, {{4, 0x00}}, Revision::kEternalDuelist);
-    m.PutBytes(kBase1, calls);
-    m.PutBytes(kBase1 + 0x220, {0x00, 0xFD});
-    const Rom rom = m.ToRom();
-    DriverInfo info = SongsAt(kTable);
-    info.revision = Revision::kEternalDuelist;
-    Wct2004Sequencer seq(rom, info, 0);
-    Wct2004Sequencer calling(rom, info, 1);
-
-    std::vector<std::array<TrackOutput, kTracks>> frames;
-    int looped_at = -1;
-    for (int f = 0; f < 34; f++)
-    {
-        frames.push_back(seq.Step());
-        looped_at = looped_at < 0 && seq.LoopedLastFrame() ? f : looped_at;
-    }
-
-    std::vector<int> starts;
-    for (int f = 0; f < 270; f++)
-    {
-        if (calling.Step()[4].flags == kOutNoteOn)
-        {
-            starts.push_back(f);
-        }
-    }
+    PutCallSong(m, kTable, Revision::kEternalDuelist);
+    const auto [valid, frames, looped_at, starts] = RunCallSongs(m, kTable, Revision::kEternalDuelist);
 
     // Square 1's F0 goes into its record at once. A note at the volume that's playing only changes the pitch, and a new
     // volume retriggers the channel.
-    SEQLIB_CHECK(seq.Valid() && frames[0][9].active);
+    SEQLIB_CHECK(valid && frames[0][9].active);
     SEQLIB_CHECK(frames[0][0].pan == 0x10 && frames[0][0].trig == 1);
     SEQLIB_CHECK(frames[4][0].flags == kOutPsgNote && frames[4][0].trig == 0 && frames[4][0].pitch == 0x480);
     SEQLIB_CHECK(frames[8][0].trig == 1 && frames[8][0].vol == 10);
 
-    // F0 on voice 1 sets its own volume, and voice 2's through the next record.
+    // F0 on voice 1 sets its volume, and voice 2's through the next record.
     SEQLIB_CHECK(frames[4][5].vol == 10 && frames[4][5].trig == 1);
     SEQLIB_CHECK(frames[4][6].vol == 5 && frames[4][6].trig == 1);
 
-    // Vibrato replaces the flags of voice 2's second note, so the note doesn't start.
+    // Vibrato replaces the flags of voice 2's second note. The note doesn't start.
     SEQLIB_CHECK(frames[8][6].flags == kOutEternalDuelistPitch && frames[8][6].key == 11);
 
     // The loop sets square 1's pan back to the default, and the track goes on from its loop point, after its F0.
     SEQLIB_CHECK_EQ(looped_at, 32);
     SEQLIB_CHECK_EQ(frames[32][0].pan, 0x11);
 
-    // The driver keeps the call's return position, so the 256th command after the call takes the track back there.
+    // The driver keeps the call's return position. The 256th command after the call takes the track back there.
     SEQLIB_CHECK(starts == std::vector<int>({3, 5, 262}));
 }
 
@@ -434,47 +461,11 @@ void TestCaptainTsubasaSequencer()
     m.PutBytes(kBase + 0x50, {0x00, 0xE0, 0x20, 0xFE});
     m.PutBytes(kBase + 0x60, {0x00, 0xFD});
 
-    // Song 1. Voice 0: a call of 1 command from the fragment after the end, wait 2, note (vol 9, sample 7), wait 1,
-    // then 260 commands that do nothing, each followed by a wait of 1, and the end. The fragment: wait 3, note (vol 5,
-    // sample 11), wait 6.
-    constexpr uint32_t kBase1 = kRomBase + 0x280;
-    std::vector<uint8_t> calls = {0x00, 0x9F, 0x00, 0x00, 0x01, 0x02, 0xA9, 0x07, 0x01};
-    for (int i = 0; i < 260; i++)
-    {
-        calls.insert(calls.end(), {0x07, 0x01});
-    }
-    calls.push_back(0xFD);
-    calls[2] = uint8_t(calls.size());
-    calls[3] = uint8_t(calls.size() >> 8);
-    calls.insert(calls.end(), {0x03, 0xA5, 0x0B, 0x06});
-    m.Song(kTable, 1, kBase1, 0x220, {{4, 0x00}}, Revision::kCaptainTsubasa);
-    m.PutBytes(kBase1, calls);
-    m.PutBytes(kBase1 + 0x220, {0x00, 0xFD});
-    const Rom rom = m.ToRom();
-    DriverInfo info = SongsAt(kTable);
-    info.revision = Revision::kCaptainTsubasa;
-    Wct2004Sequencer seq(rom, info, 0);
-    Wct2004Sequencer calling(rom, info, 1);
-
-    std::vector<std::array<TrackOutput, kTracks>> frames;
-    int looped_at = -1;
-    for (int f = 0; f < 34; f++)
-    {
-        frames.push_back(seq.Step());
-        looped_at = looped_at < 0 && seq.LoopedLastFrame() ? f : looped_at;
-    }
-
-    std::vector<int> starts;
-    for (int f = 0; f < 270; f++)
-    {
-        if (calling.Step()[4].flags == kOutNoteOn)
-        {
-            starts.push_back(f);
-        }
-    }
+    PutCallSong(m, kTable, Revision::kCaptainTsubasa);
+    const auto [valid, frames, looped_at, starts] = RunCallSongs(m, kTable, Revision::kCaptainTsubasa);
 
     // Square 1's F0 goes into its record at once. A note at the volume that's playing retriggers the channel too.
-    SEQLIB_CHECK(seq.Valid() && frames[0][9].active);
+    SEQLIB_CHECK(valid && frames[0][9].active);
     SEQLIB_CHECK(frames[0][0].pan == 0x10 && frames[0][0].trig == 1);
     SEQLIB_CHECK(frames[4][0].flags == kOutPsgNote && frames[4][0].trig == 1 && frames[4][0].pitch == 0x480);
 
@@ -486,7 +477,7 @@ void TestCaptainTsubasaSequencer()
     SEQLIB_CHECK(frames[4][5].vol == 10 && frames[4][5].trig == 1);
     SEQLIB_CHECK(frames[4][6].vol == 5 && frames[4][6].trig == 1);
 
-    // Vibrato adds the pitch flag to voice 2's second note, which still starts.
+    // Vibrato adds the pitch flag to voice 2's second note. The note still starts.
     SEQLIB_CHECK(frames[8][6].flags == (kOutNoteOn | kOutPitch) && frames[8][6].key == 11);
 
     // The loop sets square 1's pan back to the default.
@@ -556,8 +547,8 @@ void TestKitaroDecoding()
 
 void TestKitaroSequencer()
 {
-    // Track 4: FA, wait 0, note (vol 9, sample 7), wait 2, end. The other tracks end at once. FA takes no argument, so
-    // the note follows at once, at its volume, whatever the game's setting.
+    // Track 4: FA, wait 0, note (vol 9, sample 7), wait 2, end. The other tracks end at once. FA takes no argument. The
+    // note follows at once, at its volume, whatever the game's setting.
     Image m(0x200);
     constexpr uint32_t kTable = kRomBase + 0x100;
     constexpr uint32_t kBase = kTable + kSongEntrySize;
@@ -788,14 +779,17 @@ void TestEternalDuelistConversion()
         {
             program[e.track] = e.data1;
         }
+
         if (kind == 0x90 && e.data2 > 0)
         {
             notes[e.track].emplace_back(e.frame, program[e.track]);
         }
+
         if (kind == 0xE0 && e.frame > 0)
         {
             bends[e.track].emplace_back(e.frame, e.data1 | (e.data2 << 7));
         }
+
         if (kind == 0xB0 && e.data1 == cc::kDataEntry)
         {
             range[e.track] = e.data2;
@@ -808,7 +802,7 @@ void TestEternalDuelistConversion()
     SEQLIB_CHECK_EQ(range["Square 1"], 32);
     SEQLIB_CHECK(bends["Square 1"] == (std::vector<std::pair<uint32_t, int>>{{4, 0}, {8, 16383}}));
 
-    // The wave's legato note reloads wave 0, which MIDI plays as a new note.
+    // The wave's legato note reloads wave 0. MIDI plays that as a new note.
     SEQLIB_REQUIRE_EQ(notes["Wave"].size(), 2);
     SEQLIB_CHECK_EQ(notes["Wave"][1].first, 4);
     SEQLIB_CHECK(notes["Wave"][1].second != notes["Wave"][0].second);

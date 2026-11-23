@@ -4,8 +4,8 @@
 // request and the start of a song, and each frame the per-frame entry. It then runs the mixer as the game's interrupts
 // do: a block of 16 points at a time, with the fraction of a block that a frame leaves over carried into the next
 // frame. A revision without a mixer runs its DMA interrupt routines from the FIFOs' timers instead. It reads what the
-// driver leaves in memory: the output records, the voice records and the FIFOs' bytes. It's the reference for ntdlib's
-// model of the driver (konami::Output).
+// driver leaves in memory: the output records, the voice records and the FIFOs' bytes. It's the reference for the
+// agblib model of the driver (konami::Output).
 
 #pragma once
 
@@ -41,7 +41,7 @@ struct GameRoutines
     std::vector<uint32_t> request_args;
     uint32_t start_song = 0;
     uint32_t frame = 0;        // the per-frame entry
-    uint32_t output_stage = 0; // the output records lie at sp + record_offset there
+    uint32_t output_stage = 0; // the output records are at sp + record_offset there
     int tracks = 16;           // the tracks of a song, and the output records
     int record_offset = 8;
     int record_size = 12;
@@ -95,7 +95,7 @@ public:
     // std::runtime_error when a routine fails, or the game has no live stage that plays the song.
     void Play(int song, bool live = false);
 
-    // Runs the per-frame entry. Returns true if the driver reached its output stage. Records() then holds the output
+    // Runs the per-frame entry. Returns true if the driver reached its output stage. Records() then contains the output
     // records as it found them. Each call clears SoundWrites() first.
     bool Frame();
 

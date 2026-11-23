@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "agblib/agb/sound_registers.h"
 #include "agblib/quintet/song.h"
 
 namespace agblib::quintet
@@ -25,10 +26,9 @@ struct Range
     uint32_t end = 0;
 };
 constexpr std::array<Range, 3> kRecorded = {
-    {{0x04000060, 0x040000A0}, {0x040000BC, 0x040000D4}, {0x04000100, 0x04000108}}};
+    {{agb::kRegSound1CntL, agb::kRegFifoA}, {0x040000BC, 0x040000D4}, {0x04000100, 0x04000108}}};
 
 // The FIFOs' registers, and the DMA sources that a program in EWRAM sets.
-constexpr uint32_t kFifoA = 0x040000A0;
 constexpr uint32_t kFifoBytes = 4;
 constexpr std::array<uint32_t, 2> kDmaSources = {0x040000BC, 0x040000C8};
 
@@ -40,10 +40,9 @@ struct ReadMask
     int size = 0;
     uint32_t mask = 0;
 };
-constexpr std::array<ReadMask, 2> kReadMasks = {{{0x04000082, 2, 0x770F}, {0x04000070, 1, 0xE0}}};
+constexpr std::array<ReadMask, 2> kReadMasks = {{{agb::kRegSoundCntH, 2, 0x770F}, {agb::kRegNr30, 1, 0xE0}}};
 
 // SOUNDBIAS as the BIOS leaves it.
-constexpr uint32_t kSoundBias = 0x04000088;
 constexpr uint32_t kBiosBias = 0x0200;
 
 // The size of a program that the game sends to another console: all of EWRAM.
@@ -53,7 +52,7 @@ constexpr uint32_t kProgramBytes = agb::kEwramSize;
 
 GameDriver::GameDriver(const agb::Rom& rom, const GameRoutines& routines) : routines_(routines), system_(rom)
 {
-    system_.Store(kSoundBias, 2, kBiosBias);
+    system_.Store(agb::kRegSoundBias, 2, kBiosBias);
 
     // A program runs from the start of EWRAM.
     if (routines_.image)
@@ -71,7 +70,7 @@ GameDriver::GameDriver(const agb::Rom& rom, const GameRoutines& routines) : rout
             return;
         }
 
-        if (address >= kFifoA && address < kFifoA + 2 * kFifoBytes)
+        if (address >= agb::kRegFifoA && address < agb::kRegFifoA + 2 * kFifoBytes)
         {
             value &= size == 4 ? 0xFFFFFFFFu : (1u << (8 * size)) - 1;
             stream_.push_back({address, uint8_t(size), value});
@@ -84,6 +83,7 @@ GameDriver::GameDriver(const agb::Rom& rom, const GameRoutines& routines) : rout
             {
                 value = RomAddress(value);
             }
+
             writes_.push_back({address, uint8_t(size), value});
             stream_.push_back(writes_.back());
         }
@@ -97,6 +97,7 @@ GameDriver::GameDriver(const agb::Rom& rom, const GameRoutines& routines) : rout
     {
         Call(call.address, call.args);
     }
+
     init_writes_ = writes_;
     records_ = routines_.channels;
 }

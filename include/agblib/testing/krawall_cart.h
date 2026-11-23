@@ -138,6 +138,7 @@ public:
             addresses.push_back(header);
             header = WritePattern(header, p);
         }
+
         const uint32_t next = header;
         if (at)
         {
@@ -155,6 +156,7 @@ public:
         {
             Put8(header + 3 + o, o < patterns.size() ? uint8_t(o) : kOrderEnd);
         }
+
         Put8(header + 0x163, 64);
         Put8(header + 0x164, uint8_t(kSpeed));
         Put8(header + 0x165, 125);
@@ -162,6 +164,7 @@ public:
         {
             Put32(header + kModulePatterns + 4 * uint32_t(i), addresses[i]);
         }
+
         const uint32_t end = at ? next : header + kModulePatterns + 4 * uint32_t(patterns.size());
         next_module_ = (end + 0xFF) & ~0xFFu;
         if (listed)
@@ -182,6 +185,7 @@ public:
             {
                 orders.push_back(kOrderSkip);
             }
+
             Put8(header + 0x123 + uint32_t(s), uint8_t(orders.size()));
             orders.insert(orders.end(), songs[s].begin(), songs[s].end());
         }
@@ -264,6 +268,7 @@ private:
             {
                 Put16(pattern + 2 * uint32_t(row / 4), uint16_t(data.size()));
             }
+
             for (const Cell& c : p.cells)
             {
                 if (c.row != row)
@@ -279,10 +284,12 @@ private:
                     data.push_back(uint8_t(c.note << 1 | (c.instrument >> 8)));
                     data.push_back(uint8_t(c.instrument));
                 }
+
                 if (c.volume >= 0)
                 {
                     data.push_back(uint8_t(c.volume));
                 }
+
                 if (c.effect >= 0)
                 {
                     data.push_back(uint8_t(c.effect));
@@ -291,10 +298,12 @@ private:
             }
             data.push_back(0);
         }
+
         for (int i = (p.rows + 3) / 4; i < 16; i++)
         {
             Put16(pattern + 2 * uint32_t(i), Get16(pattern + 2 * uint32_t((p.rows - 1) / 4)));
         }
+
         Put8(pattern + kPatternRows, uint8_t(p.rows));
         const uint32_t start = PatternData(Build::k2003_09_01, pattern);
         for (size_t i = 0; i < data.size(); i++)
@@ -405,7 +414,7 @@ private:
 };
 
 // The test module: a note on each channel, a volume slide, a note from a point within its sample, a portamento, and a
-// jump back to the start, which loops it every 5 rows.
+// jump back to the start. The jump loops the module every 5 rows.
 inline std::vector<Cell> LoopingCells()
 {
     return {

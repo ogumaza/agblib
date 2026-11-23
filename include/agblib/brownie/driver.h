@@ -22,7 +22,7 @@ struct DriverOverrides
     int song_count = 0;
 };
 
-// The revisions of the driver, which detection tells apart by the number of channels the per-frame routine runs.
+// The revisions of the driver. Detection tells them apart by the number of channels that the per-frame routine runs.
 enum class Revision
 {
     kSwordOfMana,     // Sword of Mana: 13 channels, whose samples a mixer plays on 5 voices
@@ -54,6 +54,12 @@ constexpr int kMode0Voices = 2;
 // The FIFOs. In the Magical Vacation revision, each plays a sample: FIFO A at the rate of Timer 0, and FIFO B at the
 // rate of Timer 1.
 constexpr int kFifoCount = 2;
+
+// A sample's record: the start of its points, their end and its loop, three words. In the Magical Vacation revision,
+// each entry of the sample table names a record. In the Sword of Mana revision, each names a set of kSetSamples words,
+// one for each semitone, and each word names a record.
+constexpr uint32_t kSampleRecordBytes = 12;
+constexpr uint32_t kSetSamples = 12;
 
 // The numbers and names that differ between the revisions, apart from the size of the driver's variables and the
 // offsets of SOUNDCNT_L's copy and of the master level among them. sequencer.h keeps those beside the variables. Code
@@ -111,7 +117,7 @@ struct DriverInfo
     uint32_t frequency_registers = 0;  // a word a PSG channel: the address of its NRx3 and NRx4
     uint32_t point_cycles = 1024;      // the CPU cycles each point of the FIFOs plays for, from Timer 0's setting
     int mix_rate = 16384;              // Hz: the rate the FIFOs play at, and the SoundFont's samples' rate
-    std::vector<std::string> log;      // detection results, as text
+    std::vector<std::string> log;      // detection results as text
     std::vector<std::string> warnings; // assumptions detection had to make
 };
 
@@ -119,7 +125,7 @@ struct DriverInfo
 // is given. Returns false and sets `error` if one of the driver's tables wasn't found or the song table has no sounds.
 bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& info, std::string& error);
 
-// A channel of a sound, as its entry in the song table lists it.
+// A channel of a sound as its entry in the song table lists it.
 struct SongChannel
 {
     int channel = 0;          // 0-3 the music's PSG, 4-7 the sound effects' PSG, 8 and up the samples

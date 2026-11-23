@@ -14,7 +14,6 @@
 
 #include "xsflib/bytes.h"
 
-#include "agblib/agb/files.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/agb/song_plan.h"
@@ -23,6 +22,7 @@
 #include "agblib/sequence_export/agb/beat_grid.h"
 #include "agblib/sequence_export/agb/beat_midi.h"
 #include "agblib/sequence_export/agb/midi.h"
+#include "agblib/sequence_export/agb/module_conversion.h"
 #include "agblib/sequence_export/agb/psg.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/sequence_export/agb/sf2.h"
@@ -35,7 +35,6 @@ namespace agblib::sequence_export::brownie
 using agblib::agb::FrameSeconds;
 using agblib::agb::kSecondCycles;
 using agblib::agb::LoopLength;
-using agblib::agb::WriteFile;
 using agblib::brownie::Channel;
 using agblib::brownie::ChannelKind;
 using agblib::brownie::ChannelName;
@@ -145,7 +144,7 @@ struct Simulation
 
 // The settings that shape what a channel's notes play: their volume, detune and envelope, a PSG channel's NRx1 and
 // sweep, the sample set or sample, the wave and the pan. A sample channel's record counts its envelope's progress where
-// a PSG channel keeps NRx1 and the sweep, so those are left out there.
+// a PSG channel keeps NRx1 and the sweep. Those fields are left out there.
 using Settings = std::array<uint32_t, 10>;
 
 // Returns the settings of channel `c`, whose record is `ch`.
@@ -156,7 +155,7 @@ Settings SettingsOf(const Channel& ch, int c)
             ch.samples, ch.sample_end, ch.wave,     ch.pan_on,          ch.pan_off};
 }
 
-// A channel's event other than a loop, with the channel's settings after it, which a note plays with.
+// A channel's event other than a loop, with the channel's settings after it. A note plays with those settings.
 struct Played
 {
     uint32_t frame = 0;
@@ -271,6 +270,7 @@ void LoopTracker::AddEvent(const Event& e, const Channel& ch)
     {
         loop_point_[e.channel] = e.first;
     }
+
     p.push_back(e.frame);
 
     // A channel comes back to the place it loops from with the settings that the end of its loop leaves. Those can
@@ -306,6 +306,7 @@ void LoopTracker::PlanLoop()
         {
             lengths.push_back(length);
         }
+
         if (length > longest)
         {
             longest = length;
@@ -332,6 +333,7 @@ void LoopTracker::PlanLoop()
                                             : end_[c] >= 0      ? uint64_t(end_[c])
                                                                 : 0);
     }
+
     run_on_ = uint32_t(latest - uint64_t(loop_point_[size_t(loop_channel_)]));
 }
 
@@ -455,6 +457,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, const std:
             {
                 sim.hints.push_back(f);
             }
+
             tracker.AddEvent(e, seq.GetChannel(e.channel));
         }
 
@@ -543,9 +546,9 @@ public:
     // Returns channel `c`'s notes, and adds the instruments they play.
     std::vector<Note> Make(int c)
     {
-        // Each note starts a stretch of the channel, which lasts until its next note or its end. A rest doesn't end it:
-        // ED turns a PSG channel off, or mutes the wave channel, and EC silences a voice, which the channel's sound
-        // shows, but a sample channel's ED and a PSG channel's EC leave the channel's sound playing.
+        // Each note starts a stretch of the channel. The stretch lasts until the channel's next note or its end. A rest
+        // doesn't end it: ED turns a PSG channel off or mutes the wave channel, and EC silences a voice. The channel's
+        // sound shows those rests. A sample channel's ED and a PSG channel's EC leave the channel's sound playing.
         std::vector<size_t> starts;
         for (size_t i = 0; i < sim_.events.size(); i++)
         {
@@ -614,6 +617,7 @@ public:
                 {
                     s = kind == ChannelKind::kFifoSample ? FifoSound(c, d, key_setting) : SampleSound(c, d);
                 }
+
                 s.frame = f;
                 if (!s.sounding || f >= stop)
                 {
@@ -623,10 +627,12 @@ public:
                         Finish(c, e, key_setting, note, notes);
                         open = false;
                     }
+
                     if (f >= stop)
                     {
                         break;
                     }
+
                     continue;
                 }
 
@@ -637,6 +643,7 @@ public:
                     note.on = f;
                     open = true;
                 }
+
                 note.sounds.push_back(s);
                 if (kind == ChannelKind::kNoise)
                 {
@@ -941,6 +948,7 @@ MidiFile MidiOf(const std::string& title, const std::string& about, Revision rev
         {
             return ticks.Channel(c, frame, end);
         };
+
         MidiTrack& mt = midi.AddTrack();
         mt.Name(TrackName(revision, c));
         mt.SetEnd(end);
@@ -966,7 +974,7 @@ std::array<std::vector<Note>, kChannelCount> ChannelNotes(NoteMaker& maker, cons
 }
 
 // Returns the song's beat, from the frames on which every channel's notes, rests and holds start, whichever channels
-// the conversion includes, so that conversions of different channels line up.
+// the conversion includes. Conversions of different channels then line up.
 BeatGrid GridOf(const Simulation& sim)
 {
     std::vector<std::vector<uint32_t>> starts(kChannelCount);
@@ -1014,6 +1022,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
         report.loop_start = FrameSeconds(sim.plan.loop_start);
         report.loop_end = FrameSeconds(sim.plan.loop_end);
     }
+
     report.bpm = 60 / FrameSeconds(grid.Tempos().front().frames);
 
     report.silent = report.tracks == 0;
@@ -1033,53 +1042,22 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
     const std::string stem = SongStem(settings, number);
     const MidiFile midi = MidiOf(title, about, info.revision, sim, grid, settings.frame_timing, notes);
 
-    std::string error;
-    if (files)
-    {
-        files->midi = midi.Encode();
-    }
-    else
-    {
-        report.midi_path = stem + ".mid";
-        if (!WriteFile(report.midi_path, midi.Encode(), error))
-        {
-            report.warnings.push_back(error);
-            return report;
-        }
-    }
-
     // The song's SoundFont, unless the instruments go in a shared one.
+    SoundfontBuilder sf(rom, uint32_t(info.mix_rate));
+    Sf2File& file = sf.File();
     if (!shared)
     {
-        SoundfontBuilder sf(rom, uint32_t(info.mix_rate));
         for (const std::string& w : own.Build(sf, tuning.cents))
         {
             report.warnings.push_back(w);
         }
 
-        Sf2File& file = sf.File();
         file.program = settings.program;
         file.SetTitle(title);
-        if (files)
-        {
-            if (!file.Encode(files->sf2, error))
-            {
-                report.warnings.push_back(error);
-                return report;
-            }
-        }
-        else
-        {
-            report.sf2_path = stem + ".sf2";
-            if (!file.Write(report.sf2_path, error))
-            {
-                report.warnings.push_back(error);
-                return report;
-            }
-        }
     }
 
-    report.ok = true;
+    report.ok = agb::WriteModuleFiles(stem, midi.Encode(), shared ? nullptr : &file, report,
+                                      files ? &files->midi : nullptr, files ? &files->sf2 : nullptr);
 
     return report;
 }

@@ -22,6 +22,7 @@
 #include "xsflib/player/archive_source.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/testing/agb_files.h"
@@ -33,6 +34,8 @@
 
 namespace ubimilan_player_tests
 {
+
+using agblib::testing::agb_tests::Throws;
 
 namespace agb = agblib::agb;
 using agb::Rom;
@@ -82,21 +85,6 @@ inline TestImage KitAndSquare(int level)
     image.SetInstrument(0, 0, {{0, 0x80, 0, 0x80}});
     image.AddPiece(1, {image.AddSequence({0x00, 0x00, 0x99, 40, 64, 0x00, 0x00, 0x90, 60, 0xF0, 0xFF, 0x00, 0xFC})});
     return image;
-}
-
-template <typename Exception, typename Function>
-inline bool Throws(Function function)
-{
-    try
-    {
-        function();
-    }
-    catch (const Exception&)
-    {
-        return true;
-    }
-
-    return false;
 }
 
 } // namespace ubimilan_player_tests

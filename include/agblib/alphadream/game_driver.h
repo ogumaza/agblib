@@ -27,7 +27,7 @@
 namespace agblib::alphadream
 {
 
-// The samples that each half of a FIFO's buffer holds: a frame's.
+// The samples that each half of a FIFO's buffer contains: a frame's.
 constexpr int kFrameSamples = 264;
 
 // The bytes that each transfer moves from a buffer to its FIFO.
@@ -54,7 +54,7 @@ struct GameRoutines
     uint32_t swap = 0;       // VBlank's swap of the halves
     uint32_t step = 0;       // the mixer's step from a sample's rate and a pitch
     uint32_t step_scale = 0; // the step routine's last factor less 1, in 2^32nds
-    uint32_t halves = 0;     // 3 bytes: whether half 0 and half 1 hold a mix, then the half that the DMA plays
+    uint32_t halves = 0;     // 3 bytes: whether half 0 and half 1 contain a mix, then the half that the DMA plays
     uint32_t buffer = 0;     // FIFO A's buffer: half 0, then half 1. FIFO B's follows it.
     uint32_t channels = 0;   // the sample channels' records: kSampleTracks of kChannelBytes
 };

@@ -5,13 +5,13 @@
 // of each voice that plays. It multiplies each point by its voice's volume, and adds the voices. It puts a point
 // halfway between each pair of sums, and averages each point with the one before. Each byte is that point over 64,
 // clipped to 8 bits. Both FIFOs play the same bytes: the music is mono. A DMA word transfer copies a voice's points,
-// and takes them from the word that holds the voice's position.
+// and takes them from the word that contains the voice's position.
 //
 // In the enhanced mixing mode (StartEnhancedMixing), the console's mixer goes on as before: the driver's stores, its
 // voices and the end of its notes stay the console's. Frame() also gives agb::kEnhancedFrameSamples samples a frame in
 // floating point. The mode has no anchor: only a measure against the console's mode shows what it gives. Its rules:
 //
-// - The samples lie on the scale of the console's 8-bit bytes. Nothing clips or rounds a sum. A voice's level is its
+// - The samples are on the scale of the console's 8-bit bytes. Nothing clips or rounds a sum. A voice's level is its
 //   volume over 64. The console's level is the same.
 // - The kit's notes take kEnhancedVoices voices in place of the mixer's 4, by the driver's rules: a piece that keeps a
 //   voice for the kit plays each note on its last voice. A note takes the last voice that no sound has, or else its
@@ -54,8 +54,8 @@ public:
         return song_.Valid();
     }
 
-    // Runs a frame: the sequencer's step, the sound update and the mixer's runs. SoundWrites() and Fifo() hold what the
-    // frame gave, and in the enhanced mode, EnhancedFifo().
+    // Runs a frame: the sequencer's step, the sound update and the mixer's runs. SoundWrites() and Fifo() contain what
+    // the frame gave, and in the enhanced mode, EnhancedFifo().
     void Frame();
 
     // The last frame's stores to the PSG's registers and the wave RAM, in order. The first frame's take in the stores
@@ -75,7 +75,7 @@ public:
     void StartEnhancedMixing();
 
     // The samples that the last frame gave the FIFOs in the enhanced mode: agb::kEnhancedFrameSamples, or none outside
-    // the mode. They're silent while SetEnhancedFrames(false) holds.
+    // the mode. They're silent while SetEnhancedFrames(false) contains.
     const std::vector<float>& EnhancedFifo() const
     {
         return enhanced_samples_;

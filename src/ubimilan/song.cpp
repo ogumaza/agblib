@@ -47,6 +47,7 @@ std::string CommandText(const Rom& rom, int status, uint32_t arguments)
         {
             return "FC end\n";
         }
+
         [[fallthrough]];
 
     default:
@@ -106,6 +107,7 @@ bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::strin
                       unsigned(sample.length), unsigned(sample.loop_start), unsigned(sample.loop_end));
         out += line;
     }
+
     for (size_t i = 0; i < piece.sequences.size(); i++)
     {
         const int id = piece.sequences[i];

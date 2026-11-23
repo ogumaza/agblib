@@ -45,7 +45,7 @@ constexpr uint8_t kTieS = 0x9E;
 
 // The S revision numbers its commands from 80, in the order of the A revision's: 0E to CF, D0 to E5, its command that
 // skips a byte, and E6 to EF. Returns the A revision's command for the S revision's command `command`. A command that
-// the A revision lacks gives F2. F2 does nothing there.
+// the A revision doesn't have gives F2. F2 does nothing there.
 uint8_t CommandOfS(uint8_t command);
 
 // A song's header: its length in bytes and the start of each of its 6 channels' data.
@@ -60,7 +60,7 @@ struct SongHeader
 // the header, and 6 channels that start inside the song.
 bool ReadSongHeader(const Rom& rom, uint32_t address, SongHeader& header);
 
-// A command of a channel's data, as the driver reads it.
+// A command of a channel's data as the driver reads it.
 struct Command
 {
     uint32_t size = 1;   // in bytes
@@ -74,7 +74,7 @@ struct Command
 // Decodes the command at `address` of channel `channel`.
 Command DecodeCommand(const Rom& rom, const DriverInfo& info, uint32_t address, int channel);
 
-// Writes a text listing of every command of each channel of a song, as the driver plays them. Returns false and sets
+// Writes a text listing of every command of each channel of a song as the driver plays them. Returns false and sets
 // `error` on failure.
 bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::string& path, std::string& error);
 

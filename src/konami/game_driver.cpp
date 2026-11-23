@@ -12,6 +12,8 @@
 
 #include "ntdlib/arm/cpu.h"
 
+#include "agblib/agb/sound_registers.h"
+
 namespace agblib::konami
 {
 namespace
@@ -19,17 +21,13 @@ namespace
 
 constexpr uint32_t kThumbReturn = 0x4770; // bx lr
 
-// Timer 0's control lies after its reload, and DMA 1's registers after DMA 0's.
+// Timer 0's control is after its reload.
 constexpr uint32_t kTimerStride = 4;
-constexpr uint32_t kDmaStride = 12;
-constexpr uint32_t kDmaControl = 10;
-constexpr uint16_t kDmaEnable = 0x8000;
 
 // The prescaler of a timer's control register.
 constexpr uint32_t kTimerPrescale[4] = {1, 64, 256, 1024};
 constexpr uint16_t kTimerOn = 0x0080;
 
-constexpr uint32_t kSoundCntHHigh = agb::kRegSoundCntH + 1;
 constexpr uint8_t kFifoAReset = 0x08;
 constexpr uint8_t kFifoResets = 0x88; // both FIFOs' reset bits: they read back as 0
 
@@ -57,19 +55,19 @@ GameDriver::GameDriver(const Rom& rom, const GameRoutines& routines) : routines_
         }
 
         if ((address >= agb::kRegFifoA && address < agb::kRegFifoA + 8) || address == agb::kRegSoundCntH ||
-            address == kSoundCntHHigh)
+            address == agb::kRegSoundCntHHigh)
         {
             fifo_writes_.push_back({address, uint8_t(size), value});
         }
 
         const bool whole = address == agb::kRegSoundCntH && size == 2;
-        if (whole || (address == kSoundCntHHigh && size == 1))
+        if (whole || (address == agb::kRegSoundCntHHigh && size == 1))
         {
             const uint8_t high = uint8_t(whole ? value >> 8 : value);
             if (high & kFifoResets)
             {
                 recording_ = false;
-                system_.Store(kSoundCntHHigh, 1, high & ~kFifoResets);
+                system_.Store(agb::kRegSoundCntHHigh, 1, high & ~kFifoResets);
                 recording_ = true;
             }
         }
@@ -105,6 +103,7 @@ void GameDriver::Play(int song, bool live)
                 entry = i;
             }
         }
+
         if (entry < 0)
         {
             throw std::runtime_error("the live stage plays no song " + std::to_string(song));
@@ -229,8 +228,8 @@ void GameDriver::TickFifo(int index, std::vector<int8_t>& out)
         fifo.queue.erase(fifo.queue.begin());
     }
 
-    const uint32_t dma = agb::kRegDma0Source + kDmaStride * uint32_t(1 + index);
-    if (fifo.queue.size() <= 16 && (system_.Load(dma + kDmaControl, 2) & kDmaEnable))
+    const uint32_t dma = agb::kRegDma0Source + agb::kDmaStride * uint32_t(1 + index);
+    if (fifo.queue.size() <= 16 && (system_.Load(dma + agb::kDmaControl, 2) & agb::kDmaEnable))
     {
         const uint32_t source = system_.Load(dma, 4);
         for (uint32_t i = 0; i < 16; i++)
@@ -320,7 +319,7 @@ void GameDriver::ApplyFifoWrites()
         {
             const uint32_t address = w.address + uint32_t(i);
             const uint8_t value = uint8_t(w.value >> (8 * i));
-            if (address == kSoundCntHHigh)
+            if (address == agb::kRegSoundCntHHigh)
             {
                 for (int f = 0; f < 2; f++)
                 {
@@ -393,6 +392,7 @@ void GameDriver::MixRing(uint32_t blocks, std::vector<int8_t>& fifo_a, std::vect
         {
             Call(routines_.mixer_tick | 1);
         }
+
         Call(routines_.mixer);
     }
 

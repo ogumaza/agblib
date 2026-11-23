@@ -74,9 +74,56 @@ std::vector<int8_t> Triangle(size_t length, size_t start = 0)
     return pcm;
 }
 
+// What the comparison of a channel's enhanced frames with a sine found.
+struct SineFit
+{
+    double worst = 0.0; // the largest error, as a share of the larger of a frame's two gains
+    int compared = 0;   // the enhanced points compared
+    int ramps = 0;      // the frames whose gains differ from the frame before
+    int stopped = -1;   // the first frame after `first` in which the channel has stopped, or -1
+};
+
+// Compares each frame of `e` after `first`, up to the channel's stop, with the test's sine at an amplitude of 100. The
+// wave moves `step` for each of the console's points, in units of 2^-23 of a sample. Across each frame, the gain of
+// each side ramps from the gain of the frame before to the frame's gain. `gains` gives both for a channel.
+template <typename Gains>
+SineFit FitSine(const EnhancedFrames& e, int first, uint32_t step, const Gains& gains)
+{
+    SineFit fit;
+    for (int f = first + 1; f < int(e.channels.size()); f++)
+    {
+        const Channel& c = e.channels[size_t(f)];
+        if (!c.status)
+        {
+            fit.stopped = f;
+            break;
+        }
+
+        const std::array<float, 2> to = gains(c);
+        const std::array<float, 2> from = gains(e.channels[size_t(f) - 1]);
+        fit.ramps += from != to;
+        for (size_t j = 0; j < kEnhanced; j++)
+        {
+            const double position =
+                (double(f - first) * 224.0 * step + double(j) * 224.0 * step / double(kEnhanced)) / 8388608.0;
+            const double point = 100.0 * std::sin(2.0 * 3.141592653589793 * position / 4.0);
+            for (size_t side = 0; side < 2; side++)
+            {
+                const double gain = from[side] + double(j) * (to[side] - from[side]) / double(kEnhanced);
+                const float out = side == 0 ? e.right[size_t(f)][j] : e.left[size_t(f)][j];
+                fit.worst =
+                    std::max(fit.worst, std::fabs(out - point * gain) / (100.0 * std::max(from[side], to[side])));
+            }
+            fit.compared++;
+        }
+    }
+
+    return fit;
+}
+
 void TestEnhancedSamples()
 {
-    // A looped sine at a quarter of its rate plays at a fixed pitch, and then a fifth up. Each enhanced sample lies
+    // A looped sine at a quarter of its rate plays at a fixed pitch, and then a fifth up. Each enhanced sample is
     // between the console's points, at its share of the frame's move: the sine at its position, within the
     // interpolator's ripple of 0.01 dB. Each side's volume ramps across the frame from the last frame's. A volume
     // change and the release's frames ramp. Once the channel stops, the output is silent. The mono mixer plays both
@@ -86,12 +133,9 @@ void TestEnhancedSamples()
         Cart cart;
         if (mono)
         {
-            const uint8_t kMono[] = {0xA0, 0x78, 0xE1, 0x78, 0x40, 0x18, 0x68, 0x43, 0x40, 0x0A, 0xA0, 0x72};
-            for (uint32_t i = 0; i < 12; i++)
-            {
-                cart.Put8(kMonoVolume + i, kMono[i]);
-            }
+            PutMonoMixer(cart);
         }
+
         const uint32_t sine = cart.Wave(QuarterSine(64), 13379, 0);
         const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(kFixed, sine, 60, {255, 0, 255, 200})},
                                                  {1, Cart::Voice(0, sine, 60, {255, 0, 255, 200})}});
@@ -110,6 +154,7 @@ void TestEnhancedSamples()
                            .Fine()},
                       voices);
         }
+
         const Rom rom = cart.ToRom();
         const DriverInfo info = Detect(rom);
         SEQLIB_REQUIRE(info.mono == mono);
@@ -123,6 +168,7 @@ void TestEnhancedSamples()
             {
                 first = e.channels[size_t(f)].status ? f : -1;
             }
+
             SEQLIB_REQUIRE(first >= 0);
             SEQLIB_CHECK(Silent(e.right[size_t(first) - 1]) && Silent(e.left[size_t(first) - 1]));
 
@@ -134,44 +180,16 @@ void TestEnhancedSamples()
                     return std::array<float, 2>{float(c.right + c.left) * scale / 2.0f,
                                                 float(c.right + c.left) * scale / 2.0f};
                 }
+
                 return std::array<float, 2>{float(c.right) * scale, float(c.left) * scale};
             };
             const uint32_t step = song == 0 ? 0x800000u : e.channels[size_t(first)].frequency * info.step_scale;
-            double worst = 0.0;
-            int compared = 0;
-            int ramps = 0;
-            int stopped = -1;
-            for (int f = first + 1; f < int(e.channels.size()); f++)
-            {
-                const Channel& c = e.channels[size_t(f)];
-                if (!c.status)
-                {
-                    stopped = f;
-                    break;
-                }
-                const std::array<float, 2> to = gains(c);
-                const std::array<float, 2> from = gains(e.channels[size_t(f) - 1]);
-                ramps += from != to;
-                for (size_t j = 0; j < kEnhanced; j++)
-                {
-                    const double position =
-                        (double(f - first) * 224.0 * step + double(j) * 224.0 * step / double(kEnhanced)) / 8388608.0;
-                    const double point = 100.0 * std::sin(2.0 * 3.141592653589793 * position / 4.0);
-                    for (size_t side = 0; side < 2; side++)
-                    {
-                        const double gain = from[side] + double(j) * (to[side] - from[side]) / double(kEnhanced);
-                        const float out = side == 0 ? e.right[size_t(f)][j] : e.left[size_t(f)][j];
-                        worst =
-                            std::max(worst, std::fabs(out - point * gain) / (100.0 * std::max(from[side], to[side])));
-                    }
-                    compared++;
-                }
-            }
-            SEQLIB_CHECK(worst < 0.002);
-            SEQLIB_CHECK(compared > 10 * int(kEnhanced) && ramps > 5);
+            const SineFit fit = FitSine(e, first, step, gains);
+            SEQLIB_CHECK(fit.worst < 0.002);
+            SEQLIB_CHECK(fit.compared > 10 * int(kEnhanced) && fit.ramps > 5);
             SEQLIB_CHECK(mono ? e.right == e.left : e.right[size_t(first) + 1] != e.left[size_t(first) + 1]);
-            SEQLIB_REQUIRE(stopped > 0);
-            for (int f = stopped; f < int(e.right.size()); f++)
+            SEQLIB_REQUIRE(fit.stopped > 0);
+            for (int f = fit.stopped; f < int(e.right.size()); f++)
             {
                 SEQLIB_CHECK(Silent(e.right[size_t(f)]) && Silent(e.left[size_t(f)]));
             }
@@ -181,7 +199,7 @@ void TestEnhancedSamples()
 
 void TestEnhancedSpecialSamples()
 {
-    // A compressed triangle wave and a reversed one play a fifth up. Each enhanced sample lies within 2 points of the
+    // A compressed triangle wave and a reversed one play a fifth up. Each enhanced sample is within 2 points of the
     // console's output at its time, interpolated: the console rounds its points down, and interpolates in straight
     // lines.
     Cart cart;
@@ -194,6 +212,7 @@ void TestEnhancedSpecialSamples()
         blocks.push_back(rising ? 0x01 : 0x0F);
         blocks.insert(blocks.end(), 31, uint8_t(rising ? 0x11 : 0xFF));
     }
+
     const std::vector<int8_t> points = Decompress(blocks);
     SEQLIB_REQUIRE(points.size() == 1024 && points[63] == 31 && points[64] == 31 && points[127] == -32);
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(kVoiceCompressed, cart.CompressedWave(blocks, 1024))},
@@ -203,6 +222,7 @@ void TestEnhancedSpecialSamples()
     {
         cart.Song({Track().Cmd(kCmdVoice, voice).Cmd(kCmdVol, 127).Note(24, 67, 127).Wait(24).Fine()}, voices);
     }
+
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
     SEQLIB_REQUIRE(info.special_samples);
@@ -226,10 +246,12 @@ void TestEnhancedSpecialSamples()
                 {
                     continue;
                 }
+
                 const double expected = console[k] + (at - double(k)) * (console[k + 1] - console[k]);
                 worst = std::max(worst, std::fabs(e.right[size_t(frame)][j] - expected));
             }
         }
+
         SEQLIB_CHECK(worst < 2.0);
         outputs[size_t(song)] = e.right[size_t(f) + 1];
     }
@@ -240,6 +262,7 @@ void TestEnhancedSpecialSamples()
     {
         apart = std::max(apart, double(std::fabs(outputs[1][j] - outputs[2][j])));
     }
+
     SEQLIB_CHECK(apart > 5.0);
 }
 
@@ -252,19 +275,16 @@ float Kept(float value)
 void TestEnhancedReverb()
 {
     // A jumpy sample of 224 points plays for a frame at a fixed pitch, on the left, with a reverb of 100. Each later
-    // frame holds the reverb alone: both sides of the frames a buffer's length of frames before and one frame later,
+    // frame contains the reverb alone: both sides of the frames a buffer's length of frames before and one frame later,
     // times the reverb over 512, on both sides. The mono mixer adds its one side, times the reverb over 256.
     for (bool mono : {false, true})
     {
         Cart cart;
         if (mono)
         {
-            const uint8_t kMono[] = {0xA0, 0x78, 0xE1, 0x78, 0x40, 0x18, 0x68, 0x43, 0x40, 0x0A, 0xA0, 0x72};
-            for (uint32_t i = 0; i < 12; i++)
-            {
-                cart.Put8(kMonoVolume + i, kMono[i]);
-            }
+            PutMonoMixer(cart);
         }
+
         const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(kFixed, cart.Wave(Jumpy(224)))}});
         cart.Song({Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 127).Cmd(kCmdPan, 0x10).Note(24, 60, 127).Wait(48).Fine()},
                   voices, 0, 0, 0x80 | 100);
@@ -298,6 +318,7 @@ void TestEnhancedReverb()
                 echoes |= f > first + 2 * period && expected != 0.0f;
             }
         }
+
         SEQLIB_CHECK_EQ(differences, 0);
         SEQLIB_CHECK(echoes);
         SEQLIB_CHECK(mono ? e.right == e.left : e.right[size_t(first)] != e.left[size_t(first)]);
@@ -318,6 +339,7 @@ std::pair<double, double> Levels(const EnhancedFrames& e, int first, int last)
             enhanced += double(sample) * sample;
             enhanced_count++;
         }
+
         for (int8_t point : e.console.right[size_t(f)])
         {
             console += double(point) * point;
@@ -348,10 +370,10 @@ int SoundingChannel(const Rom& rom, const DriverInfo& info, int song)
     return -1;
 }
 
-// Counts the samples of the frames from `first` on that differ from Camelot's echo of the frames before them, and
-// sets `echoes` when a frame 5 or more after `first` holds an echo. The frames in `without` are left out. The echo
-// comes from the frames before: 4 frames back on each side, less a share of the other side, a quarter of the right
-// side's last frame, and for the left side a quarter of the right side's from a frame and a third back: 268 samples.
+// Counts the samples of the frames from `first` on that differ from Camelot's echo of the frames before them, and sets
+// `echoes` when a frame 5 or more after `first` contains an echo. The frames in `without` are left out. The echo comes
+// from the frames before: 4 frames back on each side, less a share of the other side, a quarter of the right side's
+// last frame, and for the left side a quarter of the right side's from a frame and a third back: 268 samples.
 int EchoDifferences(const EnhancedFrames& e, int first, const std::set<int>& without, bool& echoes)
 {
     int differences = 0;
@@ -361,6 +383,7 @@ int EchoDifferences(const EnhancedFrames& e, int first, const std::set<int>& wit
         {
             continue;
         }
+
         const std::vector<float>& before = e.right[size_t(f) - 1];
         for (size_t j = 0; j < kEnhanced; j++)
         {
@@ -379,8 +402,8 @@ int EchoDifferences(const EnhancedFrames& e, int first, const std::set<int>& wit
     return differences;
 }
 
-// Songs of Camelot's mixer. Song 0 plays a sample of 40 at a fixed pitch for 6 frames. Songs 1 to 3 hold a pulse, a
-// saw and a triangle wave.
+// Songs of Camelot's mixer. Song 0 plays a sample of 40 at a fixed pitch for 6 frames. Songs 1 to 3 play a pulse, a saw
+// and a triangle wave.
 struct CamelotSongs
 {
     Rom rom;
@@ -406,10 +429,36 @@ CamelotSongs MakeCamelotSongs()
         cart.Song({Track().Cmd(kCmdTempo, 75).Cmd(kCmdVoice, voice).Cmd(kCmdVol, 50).Note(24, 48, 127).Wait(48).Fine()},
                   voices);
     }
+
     CamelotSongs songs{cart.ToRom(), {}};
     songs.info = Detect(songs.rom);
 
     return songs;
+}
+
+// The largest distance of the right side's enhanced samples in frames `from` to `to` (not included), times `scale`,
+// from the line between the console's points on either side of them.
+double DistanceFromConsole(const EnhancedFrames& e, int from, int to, double scale)
+{
+    double worst = 0.0;
+    for (int frame = from; frame < to; frame++)
+    {
+        const std::vector<int8_t>& points = e.console.right[size_t(frame)];
+        for (size_t j = 0; j < kEnhanced; j++)
+        {
+            const double at = double(j) * double(points.size()) / double(kEnhanced);
+            const size_t k = size_t(at);
+            if (k + 1 >= points.size())
+            {
+                continue;
+            }
+
+            const double expected = points[k] + (at - double(k)) * (points[k + 1] - points[k]);
+            worst = std::max(worst, std::fabs(e.right[size_t(frame)][j] * scale - expected));
+        }
+    }
+
+    return worst;
 }
 
 // The pulse, saw and triangle waves of TestEnhancedCamelot: songs 1 to 3 play at the console's level, echo included,
@@ -434,27 +483,11 @@ void CheckCamelotWaves(const Rom& rom, const DriverInfo& info)
         const auto [enhanced, console] = Levels(e, f + 2, f + 12);
         SEQLIB_CHECK(console > 5.0 && std::fabs(20.0 * std::log10(enhanced * scale / console)) < 0.15);
 
-        // The triangle wave lies within 2 points of the console's points, at each frame's start and end too. The
+        // The triangle wave is within 2 points of the console's points, at each frame's start and end too. The
         // console's sums and echo round towards 0, and the echo adds up their errors over later frames.
         if (song == 3)
         {
-            double worst = 0.0;
-            for (int frame = f + 1; frame < f + 5; frame++)
-            {
-                const std::vector<int8_t>& points = e.console.right[size_t(frame)];
-                for (size_t j = 0; j < kEnhanced; j++)
-                {
-                    const double at = double(j) * double(points.size()) / double(kEnhanced);
-                    const size_t k = size_t(at);
-                    if (k + 1 >= points.size())
-                    {
-                        continue;
-                    }
-                    const double expected = points[k] + (at - double(k)) * (points[k + 1] - points[k]);
-                    worst = std::max(worst, std::fabs(e.right[size_t(frame)][j] * scale - expected));
-                }
-            }
-            SEQLIB_CHECK(worst < 2.0);
+            SEQLIB_CHECK(DistanceFromConsole(e, f + 1, f + 5, scale) < 2.0);
         }
     }
 }
@@ -463,8 +496,8 @@ void TestEnhancedCamelot()
 {
     // Camelot's mixer plays a sample of 40 at a fixed pitch, at the centre, for 6 frames. In its first frame, the
     // output is the sample at each side's volume: 9/8 of the envelope over 512, and the output stage's 128 to a point.
-    // Once the channel stops, each frame holds the echo of the frames before it. The pulse, saw and triangle waves play
-    // at the console's level, echo included, and the triangle wave at its points, across the frames' joins.
+    // Once the channel stops, each frame contains the echo of the frames before it. The pulse, saw and triangle waves
+    // play at the console's level, echo included, and the triangle wave at its points, across the frames' joins.
     const CamelotSongs songs = MakeCamelotSongs();
     const Rom& rom = songs.rom;
     const DriverInfo& info = songs.info;
@@ -484,6 +517,7 @@ void TestEnhancedCamelot()
             last = f;
         }
     }
+
     SEQLIB_REQUIRE(first >= 0 && last > first && last + 10 < int(e.channels.size()));
 
     const Channel& c = e.channels[size_t(first)];
@@ -496,6 +530,7 @@ void TestEnhancedCamelot()
         worst = std::max(worst, double(std::fabs(e.right[size_t(first)][j] - right)));
         worst = std::max(worst, double(std::fabs(e.left[size_t(first)][j] - left)));
     }
+
     SEQLIB_CHECK(worst < 1e-4 && right > 1.0f && left > 1.0f);
 
     bool echoes = false;
@@ -525,10 +560,12 @@ void TestEnhancedFramesWithout()
         SEQLIB_CHECK(Silent(b.right[size_t(f)]) && Silent(b.left[size_t(f)]));
         SEQLIB_CHECK(!Silent(a.right[size_t(f)]));
     }
+
     for (int f = 7; f < 30; f++)
     {
         SEQLIB_CHECK(a.right[size_t(f)] == b.right[size_t(f)] && a.left[size_t(f)] == b.left[size_t(f)]);
     }
+
     SEQLIB_CHECK(a.console.right == b.console.right && a.console.left == b.console.left);
 
     // After Camelot's sample, two frames without the mixing. The echo takes them as silence.
@@ -602,6 +639,7 @@ void TestEnhancedPlayerGrows()
                 }
             }
         }
+
         return out;
     };
     std::array<int32_t, 2> meter = {};
@@ -619,6 +657,7 @@ void TestEnhancedPlayerGrows()
         worst_muted = std::max(worst_muted, std::fabs(double(muted[i]) - double(first[i])));
         loudest = std::max(loudest, std::fabs(second[i]));
     }
+
     SEQLIB_CHECK(loudest > 0.05f);
     SEQLIB_CHECK(worst < 1e-6);
     SEQLIB_CHECK(worst_muted < 1e-6);
@@ -663,6 +702,7 @@ void TestEnhancedPlayer()
             player.RunFrame(e);
             sizes &= e.size() - before == 2 * kEnhanced;
         }
+
         SEQLIB_CHECK(sizes);
 
         // The console's output steps to its level. The enhanced output crosses half of it.
@@ -686,7 +726,10 @@ void TestEnhancedPlayer()
                 console.RunFrame(out);
             }));
     }
+}
 
+void TestEnhancedPlayerBusy()
+{
     // Busy() follows the console's mixer, and a reverb keeps it busy as long.
     const TwoTracks wet = TwoTrackSongs(0x80 | 60);
     ArchivePlayerOptions options;
@@ -703,11 +746,17 @@ void TestEnhancedPlayer()
         console.RunFrame();
         busy &= enhanced.Busy() == console.Busy();
     }
-    SEQLIB_CHECK(busy && !enhanced.Busy());
 
+    SEQLIB_CHECK(busy && !enhanced.Busy());
+}
+
+void TestEnhancedPlayerSnapshot()
+{
     // A snapshot gives the frames after it again. Two frames after frames without samples, the output is the
     // reference's: the FIFOs' silence of those frames has played, and the squares' steps have settled.
     const TwoTracks dry = TwoTrackSongs();
+    ArchivePlayerOptions options;
+    options.enhanced = true;
     ArchivePlayer reference(dry.rom, dry.info);
     reference.Start(0, options);
     std::vector<float> all;
@@ -715,6 +764,7 @@ void TestEnhancedPlayer()
     {
         reference.RunFrame(all);
     }
+
     ArchivePlayer player(dry.rom, dry.info);
     player.Start(0, options);
     std::vector<float> first;
@@ -722,16 +772,19 @@ void TestEnhancedPlayer()
     {
         player.RunFrame(first);
     }
+
     for (int f = 0; f < 20; f++)
     {
         player.RunFrame();
     }
+
     const ArchivePlayer::Snapshot snapshot = player.Save();
     std::vector<float> after;
     for (int f = 0; f < 60; f++)
     {
         player.RunFrame(after);
     }
+
     player.Restore(snapshot);
     SEQLIB_CHECK(player.Enhanced());
     std::vector<float> again;
@@ -739,14 +792,21 @@ void TestEnhancedPlayer()
     {
         player.RunFrame(again);
     }
+
     SEQLIB_CHECK(after == again && after.size() == 120 * kEnhanced);
     SEQLIB_CHECK(std::equal(first.begin(), first.end(), all.begin()));
     SEQLIB_CHECK(std::equal(after.begin() + 2 * 2 * kEnhanced, after.end(), all.begin() + 52 * 2 * kEnhanced));
     SEQLIB_CHECK(!std::equal(after.begin(), after.begin() + 2 * kEnhanced, all.begin() + 50 * 2 * kEnhanced));
+}
 
-    // A frame without samples leaves its DirectSound samples silent. At a frame's start, the FIFOs hold 118 samples
+void TestEnhancedPlayerSilentFrame()
+{
+    // A frame without samples leaves its DirectSound samples silent. At a frame's start, the FIFOs contain 118 samples
     // of the frame before: the band-limited steps' delay of 32, and the 24 points ahead of the timer, 86 samples. The
     // first frame after the frame without samples sounds for those 118, and the second is silent for them.
+    const TwoTracks dry = TwoTrackSongs();
+    ArchivePlayerOptions options;
+    options.enhanced = true;
     ArchivePlayer saw(dry.rom, dry.info);
     saw.Start(2, options);
     std::vector<float> sounding;
@@ -754,6 +814,7 @@ void TestEnhancedPlayer()
     {
         saw.RunFrame(sounding);
     }
+
     saw.RunFrame();
     std::vector<float> next;
     saw.RunFrame(next);
@@ -775,6 +836,9 @@ int RunTests()
     TestEnhancedCamelot();
     TestEnhancedFramesWithout();
     TestEnhancedPlayer();
+    TestEnhancedPlayerBusy();
+    TestEnhancedPlayerSnapshot();
+    TestEnhancedPlayerSilentFrame();
     TestEnhancedPlayerGrows();
 
     return seqlib::testing::Summary("mp2k_enhanced");

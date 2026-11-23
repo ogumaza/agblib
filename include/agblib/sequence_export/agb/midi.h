@@ -44,10 +44,10 @@ inline int BendRangeFor(double widest, double smallest)
     return widest > smallest ? std::clamp(int(std::ceil(widest - 1e-9)), 2, kMaxBendRange) : 0;
 }
 
-// Returns the pitch bend value for `bend` semitones with a bend range of `range`.
+// Returns the pitch bend value for `bend` semitones with a bend range of `range` (seqlib::midi::PitchWheelValue).
 inline int BendValue(double bend, int range)
 {
-    return std::clamp(8192 + int(std::lround(bend / range * 8192)), 0, 16383);
+    return seqlib::midi::PitchWheelValue(bend / range);
 }
 
 // Returns the MIDI value that plays a level of `level` / `full` in a straight line: 127 × √(level / full), rounded,
@@ -68,7 +68,7 @@ inline int FixedBendValue(int64_t offset, int64_t semitone, int range)
     return int(std::clamp<int64_t>(8192 + steps, 0, 16383));
 }
 
-// Returns the bank and program of the preset numbered `number`. Each bank holds 128 presets.
+// Returns the bank and program of the preset numbered `number`. Each bank has 128 presets.
 constexpr BankProgram NumberedPreset(int number)
 {
     return {number / 128, number % 128};
@@ -107,7 +107,7 @@ public:
     // Sets the bend at tick `at` to `semitones` if the track has a bend range.
     void SetBend(uint32_t at, double semitones);
 
-    // Clears the record of the pan, expression and bend, so that the writer sets them again. A track on a shared MIDI
+    // Clears the record of the pan, expression and bend. The writer then sets them again. A track on a shared MIDI
     // channel calls this where another track's note ends: that note's settings stay in force until then.
     void SetSettingsAgain();
 

@@ -16,13 +16,13 @@
 #include "agblib/brownie/driver.h"
 #include "agblib/brownie/sequencer.h"
 #include "agblib/brownie/song.h"
+#include "agblib/sequence_export/agb/performance_steps.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "converted_notes.h"
 
 namespace agblib::sequence_export::brownie
 {
 
-using agblib::agb::kFrameRate;
 using agblib::agb::Rom;
 using agblib::brownie::ChannelName;
 using agblib::brownie::ChannelRead;
@@ -49,7 +49,7 @@ constexpr uint8_t kSamplePan = 0xEA;
 constexpr uint8_t kVolume = 0xF2;
 constexpr uint8_t kPsgPan = 0xFD;
 
-// Returns the track name of channel `c` of revision `r`, as the MIDI file gives it.
+// Returns the track name of channel `c` of revision `r` as the MIDI file gives it.
 std::string TrackNameOf(Revision r, int c)
 {
     std::string name = ChannelName(r, c);
@@ -58,7 +58,7 @@ std::string TrackNameOf(Revision r, int c)
     return name;
 }
 
-// The offsets of the region that holds a sound's list count from this address.
+// The offsets of the region that contains a sound's list count from this address.
 uint32_t BaseOf(const Rom& rom, const DriverInfo& info, int song)
 {
     const uint32_t list = SongAddress(rom, info, song);
@@ -100,6 +100,7 @@ std::array<std::vector<ntdlib::sequence_export::Stretch>, 16> StretchesOf(const 
             command = CommandOf(info.revision, byte);
             follows = read.address == *before + CommandSize(info.revision, byte);
         }
+
         if (!follows && read.frame == end)
         {
             continue;
@@ -128,22 +129,6 @@ std::array<std::vector<ntdlib::sequence_export::Stretch>, 16> StretchesOf(const 
     }
 
     return stretches;
-}
-
-// Sets `setting` of the track's mix to `value` at `tick`. A later change in the same tick replaces an earlier one.
-void AddChange(std::vector<ntdlib::sequence_export::MixChange>& changes, uint32_t tick,
-               ntdlib::sequence_export::Mix setting, int value)
-{
-    const auto same = std::find_if(changes.rbegin(), changes.rend(), [&](const ntdlib::sequence_export::MixChange& c)
-                                   { return c.tick == tick && c.setting == setting; });
-    if (same != changes.rend())
-    {
-        same->value = int16_t(value);
-    }
-    else
-    {
-        changes.push_back({tick, setting, int16_t(value)});
-    }
 }
 
 // The pan from -64 to 63 of a channel's levels on the left and the right, each from 0 to 15.
@@ -177,14 +162,15 @@ std::array<std::vector<ntdlib::sequence_export::MixChange>, 16> MixOf(const Rom&
         switch (CommandOf(info.revision, byte))
         {
         case kVolume:
-            AddChange(changes, read.frame, ntdlib::sequence_export::Mix::kVolume, value);
+            agb::AddMixChange(changes, read.frame, ntdlib::sequence_export::Mix::kVolume, value);
             break;
 
         case kSamplePan:
             // SetVoiceLevels and a note read these levels only in the Sword of Mana revision.
             if (read.channel >= kFirstSampleChannel && info.revision != Revision::kMagicalVacation)
             {
-                AddChange(changes, read.frame, ntdlib::sequence_export::Mix::kPan, PanOfLevels(value >> 4, value & 15));
+                agb::AddMixChange(changes, read.frame, ntdlib::sequence_export::Mix::kPan,
+                                  PanOfLevels(value >> 4, value & 15));
             }
             break;
 
@@ -192,8 +178,8 @@ std::array<std::vector<ntdlib::sequence_export::MixChange>, 16> MixOf(const Rom&
             // The driver shifts the byte's first bits of NR51 to the channel's.
             if (read.channel < kFirstSampleChannel)
             {
-                AddChange(changes, read.frame, ntdlib::sequence_export::Mix::kPan,
-                          PanOfLevels(((value >> 4) & 1) * 15, (value & 1) * 15));
+                agb::AddMixChange(changes, read.frame, ntdlib::sequence_export::Mix::kPan,
+                                  PanOfLevels(((value >> 4) & 1) * 15, (value & 1) * 15));
             }
             break;
 
@@ -203,21 +189,6 @@ std::array<std::vector<ntdlib::sequence_export::MixChange>, 16> MixOf(const Rom&
     }
 
     return mix;
-}
-
-// The stretch of `stretches` that runs the read at `offset` by `tick`: the last that began by then and holds it.
-uint32_t StretchOf(const std::vector<ntdlib::sequence_export::Stretch>& stretches, uint32_t offset, uint32_t tick)
-{
-    for (size_t i = stretches.size(); i-- > 0;)
-    {
-        const ntdlib::sequence_export::Stretch& s = stretches[i];
-        if (s.tick <= tick && s.first <= offset && offset <= s.last)
-        {
-            return uint32_t(i);
-        }
-    }
-
-    return 0;
 }
 
 } // namespace
@@ -233,22 +204,7 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
     }
 
     perf.base = BaseOf(rom, info, song);
-    perf.truncated = converted.truncated;
-    perf.end_tick = converted.end_frame;
-    perf.seconds = double(converted.end_frame) / kFrameRate;
-    perf.midi_end_tick = converted.end_tick;
-    if (converted.loops)
-    {
-        perf.loop = seqlib::midi::Performance::Loop{converted.loop_start, converted.loop_end};
-        perf.loops = settings.loops;
-    }
-
-    perf.timebase = uint32_t(std::max(std::lround(converted.quarter_frames), 1L));
-    if (converted.quarter_frames <= 0)
-    {
-        perf.timebase = 24;
-    }
-    perf.tempo.push_back({0, 60 * kFrameRate / perf.timebase});
+    agb::SetFrameTimes(perf, converted, settings.loops);
     for (int c = 0; c < LayoutOf(info.revision).channels; c++)
     {
         perf.track_names[size_t(c)] = TrackNameOf(info.revision, c);
@@ -262,19 +218,11 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
     {
         std::vector<ntdlib::sequence_export::TrackEvent>& events = perf.tracks[size_t(n.track)];
         const uint32_t number = uint32_t(n.bank) * 128 + uint32_t(n.program);
-        if (preset[size_t(n.track)] != number)
-        {
-            preset[size_t(n.track)] = number;
-            ntdlib::sequence_export::TrackEvent event;
-            event.tick = n.on_frame;
-            event.kind = ntdlib::sequence_export::EventKind::kPreset;
-            event.preset = number;
-            events.push_back(event);
-        }
+        agb::AddPresetEvent(events, preset[size_t(n.track)], n.on_frame, number);
 
         ntdlib::sequence_export::NoteCommand command;
         command.offset = n.command - perf.base;
-        command.stretch = StretchOf(perf.stretches[size_t(n.track)], command.offset, n.command_frame);
+        command.stretch = agb::StretchOf(perf.stretches[size_t(n.track)], command.offset, n.command_frame);
         const uint32_t id = uint32_t(perf.note_commands.size()) + 1;
         perf.note_commands.push_back(command);
         perf.note_causes.push_back(n.on_frame == n.command_frame ? NoteCause::kNote : NoteCause::kEarlier);
@@ -286,13 +234,7 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
         on.key = uint8_t(n.key);
         on.value = 127;
         on.note = id;
-        events.push_back(on);
-
-        ntdlib::sequence_export::TrackEvent off = on;
-        off.tick = n.off_frame;
-        off.kind = ntdlib::sequence_export::EventKind::kNoteOff;
-        off.value = 0;
-        events.push_back(off);
+        agb::AddNoteEvents(events, on, n.off_frame);
     }
 
     return perf;

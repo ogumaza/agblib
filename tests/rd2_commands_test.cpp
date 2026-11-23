@@ -10,18 +10,21 @@
 #include <utility>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/rd2/commands.h"
 #include "agblib/rd2/driver.h"
 #include "agblib/testing/rd2_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 using xsflib::testing::Check;
 
 namespace
 {
+
+using agblib::testing::agb_tests::Throws;
 
 namespace rd2 = agblib::rd2;
 using ntdlib::commands::Command;
@@ -54,6 +57,7 @@ std::vector<Command> CommandsOf(const Decoded& decoded)
             commands.push_back(item);
         }
     }
+
     return commands;
 }
 
@@ -92,22 +96,6 @@ std::vector<uint8_t> BytesOf(const Command& item, Revision revision = kPast)
     return {bytes.begin() + 4, bytes.end() - 1};
 }
 
-// Whether `body` throws an exception of type `E`.
-template <typename E, typename Body>
-bool Throws(Body body)
-{
-    try
-    {
-        body();
-    }
-    catch (const E&)
-    {
-        return true;
-    }
-
-    return false;
-}
-
 void TestHeader()
 {
     // Two tracks at 6 and 7, then a track that the header leaves out with an offset of 0.
@@ -121,6 +109,7 @@ void TestHeader()
         Check(entry.kind == Kind::kOpenTrack && entry.index == t && entry.encoding.opcode == rd2::kHeaderEntry,
               "each halfword is an entry of its track");
     }
+
     Check(items[3].target_outside && items[3].target == 0, "an offset of 0 names no item");
     Check(!items[1].target_outside && items[items[1].target].kind == Kind::kEnd,
           "an entry names its track's first item");
@@ -259,6 +248,7 @@ void TestFlow()
     {
         kinds.push_back(item.kind);
     }
+
     const std::vector<Kind> expected = {Kind::kData, Kind::kOpenTrack, Kind::kCall,   Kind::kOpenTrack, Kind::kJump,
                                         Kind::kData, Kind::kCall,      Kind::kReturn, Kind::kReturn,    Kind::kEnd,
                                         Kind::kData, Kind::kWait,      Kind::kJump,   Kind::kData};
@@ -344,6 +334,7 @@ void TestEdits()
     {
         item.encoding.repeated = false;
     }
+
     const std::vector<uint8_t> whole = EncodeSequence(decoded.sequence, kPast).bytes;
     Check(whole == OneTrack({0x60 + 40, 0x18, 0x50, 0x60 + 41, 0x18, 0x50, 0xC1, 0x20, 0xC1, 0x20, 0xFF}),
           "the usual form of each");
@@ -455,7 +446,7 @@ void TestRomSequences()
     Check(first.sequence.items.back().kind == Kind::kData && first.sequence.items.back().bytes.size() == 1,
           "the padding is data");
 
-    // The last music sequence ends with its last command: the effects' sequence lies far off.
+    // The last music sequence ends with its last command: the effects' sequence is far off.
     const Decoded second = rd2::DecodeRomSequence(rom, info, 1);
     Check(EncodeSequence(second.sequence, info.revision).bytes.size() == 8, "a sequence ends with its tracks");
     Check(rd2::DecodeRomSequence(rom, info, 2).entries.size() == 3, "the effects' table");

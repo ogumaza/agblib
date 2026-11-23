@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -25,7 +26,7 @@ inline std::string Hex(uint32_t v)
 }
 
 // A cartridge image mapped at 0x08000000. All reads take GBA bus addresses and are bounds-checked: out-of-range reads
-// return 0 rather than failing, so callers must validate addresses with Contains() where it matters.
+// return 0 rather than failing. Callers must validate addresses with Contains() where it matters.
 class Rom
 {
 public:
@@ -39,6 +40,8 @@ public:
         data_ = std::move(image);
         from_gsf_ = false;
         library_.clear();
+        gsf_entry_.reset();
+        gsf_reserved_.clear();
     }
 
     bool Contains(uint32_t addr, uint32_t len = 1) const
@@ -94,6 +97,9 @@ public:
     // Returns the game code in the header (0xAC, 4 characters).
     std::string GameCode() const;
 
+    // Returns the software version in the header (0xBC): 0 for a game's first release, 1 for its first revision.
+    uint8_t Version() const;
+
     bool FromGsf() const
     {
         return from_gsf_;
@@ -105,8 +111,22 @@ public:
         return library_;
     }
 
+    // Returns where the CPU of a GSF set starts: the start address of the first program loaded. A cartridge image
+    // starts at 0x08000000.
+    uint32_t GsfEntry() const
+    {
+        return gsf_entry_.value_or(kRomBase);
+    }
+
+    // Returns the reserved area of each file of a GSF set that has one, in the order of loading. The format sets the
+    // area aside for a save state and defines no layout for it.
+    const std::vector<std::vector<uint8_t>>& GsfReserved() const
+    {
+        return gsf_reserved_;
+    }
+
 private:
-    // Loads a GSF file, its own program and its libraries. `depth` counts the libraries that led to it.
+    // Loads a GSF file, the program in it and its libraries. `depth` counts the libraries that led to it.
     bool LoadGsf(const std::string& path, int depth, std::string& error);
 
     // Copies a GSF program section into the image, at the address it gives.
@@ -115,6 +135,8 @@ private:
     std::vector<uint8_t> data_;
     bool from_gsf_ = false;
     std::string library_;
+    std::optional<uint32_t> gsf_entry_;
+    std::vector<std::vector<uint8_t>> gsf_reserved_;
 };
 
 // Returns the `count` bytes of `rom` from `address` on in hex. Each byte comes out as two capital digits and a space.

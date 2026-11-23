@@ -13,8 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "xsflib/bytes.h"
-
+#include "agblib/agb/cut_steps.h"
 #include "agblib/rare/commands.h"
 #include "agblib/rare/song.h"
 
@@ -75,24 +74,13 @@ std::map<uint32_t, CutSequence> ReadSequences(const Rom& rom, const DriverInfo& 
             continue;
         }
 
-        for (const ntdlib::commands::Command& item : sequence.decoded.sequence.items)
+        const auto encode = [&]()
         {
-            if (item.kind == ntdlib::commands::Kind::kData)
-            {
-                sequence.size += uint32_t(item.bytes.size());
-            }
-        }
-        try
-        {
-            const Encoded encoded = EncodeSequence(sequence.decoded.sequence, sequence.decoded.entries, traits);
-            sequence.size = uint32_t(encoded.bytes.size());
-            sequence.usable = !sequence.decoded.opaque && rom.Contains(address, sequence.size) &&
-                              std::equal(encoded.bytes.begin(), encoded.bytes.end(), rom.Ptr(address));
-        }
-        catch (const std::invalid_argument&)
-        {
-            // The sequence stays among the ROM's bytes, up to the end of its data.
-        }
+            return EncodeSequence(sequence.decoded.sequence, sequence.decoded.entries, traits);
+        };
+        const agb::CutSize cut = agb::SizeOfCut(rom, address, sequence.decoded, encode);
+        sequence.size = cut.size;
+        sequence.usable = cut.usable;
         sequence.tunes.emplace_back(s, sequence.decoded.entries);
         sequences.emplace(address, std::move(sequence));
     }
@@ -100,7 +88,7 @@ std::map<uint32_t, CutSequence> ReadSequences(const Rom& rom, const DriverInfo& 
     return sequences;
 }
 
-// The spans of the ROM that hold the driver's data other than the sequences, from 0x08000000.
+// The spans of the ROM that contain the driver's data other than the sequences, from 0x08000000.
 std::vector<Span> DriverDataOf(const Rom& rom, const DriverInfo& info)
 {
     std::vector<Span> spans;
@@ -129,8 +117,10 @@ std::vector<Span> DriverDataOf(const Rom& rom, const DriverInfo& info)
             {
                 add(inst.start, uint64_t(inst.end - inst.start) + 1);
             }
+
             return;
         }
+
         if (depth > 0 || !rom.Contains(inst.key_map, kProgramMapBytes))
         {
             return;
@@ -143,6 +133,7 @@ std::vector<Span> DriverDataOf(const Rom& rom, const DriverInfo& info)
             const uint8_t index = rom.U8(inst.key_map + key);
             entries = index == 0xFF ? entries : std::max(entries, index + 1);
         }
+
         add(inst.key_table, 4 * uint64_t(entries));
         for (int i = 0; i < entries; i++)
         {
@@ -171,6 +162,7 @@ std::vector<Span> DriverDataOf(const Rom& rom, const DriverInfo& info)
             const uint8_t index = rom.U8(header.program_map + program);
             entries = index == 0xFF ? entries : std::max(entries, index + 1);
         }
+
         add(header.instruments, 4 * uint64_t(entries));
         for (int i = 0; i < entries; i++)
         {
@@ -180,71 +172,39 @@ std::vector<Span> DriverDataOf(const Rom& rom, const DriverInfo& info)
             }
         }
     }
+
     if (info.pitch_table >= kRomBase + kPitchTableBefore)
     {
         add(info.pitch_table - kPitchTableBefore, kPitchTableBytes);
     }
+
     add(info.sine_table, kSineTableBytes);
 
     return spans;
 }
 
-// Whether `size` bytes from `address` meet one of `spans`.
-bool Touches(std::span<const Span> spans, uint32_t address, uint32_t size)
-{
-    for (const Span& span : spans)
-    {
-        if (address < uint64_t(span.start) + span.size && span.start < uint64_t(address) + size)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 // The bytes that the driver reads, with `sequences`.
 Reached ReachedBytes(const Rom& rom, const DriverInfo& info, const std::map<uint32_t, CutSequence>& sequences)
 {
-    Reached reached(rom);
-    for (const Span& span : DriverDataOf(rom, info))
-    {
-        reached.Mark(span.start, span.size);
-    }
-    for (const auto& [address, sequence] : sequences)
-    {
-        reached.Mark(address, sequence.size);
-    }
-
-    return reached;
+    return agb::ReachedOf(rom, DriverDataOf(rom, info), sequences);
 }
 
 // Marks the sequences that stay among the ROM's bytes as unusable. `data` gives the driver's other data.
 void MarkUnmovable(std::map<uint32_t, CutSequence>& sequences, std::span<const Span> data)
 {
     // Each sequence once, in the order of the sequences' bytes. A sequence stays among the ROM's bytes when another
-    // reads any of its bytes, or when it holds the driver's other data: the other reader would lose them when the
-    // sequence moved. The ROM's first bytes stay in a run, which the fields count from.
-    auto reader = sequences.end(); // the sequence that reads furthest
-    uint32_t read_to = 0;          // where that sequence's bytes end
-    for (auto it = sequences.begin(); it != sequences.end(); ++it)
+    // reads any of its bytes, or when it contains the driver's other data: the other reader would lose them when the
+    // sequence moved. The ROM's first bytes stay in a run, and the fields count from that run.
+    const auto size = [](const CutSequence& sequence)
     {
-        const uint32_t end = it->first + it->second.size;
-        if (Touches(data, it->first, it->second.size) || it->first == kRomBase)
-        {
-            it->second.usable = false;
-        }
-        if (reader != sequences.end() && it->first < read_to)
-        {
-            it->second.usable = false;
-            reader->second.usable = false;
-        }
-        if (reader == sequences.end() || end > read_to)
-        {
-            reader = it;
-            read_to = end;
-        }
-    }
+        return sequence.size;
+    };
+
+    const auto stays = [&](uint32_t address, uint32_t bytes)
+    {
+        return agb::SpansTouch(data, address, bytes) || address == kRomBase;
+    };
+    agb::MarkReadTwice(sequences, size, stays);
 }
 
 // Adds the runs between the usable sequences and a piece for each of them to `layout`. Returns the piece of each
@@ -266,6 +226,7 @@ std::map<uint32_t, uint32_t> AddPieces(const Rom& rom, const std::map<uint32_t, 
         layout.sequences.push_back(sequence.decoded.sequence);
         at = address + sequence.size;
     }
+
     agb::AddRomRun(rom, at, rom.End(), layout.pieces);
 
     return pieces_of;
@@ -309,6 +270,7 @@ void AddTrackListFields(const Rom& rom, const DriverInfo& info, const std::map<u
             }
         }
     }
+
     std::stable_sort(fields.begin(), fields.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
     for (const auto& [tune, field] : fields)
     {
@@ -346,13 +308,10 @@ std::vector<uint8_t> Join(const Traits& traits, std::span<const ntdlib::commands
     {
         return EncodeSequence(sequences[sequence], entries[piece], traits);
     };
+
     agb::JoinedRom rom(pieces, sequences.size(), fields, free,
                        {.alignment = kSequenceAlignment, .run_first = true, .filler = options.filler}, encode);
-    for (const ntdlib::sar::Field& field : fields)
-    {
-        uint8_t* at = rom.FieldBytes(field, 4);
-        xsflib::StoreLe32(at, uint32_t(rom.Position(field.to) - rom.Position(field.from) + kRomBase));
-    }
+    agb::WriteAddressFields(rom, fields);
 
     return rom.TakeImage();
 }

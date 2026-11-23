@@ -3,6 +3,7 @@
 // Tests of the enhanced mode of ubimilan::ArchivePlayer and of its archive source. ubimilan_player_test.cpp says how
 // the tests are built.
 
+#include "agb_test_util.h"
 #include "ubimilan_player_test_util.h"
 
 namespace ubimilan_player_tests
@@ -308,7 +309,7 @@ void TestEnhancedPlaces()
     // run that reaches the loop's end. Each later pass starts at the word that holds the loop's start.
     //
     // Points 0 to 399 stand at 32, and the rest at -32. With a loop from 2 to 806, the first pass lasts 808 points.
-    // Each later pass starts at point 0, and lasts 808 points too. The falls lie at points 400, 1,208 and 2,016.
+    // Each later pass starts at point 0, and lasts 808 points too. The falls are at points 400, 1,208 and 2,016.
     std::vector<int8_t> points(1024, -32);
     std::fill(points.begin(), points.begin() + 400, int8_t(32));
     TestImage image;
@@ -447,8 +448,8 @@ void TestEnhancedMeters()
 
     XSFLIB_CHECK(std::abs(player.TrackPeaks(kKitTrack)[0] - 32 * kByteSample) < kByteSample);
 
-    // The meter follows the mode's mix, not the console's sum. Points that alternate lie past the kernel's cutoff, and
-    // the mode's mix keeps little of them once the note's start has gone. The console's sum holds them whole.
+    // The meter follows the mode's mix, not the console's sum. Points that alternate are past the kernel's cutoff, and
+    // the mode's mix keeps little of them once the note's start has gone. The console's sum keeps them whole.
     std::vector<int8_t> alternating(256);
     for (size_t i = 0; i < alternating.size(); i++)
     {
@@ -603,17 +604,7 @@ void TestEnhancedSnapshotsAndMutes()
     XSFLIB_CHECK(metered.TrackPeaks(0)[0] > 0);
 }
 
-struct RomSet
-{
-    std::vector<uint8_t>* File(const std::string& path)
-    {
-        const auto file = files.find(path);
-        return file != files.end() ? &file->second : nullptr;
-    }
-
-    std::map<std::string, std::vector<uint8_t>> files;
-    int song = 0;
-};
+using agblib::testing::agb_tests::RomSet;
 
 struct RomProgram
 {

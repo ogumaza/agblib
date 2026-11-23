@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-// Unit tests for Rare's driver: decoding, detection, the sequencer's timing, slots, envelopes and loops.
-// rare_conversion_test.cpp tests the conversion, and rare_player_test.cpp the player. They build small synthetic
-// cartridges in memory, so no game ROM is needed.
+// Unit tests for Rare's driver: decoding, detection, the sequencer's timing, slots and envelopes.
+// rare_loops_test.cpp tests the loops, rare_conversion_test.cpp the conversion, and rare_player_test.cpp the player.
+// They build small synthetic cartridges in memory. No game ROM is needed.
 
 #include "rare_test_util.h"
 
@@ -182,6 +182,7 @@ void TestMusicVolume()
     {
         cart.Tune({Track(kFormat).Program(0, 0).On(0, 60, 100).Wait(48).Off(0, 60).End()}, bank);
     }
+
     const Rom rom = cart.ToRom();
     DriverInfo info = Detect(rom);
 
@@ -217,7 +218,7 @@ void TestMusicVolume()
 
     // A game that the table of games lists, in another build, plays at 128 and gets a warning.
     Cart other = cart;
-    other.PutBytes(kRomBase + 0xAC, {'B', '2', 'D', 'E'});
+    other.SetGameCode("B2DE");
     const DriverInfo other_info = Detect(other.ToRom());
 
     SEQLIB_CHECK_EQ(MusicVolume(other_info, 0), 128);
@@ -300,7 +301,8 @@ void TestWaterTune()
 void TestTiming()
 {
     // At 500,000 us a quarter and 480 ticks a quarter, 480 ticks are 30 frames of 1/60 s. The driver takes only 1/256
-    // us off the first track's time in the first frame, before the tempo is known, so that track runs a frame late.
+    // us off the first track's time in the first frame, before the tempo is known. That track therefore runs a frame
+    // late.
     const Format kFormat = Format::kChannelByte;
     Cart cart(kFormat);
     const auto bank = cart.Bank({{0, cart.Sample(Saw(), 32)}});
@@ -334,6 +336,7 @@ void TestSlots()
     {
         t.On(2, k, 100);
     }
+
     t.Wait(48).Off(2, 61).Wait(48).On(2, 70, 100).On(2, 71, 100).Wait(48);
     t.Off(2, 62).Off(2, 63).On(2, 72, 100).On(2, 72, 100).Wait(48).Off(2, 72);
     cart.Tune({t.End()}, bank);
@@ -357,10 +360,12 @@ void TestSlots()
         {
             slots.push_back(a.slot);
         }
+
         if (a.kind == Action::kNoteDropped)
         {
             dropped.push_back(a.a);
         }
+
         if (a.kind == Action::kNoteOff && a.a == 72)
         {
             released.push_back(a.slot);
@@ -388,6 +393,7 @@ void TestDroppedWarning()
     {
         crowded.On(2, k, 100);
     }
+
     crowded.Wait(48);
     cart.Tune({crowded.End(), Track(kFormat).Program(3, 0).On(3, 60, 100).Wait(48).Off(3, 60).End()}, bank);
     const Rom rom = cart.ToRom();
@@ -409,8 +415,8 @@ void TestDroppedWarning()
 
 void TestEnvelope()
 {
-    // An instant attack and decay, full sustain, and a release of 5 frames (index 95), which falls in a straight line
-    // in level: 0x80000 less 3 << 4 of the division's remainder, then 104848 a frame.
+    // An instant attack and decay, full sustain, and a release of 5 frames (index 95). The release falls in a straight
+    // line in level: 0x80000 less 3 << 4 of the division's remainder, then 104848 a frame.
     const Format kFormat = Format::kChannelByte;
     Cart cart(kFormat);
     const uint32_t sample = cart.Sample(Saw(), 32, 11025, 60, {99, 99, 99, 95});
@@ -556,9 +562,9 @@ void TestEnvelopeSettings()
     SEQLIB_CHECK(newer.took[2] == EnvelopeSettings{.release = 2});
 }
 
-// Eight looping notes on channels 0 and 1 fill the mixer, so it doesn't mix the short sample without a loop that
-// channel 2 plays, and that sample ends where the notes are moved on. The revision of Donkey Kong Country 3 frees its
-// slot there, and the older revisions leave it in use until the mixer takes the voice.
+// Eight looping notes on channels 0 and 1 fill the mixer. The mixer therefore doesn't mix the short sample without a
+// loop that channel 2 plays, and that sample ends where the notes are moved on. The revision of Donkey Kong Country 3
+// frees its slot there, and the older revisions leave it in use until the mixer takes the voice.
 void TestUnmixedEnd()
 {
     const Format kFormat = Format::kChannelByte;
@@ -570,6 +576,7 @@ void TestUnmixedEnd()
     {
         loops.On(0, k, 100);
     }
+
     loops.On(1, 60, 100).On(1, 61, 100).Wait(480);
     cart.Tune({loops.End(), Track(kFormat).Program(2, 1).On(2, 60, 100).Wait(480).End()}, bank);
     const Rom older_rom = cart.ToRom();
@@ -607,6 +614,7 @@ void TestVoiceLimit()
     {
         notes.On(0, k, 100);
     }
+
     notes.On(1, 70, 100).On(1, 71, 100).On(1, 72, 100).Wait(48).Off(0, 60).Control(0, kCtrlVolume, 0).Wait(48);
     cart.Tune({Track(kFormat).Tempo(500000).Wait(960).End(), notes.End()}, bank);
     const Rom older_rom = cart.ToRom();
@@ -685,286 +693,12 @@ void TestPitch()
     SEQLIB_CHECK_EQ(seq.PitchOffset(1), int64_t(11 * sine) * 400);
 }
 
-void TestLoops()
-{
-    // A track loops between controllers 102 and 103. The conversion plays the loop twice, and marks it.
-    const Format kFormat = Format::kChannelByte;
-    Cart cart(kFormat);
-    const auto bank = cart.Bank({{5, cart.Sample(Saw(), 32)}});
-    cart.Tune({Track(kFormat)
-                   .Tempo(500000)
-                   .Wait(480)
-                   .Control(0, kCtrlLoopStart, 0)
-                   .Wait(960)
-                   .Control(0, kCtrlLoopEnd, 0)
-                   .End(),
-               Track(kFormat)
-                   .Program(1, 5)
-                   .Wait(480)
-                   .Control(1, kCtrlLoopStart, 0)
-                   .On(1, 60, 100)
-                   .Wait(480)
-                   .Off(1, 60)
-                   .Wait(480)
-                   .Control(1, kCtrlLoopEnd, 0)
-                   .End()},
-              bank);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-
-    ConvertSettings opt = TempSettings("loops");
-
-    const SongReport r = ConvertSong(rom, info, 0, opt, nullptr);
-
-    SEQLIB_CHECK(r.ok && !r.silent);
-    const MidiEvents m = ReadMidi(r.midi_path);
-    const auto notes = m.Find(0x91);
-    SEQLIB_REQUIRE_EQ(notes.size(), 2);
-    SEQLIB_CHECK_EQ(notes[0].tick, 480);
-    SEQLIB_CHECK_EQ(notes[1].tick, 1440);
-
-    std::vector<std::pair<uint32_t, std::string>> markers;
-    for (const auto& e : m.tracks[0].events)
-    {
-        if (e.bytes[0] == 0xFF && e.bytes[1] == 0x06)
-        {
-            markers.push_back({uint32_t(e.tick), std::string(e.bytes.begin() + 3, e.bytes.end())});
-        }
-    }
-    SEQLIB_CHECK(markers.size() == 2 && markers[0] == std::make_pair(480u, std::string("loopStart")) &&
-                 markers[1] == std::make_pair(1440u, std::string("loopEnd")));
-
-    // The loop starts at 0.5 s and ends at 1.5 s of song time, which the GBA plays a little slower.
-    SEQLIB_CHECK(std::fabs(r.loop_start - 0.5 * kTempoScale) < 1e-9);
-    SEQLIB_CHECK(std::fabs(r.loop_end - 1.5 * kTempoScale) < 1e-9);
-    SEQLIB_CHECK(std::fabs(r.seconds - 2.5 * kTempoScale) < 1e-9);
-}
-
-// A track bends back to the centre where its loop starts, where it already is the first time through, and bends up
-// later in the loop. A player that jumps back to the loop's start comes from the bend up, as the game does, so the
-// centre is written again there.
-void TestLoopBend()
-{
-    const Format kFormat = Format::kChannelByte;
-    Cart cart(kFormat);
-    const auto bank = cart.Bank({{5, cart.Sample(Saw(), 32)}});
-    cart.Tune({Track(kFormat)
-                   .Tempo(500000)
-                   .Wait(480)
-                   .Control(0, kCtrlLoopStart, 0)
-                   .Wait(960)
-                   .Control(0, kCtrlLoopEnd, 0)
-                   .End(),
-               Track(kFormat)
-                   .Program(1, 5)
-                   .Wait(480)
-                   .Control(1, kCtrlLoopStart, 0)
-                   .Bend(1, 0x2000)
-                   .On(1, 60, 100)
-                   .Wait(480)
-                   .Off(1, 60)
-                   .Bend(1, 0x3000)
-                   .Wait(480)
-                   .Control(1, kCtrlLoopEnd, 0)
-                   .End()},
-              bank);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-
-    ConvertSettings opt = TempSettings("loop_bend");
-
-    const SongReport r = ConvertSong(rom, info, 0, opt, nullptr);
-
-    using Events = std::vector<seqlib::midi::Event>;
-    const Events kBends = {{0, {0xE1, 0x00, 0x40}},
-                           {480, {0xE1, 0x00, 0x40}},
-                           {960, {0xE1, 0x00, 0x60}},
-                           {1440, {0xE1, 0x00, 0x40}},
-                           {1920, {0xE1, 0x00, 0x60}}};
-    SEQLIB_CHECK(r.ok);
-    SEQLIB_CHECK(ReadMidi(r.midi_path).Find(0xE1) == kBends);
-}
-
-void TestLoopStarts()
-{
-    // The first track loops 480 ticks from the start, the second 960 ticks from tick 480, and the third 240 ticks from
-    // tick 240. Every track is looping from tick 480. The loop goes from there for the 960 ticks that each track's loop
-    // divides, and the tune plays it twice. The middle track's loop starts last and is the longest. Neither the first
-    // track's loop nor the last track's loop gives the same times.
-    const Format kFormat = Format::kChannelByte;
-    Cart cart(kFormat);
-    const auto bank = cart.Bank({{5, cart.Sample(Saw(), 32)}});
-    cart.Tune({Track(kFormat)
-                   .Tempo(500000)
-                   .Program(0, 5)
-                   .Control(0, kCtrlLoopStart, 0)
-                   .On(0, 60, 100)
-                   .Wait(240)
-                   .Off(0, 60)
-                   .Wait(240)
-                   .Control(0, kCtrlLoopEnd, 0)
-                   .End(),
-               Track(kFormat)
-                   .Program(1, 5)
-                   .Wait(480)
-                   .Control(1, kCtrlLoopStart, 0)
-                   .On(1, 64, 100)
-                   .Wait(480)
-                   .Off(1, 64)
-                   .Wait(480)
-                   .Control(1, kCtrlLoopEnd, 0)
-                   .End(),
-               Track(kFormat)
-                   .Program(2, 5)
-                   .Wait(240)
-                   .Control(2, kCtrlLoopStart, 0)
-                   .On(2, 67, 100)
-                   .Wait(120)
-                   .Off(2, 67)
-                   .Wait(120)
-                   .Control(2, kCtrlLoopEnd, 0)
-                   .End()},
-              bank);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("loop_starts");
-
-    const SongReport r = ConvertSong(rom, info, 0, opt, nullptr);
-
-    // The loop goes from 0.5 s to 1.5 s of song time, which the GBA plays a little slower, and the tune ends at 2.5 s.
-    SEQLIB_CHECK(r.ok && !r.silent);
-    SEQLIB_CHECK(std::fabs(r.loop_start - 0.5 * kTempoScale) < 1e-9);
-    SEQLIB_CHECK(std::fabs(r.loop_end - 1.5 * kTempoScale) < 1e-9);
-    SEQLIB_CHECK(std::fabs(r.seconds - 2.5 * kTempoScale) < 1e-9);
-}
-
-void TestLoopLengths()
-{
-    // One track loops 720 ticks and the other 960, both from the start. The loop lasts until both are back where they
-    // started, 2880 ticks or 3 s of song time, and the tune plays it twice.
-    const Format kFormat = Format::kChannelByte;
-    Cart cart(kFormat);
-    const auto bank = cart.Bank({{5, cart.Sample(Saw(), 32)}});
-    cart.Tune({Track(kFormat)
-                   .Tempo(500000)
-                   .Program(0, 5)
-                   .Control(0, kCtrlLoopStart, 0)
-                   .On(0, 60, 100)
-                   .Wait(360)
-                   .Off(0, 60)
-                   .Wait(360)
-                   .Control(0, kCtrlLoopEnd, 0)
-                   .End(),
-               Track(kFormat)
-                   .Program(1, 5)
-                   .Control(1, kCtrlLoopStart, 0)
-                   .On(1, 64, 100)
-                   .Wait(480)
-                   .Off(1, 64)
-                   .Wait(480)
-                   .Control(1, kCtrlLoopEnd, 0)
-                   .End()},
-              bank);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("loop_lengths");
-
-    const SongReport r = ConvertSong(rom, info, 0, opt, nullptr);
-
-    // The GBA plays song time a little slower.
-    SEQLIB_CHECK(r.ok && !r.silent);
-    SEQLIB_CHECK(std::fabs(r.loop_start) < 1e-9);
-    SEQLIB_CHECK(std::fabs(r.loop_end - 3 * kTempoScale) < 1e-9);
-    SEQLIB_CHECK(std::fabs(r.seconds - 6 * kTempoScale) < 1e-9);
-}
-
-void TestTrackWithoutLoop()
-{
-    // In a looping tune, the loop starts no earlier than the last command of a track without a loop, and a track that
-    // ends in a long delay doesn't lengthen the tune. Track 0 sets the tempo and waits 9600 ticks, track 1 loops 960
-    // ticks from the start, and track 2 plays a note from tick 480 to tick 960 and ends. The loop goes from tick 960 to
-    // tick 1920, and the tune ends at tick 2880.
-    const Format kFormat = Format::kChannelByte;
-    Cart cart(kFormat);
-    const auto bank = cart.Bank({{5, cart.Sample(Saw(), 32)}});
-    cart.Tune({Track(kFormat).Tempo(500000).Wait(9600).End(),
-               Track(kFormat)
-                   .Program(1, 5)
-                   .Control(1, kCtrlLoopStart, 0)
-                   .On(1, 60, 100)
-                   .Wait(480)
-                   .Off(1, 60)
-                   .Wait(480)
-                   .Control(1, kCtrlLoopEnd, 0)
-                   .End(),
-               Track(kFormat).Program(2, 5).Wait(480).On(2, 64, 100).Wait(480).Off(2, 64).End()},
-              bank);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("without_loop");
-
-    const SongReport r = ConvertSong(rom, info, 0, opt, nullptr);
-
-    // At 960 ticks a second of song time, which the GBA plays a little slower.
-    SEQLIB_CHECK(r.ok && !r.silent);
-    SEQLIB_CHECK(std::fabs(r.loop_start - 1.0 * kTempoScale) < 1e-9);
-    SEQLIB_CHECK(std::fabs(r.loop_end - 2.0 * kTempoScale) < 1e-9);
-    SEQLIB_CHECK(std::fabs(r.seconds - 3.0 * kTempoScale) < 1e-9);
-}
-
-void TestHourLimit()
-{
-    // A tune asked to play its loop of 50 s a hundred times stops where the model gives up, after 216000 frames
-    // (60:16.42). The loop starts half a second in, so the limit falls in the middle of a note: the tune's length, its
-    // MIDI file and that note all end there.
-    const Format kFormat = Format::kChannelByte;
-    Cart cart(kFormat);
-    const auto bank = cart.Bank({{5, cart.Sample(Saw(), 32)}});
-    cart.Tune({Track(kFormat)
-                   .Tempo(500000)
-                   .Program(1, 5)
-                   .Wait(480)
-                   .Control(1, kCtrlLoopStart, 0)
-                   .On(1, 60, 100)
-                   .Wait(48000)
-                   .Off(1, 60)
-                   .Control(1, kCtrlLoopEnd, 0)
-                   .End()},
-              bank);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("hour");
-    opt.loops = 100;
-
-    const SongReport r = ConvertSong(rom, info, 0, opt, nullptr);
-
-    const auto cut_off = [](const std::string& w)
-    {
-        return w.find("cut off after an hour") != std::string::npos;
-    };
-    SEQLIB_CHECK(r.ok && std::any_of(r.warnings.begin(), r.warnings.end(), cut_off));
-    SEQLIB_CHECK(r.seconds > 3610 && r.seconds < 3620);
-
-    const MidiEvents m = ReadMidi(r.midi_path);
-    uint64_t last = 0;
-    for (const auto& track : m.tracks)
-    {
-        for (const auto& e : track.events)
-        {
-            last = std::max(last, e.tick);
-        }
-    }
-    const auto offs = m.Find(0x81);
-    SEQLIB_CHECK(last / 960.0 * kTempoScale < 3620);
-    SEQLIB_CHECK(!offs.empty() && offs.back().tick / 960.0 * kTempoScale > 3610);
-}
-
 void TestFrameTiming()
 {
     // With frame timing, each event goes at the start of the frame the driver plays it in. Track 1 loops 1000 ticks,
-    // 62.5 frames, from tick 0: a note at the loop's start, and a grace note of the same key a tick before its end,
-    // which the driver releases on the frame it starts on. The grace note and the second pass's first note come on
-    // frame 62, which starts at tick 991, and the third pass's first note on frame 125, which starts at tick 1999.
+    // 62.5 frames, from tick 0: a note at the loop's start, and a grace note of the same key a tick before its end. The
+    // driver releases the grace note on the frame it starts on. The grace note and the second pass's first note come on
+    // frame 62, at tick 991, and the third pass's first note on frame 125, at tick 1999.
     const Format kFormat = Format::kChannelByte;
     Cart cart(kFormat);
     const auto bank = cart.Bank({{5, cart.Sample(Saw(), 32)}});
@@ -988,9 +722,9 @@ void TestFrameTiming()
 
     const SongReport r = ConvertSong(rom, info, 0, opt, nullptr);
 
-    // The loop ends at the start of frame 62, so that it holds the first pass's first note but not the second's, nor
-    // the grace note on the same frame. The grace note lasts a tick, and the note after it starts as it ends. The
-    // conversion ends after the second pass, so the third pass's first note is left out.
+    // The loop ends at the start of frame 62. It holds the first pass's first note but not the second's, nor the grace
+    // note on the same frame. The grace note lasts a tick, and the note after it starts as it ends. The conversion ends
+    // after the second pass. The third pass's first note is left out.
     SEQLIB_CHECK(r.ok && !r.silent);
     const MidiEvents m = ReadMidi(r.midi_path);
     std::vector<std::pair<uint32_t, std::string>> markers;
@@ -1001,6 +735,7 @@ void TestFrameTiming()
             markers.push_back({uint32_t(e.tick), std::string(e.bytes.begin() + 3, e.bytes.end())});
         }
     }
+
     SEQLIB_CHECK(markers.size() == 2 && markers[0] == std::make_pair(0u, std::string("loopStart")) &&
                  markers[1] == std::make_pair(991u, std::string("loopEnd")));
 
@@ -1009,6 +744,7 @@ void TestFrameTiming()
     {
         ons.push_back({uint32_t(e.tick), e.bytes[2]});
     }
+
     for (const auto& e : m.Find(0x81))
     {
         offs.push_back({uint32_t(e.tick), e.bytes[1]});
@@ -1036,12 +772,6 @@ int RunTests()
     TestUnmixedEnd();
     TestVoiceLimit();
     TestPitch();
-    TestLoops();
-    TestLoopBend();
-    TestLoopStarts();
-    TestLoopLengths();
-    TestTrackWithoutLoop();
-    TestHourLimit();
     TestFrameTiming();
 
     return seqlib::testing::Summary("rare");

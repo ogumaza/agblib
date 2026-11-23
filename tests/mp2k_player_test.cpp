@@ -3,6 +3,7 @@
 // Unit tests for MP2K's archive player: its FIFOs, stores, snapshots, mutes, meters, notes, memory, end and errors, and
 // its archive mode. They build small synthetic cartridges in memory. No game ROM is needed.
 
+#include "agb_test_util.h"
 #include "mp2k_test_util.h"
 
 namespace agblib::sequence_export::mp2k
@@ -12,7 +13,7 @@ namespace
 
 void TestPlayerFifo()
 {
-    // The mixer's points of each frame play in the next frame, after the kFifoLead points that the FIFOs hold ahead.
+    // The mixer's points of each frame play in the next frame, after the kFifoLead points that the FIFOs keep ahead.
     // Timer 0 overflows every 280,896 / 224 = 1,254 cycles, from the start. Each output sample plays the point of the
     // last overflow at or before it. FIFO A plays the right side, and FIFO B the left. A point p adds 4p to the
     // output's 10 bits, at the FIFOs' volume of 100%: 256p in a 16-bit sample. The PSG stays silent.
@@ -49,6 +50,7 @@ void TestPlayerFifo()
         matches &= out[2 * k] == 256 * left[pop] && out[2 * k + 1] == 256 * right[pop];
         sounds |= out[2 * k] != 0;
     }
+
     SEQLIB_CHECK(matches);
     SEQLIB_CHECK(sounds);
     SEQLIB_CHECK_EQ(player.Frames(), uint64_t(kFrames));
@@ -76,6 +78,7 @@ void TestPlayerStoreCycle()
         }
         level_frame += level ? 0 : 1;
     }
+
     SEQLIB_REQUIRE(level);
     for (uint32_t cycle : {0u, 100000u, 280000u})
     {
@@ -89,6 +92,7 @@ void TestPlayerStoreCycle()
         {
             first++;
         }
+
         SEQLIB_REQUIRE(first < out.size());
         const uint64_t at = first / 2 * kOutputCycles;
         const uint64_t stores = uint64_t(level_frame) * kFrameCycles + cycle;
@@ -116,6 +120,7 @@ void TestPlayerFramesWithoutSamples()
         silent_meters &=
             player.TrackPeaks(0) == std::array<int32_t, 2>{} && player.TrackPeaks(1) == std::array<int32_t, 2>{};
     }
+
     SEQLIB_CHECK(silent_meters);
     const std::vector<std::vector<int16_t>> after = PlayFrames(player, 50);
     SEQLIB_CHECK(std::equal(after.begin(), after.end(), expected.begin() + 70));
@@ -146,6 +151,7 @@ void TestPlayerSnapshots()
         player.RunFrame(second);
         metered |= player.TrackPeaks(0)[0] > 0;
     }
+
     SEQLIB_CHECK(first == second);
     SEQLIB_CHECK(metered);
 
@@ -165,6 +171,7 @@ void TestPlayerMutes()
         {
             player.MuteTrack(muted, true);
         }
+
         player.Start(song);
         return Play(player, 120);
     };
@@ -206,6 +213,7 @@ void TestPlayerMeters()
             }
             muted_silent &= player.TrackPeaks(1 - track) == std::array<int32_t, 2>{};
         }
+
         SEQLIB_CHECK(peaks[0] > 0 && peaks[0] == Peak(out, 0));
         SEQLIB_CHECK(peaks[1] > 0 && peaks[1] == Peak(out, 1));
         SEQLIB_CHECK(muted_silent);
@@ -220,6 +228,7 @@ void TestPlayerMeters()
         player.RunFrame(out);
         silent &= player.TrackPeaks(0) == std::array<int32_t, 2>{} && player.TrackPeaks(1) == std::array<int32_t, 2>{};
     }
+
     SEQLIB_CHECK(silent);
 }
 
@@ -251,6 +260,7 @@ void TestPlayerNotes()
     {
         player.RunFrame();
     }
+
     const std::vector<std::pair<uint32_t, int>> expected = {{start + uint32_t(first), 60},
                                                             {start + uint32_t(second), 62}};
     SEQLIB_CHECK(notes == expected);
@@ -258,8 +268,8 @@ void TestPlayerNotes()
 
 void TestPlayerMemory()
 {
-    // A memacc command that jumps when byte 3 of the memory holds 1 reaches a note. The memory starts at 0. A write
-    // before the first frame reaches the command.
+    // A memacc command that jumps when byte 3 of the memory is 1 reaches a note. The memory starts at 0. A write before
+    // the first frame reaches the command.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
     Track track;
@@ -282,10 +292,12 @@ void TestPlayerMemory()
         {
             player.WriteMemory(3, uint8_t(value));
         }
+
         for (int f = 0; f < 30; f++)
         {
             player.RunFrame();
         }
+
         SEQLIB_CHECK_EQ(notes, value == 1 ? 1 : 0);
         SEQLIB_CHECK_EQ(int(player.Driver().Memory(3)), std::max(value, 0));
     }
@@ -299,8 +311,8 @@ void TestPlayerEnd()
 {
     // A looped sample plays until its note's release of 0 stops it. The track ends in the same tick. Busy() stays true
     // until the FIFOs have played the mixer's last points: the frame after the mixer's last sound, and the next. The
-    // output after it is silent. A reverb keeps the song busy while it echoes, and until the whole buffer holds 0: up
-    // to a pass of the buffer's 7 parts later.
+    // output after it is silent. A reverb keeps the song busy while it echoes, and until the whole buffer is 0: up to a
+    // pass of the buffer's 7 parts later.
     std::array<int, 2> ends = {};
     for (int r = 0; r < 2; r++)
     {
@@ -319,6 +331,7 @@ void TestPlayerEnd()
             frames.emplace_back();
             player.RunFrame(frames.back());
         }
+
         SEQLIB_REQUIRE(!player.Busy());
         const auto loud = [](const std::vector<int16_t>& frame)
         {
@@ -329,10 +342,12 @@ void TestPlayerEnd()
         {
             last--;
         }
+
         SEQLIB_CHECK(last > 0 && last + (r ? 8 : 1) >= frames.size());
         SEQLIB_CHECK(!loud(Play(player, 10)));
         ends[size_t(r)] = int(frames.size());
     }
+
     SEQLIB_CHECK(ends[1] > ends[0] + 7);
 }
 
@@ -361,18 +376,7 @@ void TestPlayerErrors()
     SEQLIB_CHECK(Throws<std::invalid_argument>([&] { camelot_player.Start(0); }));
 }
 
-// A test program's set for MP2K's archive mode: its files by path, and the song that it plays.
-struct RomSet
-{
-    std::vector<uint8_t>* File(const std::string& path)
-    {
-        const auto file = files.find(path);
-        return file != files.end() ? &file->second : nullptr;
-    }
-
-    std::map<std::string, std::vector<uint8_t>> files;
-    int song = 0;
-};
+using agblib::testing::agb_tests::RomSet;
 
 struct RomProgram
 {
@@ -388,7 +392,7 @@ struct RomProgram
 
 using RomSource = xsflib::player::ArchiveSource<agblib::mp2k::ArchiveTraits<RomProgram>>;
 
-// Returns a set that holds `rom` as game.gba, with song `song` selected.
+// Returns a set that contains `rom` as game.gba, with song `song` selected.
 RomSet SetOf(const Rom& rom, int song)
 {
     RomSet set;
@@ -415,11 +419,13 @@ void TestPlayerArchiveSource()
     {
         SEQLIB_CHECK(source.RunFrame(out));
     }
+
     const std::shared_ptr<ArchivePlayer::Snapshot> snapshot = source.Save(nullptr);
     for (int f = 0; f < 60; f++)
     {
         source.RunFrame(out);
     }
+
     SEQLIB_CHECK(out == expected);
     source.Restore(*snapshot);
     std::vector<int16_t> again;
@@ -427,6 +433,7 @@ void TestPlayerArchiveSource()
     {
         source.RunFrame(again);
     }
+
     SEQLIB_CHECK(std::equal(again.begin(), again.end(), expected.end() - long(again.size())));
 
     RomSet missing = SetOf(songs.rom, 5);

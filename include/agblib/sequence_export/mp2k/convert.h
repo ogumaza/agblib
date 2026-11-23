@@ -51,7 +51,7 @@ struct VoiceGroupFiles
 };
 
 // Converts the voices at `programs` of the voice group at `voices` to a SoundFont titled `title`. Each voice becomes
-// the instrument that ConvertSong's SoundFont holds for it, with a preset at its program in bank 0. A pulse or saw
+// the instrument that ConvertSong's SoundFont contains for it, with a preset at its program in bank 0. A pulse or saw
 // synth voice gets a zone for each key. A voice that has nothing to play gets no preset, and a warning. `settings`
 // gives the program's name and psg_exclusive. Without a preset, the SoundFont stays empty.
 VoiceGroupFiles ConvertVoiceGroup(const Rom& rom, const DriverInfo& info, uint32_t voices,

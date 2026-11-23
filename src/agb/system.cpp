@@ -20,14 +20,6 @@ namespace
 
 constexpr uint32_t kPageSize = 0x1000;
 
-// A DMA channel's registers, from kRegDma0Source: the source, the destination, the count and the control.
-constexpr uint32_t kDmaStride = 12;
-constexpr uint32_t kDmaControl = 10;
-constexpr uint16_t kDmaEnable = 0x8000;
-constexpr uint16_t kDmaTiming = 0x3000; // 0: at once
-constexpr uint16_t kDmaRepeat = 0x0200;
-constexpr uint16_t kDmaWords = 0x0400;
-
 // What the BIOS's GetBiosChecksum gives on the GBA, by GBATEK. The DS's mode of the GBA gives another.
 constexpr uint32_t kBiosChecksum = 0xBAAE187F;
 
@@ -92,6 +84,7 @@ uint32_t System::Call(uint32_t address, std::span<const uint32_t> args)
         {
             throw std::runtime_error(failure_);
         }
+
         throw;
     }
 }
@@ -153,6 +146,7 @@ System::Snapshot System::Save(const Snapshot* previous) const
     {
         snapshot.registers_[size_t(r)] = cpu_->Reg(r);
     }
+
     snapshot.registers_[13] = cpu_->Reg(14);
     snapshot.vcount_ = vcount_;
     snapshot.held_vcount_ = held_vcount_;
@@ -181,6 +175,7 @@ void System::Restore(const Snapshot& snapshot)
     {
         cpu_->SetReg(r, snapshot.registers_[size_t(r)]);
     }
+
     cpu_->SetReg(14, snapshot.registers_[13]);
     vcount_ = snapshot.vcount_;
     held_vcount_ = snapshot.held_vcount_;
@@ -200,7 +195,7 @@ void System::MarkRomReads(std::vector<uint8_t>* reads)
         rom_reads_->resize(rom_.size());
     }
 
-    // The CPU asks for the cartridge's pages again: none while the system marks, so that each read comes to Read().
+    // The CPU asks for the cartridge's pages again: none while the system marks. Each read then comes to Read().
     cpu_->InvalidatePages();
 }
 
@@ -267,7 +262,7 @@ void System::Write(uint32_t address, int size, uint32_t value)
 
 uint8_t* System::MarkedRom(uint32_t address)
 {
-    // The cartridge fills whole pages, so an aligned access never runs past its end.
+    // The cartridge fills whole pages. An aligned access therefore never runs past its end.
     const uint32_t region = address >> 24;
     const uint32_t offset = address & (kMaxRomSize - 1);
     if (!rom_reads_ || region < 0x08 || region > 0x0D || offset >= rom_.size())
@@ -291,6 +286,7 @@ uint32_t System::ReadIo(uint32_t offset, int size)
         {
             vcount_ = (vcount_ + 1) % kFrameLines;
         }
+
         WriteLe(&io_[vcount], 2, uint32_t(vcount_));
     }
 
@@ -348,6 +344,7 @@ void System::StartDma(int channel)
     {
         return address_control == 1 ? -unit : address_control == 2 ? 0 : unit;
     };
+
     const int destination_step = step((control >> 5) & 3);
     const int source_step = step((control >> 7) & 3);
     for (uint32_t i = 0; i < count; i++)
@@ -411,6 +408,7 @@ bool System::Swi(ntdlib::arm::Cpu& cpu, uint32_t comment)
             failure_ = "the BIOS's LZ77UnComp was called on data that isn't LZ77";
             return false;
         }
+
         return true;
     default:
         if (on_swi && on_swi(number))
@@ -425,7 +423,7 @@ bool System::Swi(ntdlib::arm::Cpu& cpu, uint32_t comment)
 
 void System::CpuSet(uint32_t source, uint32_t destination, uint32_t control, bool fast)
 {
-    // r2 holds the count in bits 0 to 20, a fill from the source's first unit in bit 24, and 32-bit units in bit 26.
+    // r2 contains the count in bits 0 to 20, a fill from the source's first unit in bit 24, and 32-bit units in bit 26.
     // CpuFastSet copies words, 8 at a time.
     const bool fill = control & (1u << 24);
     const int unit = fast || (control & (1u << 26)) ? 4 : 2;

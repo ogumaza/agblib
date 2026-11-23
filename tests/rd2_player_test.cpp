@@ -8,6 +8,7 @@
 // bias of 0x200 plus each FIFO's byte times 4 and the PSG's levels times 16 at the PSG's share, in steps of 4 at the
 // driver's resolution. A step of the 10 bits gives 64 in a 16-bit sample.
 
+#include "agb_test_util.h"
 #include "rd2_player_test_util.h"
 
 namespace
@@ -68,6 +69,7 @@ void TestOutput()
         const int b = played ? right.at(size_t(overflows) - size_t(kFifoLead) - 1) : 0;
         same = same && out[2 * i] == a * 4 * 64 && out[2 * i + 1] == b * 4 * 64;
     }
+
     XSFLIB_CHECK(same);
 
     // The first byte comes at 194 * 1,596 cycles, and reaches the first output sample at or after that cycle.
@@ -192,6 +194,7 @@ void TestBusy()
     {
         held.RunFrame();
     }
+
     XSFLIB_CHECK(held.Busy() && held.Driver().Song()->Ended());
 
     // The Super Mario Advance 2 revision's echo rounds to nearest. At a level of 1, a sum of 1 stays 1.
@@ -205,6 +208,7 @@ void TestBusy()
     {
         rounded.RunFrame();
     }
+
     XSFLIB_CHECK(rounded.Busy() && rounded.Driver().Song()->Ended());
     bool kept = false;
     for (int f = 0; f < kEchoFrames; f++)
@@ -212,6 +216,7 @@ void TestBusy()
         rounded.RunFrame();
         kept = kept || rounded.Driver().FifoA()[0] == 1 || rounded.Driver().FifoB()[0] == 1;
     }
+
     XSFLIB_CHECK(kept);
 
     // Without the echo, whose level starts at 31 in that revision, the same song ends with its voice.
@@ -493,8 +498,8 @@ void TestMetersOlder()
 void TestMetersOfPsg()
 {
     // The driver's init gives the PSG half of its share: a channel's level counts 16 / 2 times in the 10 bits at the
-    // master volume's 7 plus 1, on the sides that NR51 gives it. Square 2's level lies in NR22's high bits. The
-    // channel's meter comes without a frame's delay: the hardware plays it at once.
+    // master volume's 7 plus 1, on the sides that NR51 gives it. Square 2's level is in NR22's high bits. The channel's
+    // meter comes without a frame's delay: the hardware plays it at once.
     Cart cart;
     cart.Sequences({{PsgTrack(kSquare, 60, 1000)}});
     const Game game(cart);
@@ -526,6 +531,7 @@ void TestMetersOfPsg()
         XSFLIB_CHECK(muted.TrackPeaks(1)[0] == 0 && muted.TrackPeaks(1)[1] == 0);
         sounded = sounded || muted.TrackPeaks(0)[0] != 0 || muted.TrackPeaks(0)[1] != 0;
     }
+
     XSFLIB_CHECK(sounded);
     XSFLIB_CHECK(muted.Driver().PsgChannelTrack(0, 1) == 1);
 }
@@ -610,17 +616,7 @@ void TestSoundEffects()
     XSFLIB_CHECK(Throws<std::invalid_argument>([&] { player.Start(-1); }));
 }
 
-struct RomSet
-{
-    std::vector<uint8_t>* File(const std::string& path)
-    {
-        const auto file = files.find(path);
-        return file != files.end() ? &file->second : nullptr;
-    }
-
-    std::map<std::string, std::vector<uint8_t>> files;
-    int song = 0;
-};
+using agblib::testing::agb_tests::RomSet;
 
 struct RomProgram
 {
@@ -674,12 +670,14 @@ void TestArchiveSource()
     {
         source.RunFrame(out);
     }
+
     source.Restore(*snapshot);
     std::vector<int16_t> again;
     for (int f = 0; f < 6; f++)
     {
         source.RunFrame(again);
     }
+
     XSFLIB_CHECK(std::equal(again.begin(), again.end(), out.begin() + std::ptrdiff_t(saved), out.end()));
 
     RomSet missing = SetOf(game.rom, 5);

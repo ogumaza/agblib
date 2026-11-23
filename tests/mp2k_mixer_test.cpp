@@ -3,12 +3,16 @@
 // Unit tests for MP2K's mixer and its stores to the PSG's registers. They build small synthetic cartridges in memory.
 // No game ROM is needed.
 
+#include "seqlib/testing/check.h"
+
 #include "mp2k_test_util.h"
 
 namespace agblib::sequence_export::mp2k
 {
 namespace
 {
+
+using seqlib::testing::Throws;
 
 void TestCompressedSample()
 {
@@ -28,7 +32,8 @@ void TestCompressedSample()
 
     const SongReport r = ConvertSong(rom, info, 0, opt, nullptr);
 
-    // The sample holds the master volume of 12 too, at 13/16, so each of its points is 208 times the decoded one.
+    // The sample contains the master volume of 12 too, at 13/16. Each of its points is therefore 208 times the decoded
+    // one.
     const Sf2Records sf = ReadSf2(r.sf2_path);
     const std::vector<uint8_t>& pcm = sf.chunks.at("smpl");
     const uint32_t start = agblib::testing::agb_files::Le32(sf.Record("shdr", 46, 0) + 20);
@@ -175,6 +180,7 @@ void TestMixSpecialSamples()
         seed = seed * 1103515245u + 12345u;
         byte = uint8_t(seed >> 16);
     }
+
     const std::vector<int8_t> points = Decompress(blocks);
     const std::vector<int8_t> pcm = Saw(1200);
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(kVoiceCompressed, cart.CompressedWave(blocks, 512))},
@@ -183,6 +189,7 @@ void TestMixSpecialSamples()
     {
         cart.Song({Track().Cmd(kCmdVoice, voice).Cmd(kCmdVol, 127).Note(24, 67, 127).Wait(24).Fine()}, voices);
     }
+
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
     SEQLIB_REQUIRE(info.special_samples && points.size() == 512);
@@ -200,10 +207,10 @@ void TestMixSpecialSamples()
                        [&](int32_t at) { return int32_t(pcm.at(size_t(at))); });
 }
 
-// Checks the reverb in each frame after `first`. Nothing plays in those frames. A frame's part of the buffer holds the
-// reverb of two frames' output: the frame a buffer's length of frames before it, and the frame after that. The first
-// wrote the same part. The stereo mixer adds both sides of both frames, and gives each side the same reverb. The mono
-// mixer adds its one side.
+// Checks the reverb in each frame after `first`. Nothing plays in those frames. A frame's part of the buffer contains
+// the reverb of two frames' output: the frame a buffer's length of frames before it, and the frame after that. The
+// first wrote the same part. The stereo mixer adds both sides of both frames, and gives each side the same reverb. The
+// mono mixer adds its one side.
 void CheckReverb(const MixedFrames& m, const DriverInfo& info, int first, int reverb)
 {
     const int period = int(agblib::mp2k::kPcmBufferSize) / info.samples_per_frame;
@@ -258,6 +265,7 @@ void TestMixReverb()
         SEQLIB_CHECK_EQ(int(m.right[size_t(f)][i]), int(int8_t(Added(pcm[i], right))));
         SEQLIB_CHECK_EQ(int(m.left[size_t(f)][i]), int(int8_t(Added(pcm[i], left))));
     }
+
     CheckReverb(m, info, f, 100);
 }
 
@@ -266,11 +274,7 @@ void TestMixMono()
     // The mono mixer plays a channel at the average of its volumes. Its reverb is the sum of its one side's points
     // times the reverb, over 256.
     Cart cart;
-    const uint8_t kMono[] = {0xA0, 0x78, 0xE1, 0x78, 0x40, 0x18, 0x68, 0x43, 0x40, 0x0A, 0xA0, 0x72};
-    for (uint32_t i = 0; i < 12; i++)
-    {
-        cart.Put8(kMonoVolume + i, kMono[i]);
-    }
+    PutMonoMixer(cart);
     const std::vector<int8_t> pcm = Jumpy(224);
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(kFixed, cart.Wave(pcm))}});
     cart.Song({Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 127).Cmd(kCmdPan, 0x10).Note(24, 60, 127).Wait(48).Fine()},
@@ -291,6 +295,7 @@ void TestMixMono()
     {
         SEQLIB_CHECK_EQ(int(m.right[size_t(f)][i]), int(int8_t(Added(pcm[i], volume))));
     }
+
     SEQLIB_CHECK(m.left == m.right);
     CheckReverb(m, info, f, 100);
 }
@@ -317,6 +322,7 @@ std::vector<StoreFrame> StoreFrames(Sequencer& seq, int frames, int n)
         {
             frame.stores.emplace_back(w.address & 0xFF, w.size, w.value);
         }
+
         frame.channel = seq.GetChannel(kFirstPsgChannel + n - 1);
         if (!frame.stores.empty())
         {
@@ -394,6 +400,7 @@ void TestPsgWaveStores()
         first[i] = uint8_t(0x10 * i + 1);
         second[i] = uint8_t(0xF0 - 0x10 * i);
     }
+
     const uint32_t a = cart.Place(first);
     const uint32_t b = cart.Place(second);
     const uint32_t voices = cart.VoiceGroup(
@@ -430,6 +437,7 @@ void TestPsgWaveStores()
                 stores.emplace_back(0x90 + 4 * i, 4, Le32(pattern->data() + 4 * i));
             }
         }
+
         const std::vector<Store> rest = {{0x70, 1, 0x00},     {0x72, 1, 5},
                                          {0x74, 1, f & 0xFF}, {0x75, 1, 0xC0 | (f >> 8)},
                                          {0x81, 1, 0x44},     {0x73, 1, kVolumes[level]},
@@ -491,6 +499,7 @@ void TestPsgWaveVolumes()
     {
         track.Note(2, 60, uint8_t(velocity)).Wait(4);
     }
+
     cart.Song({track.Fine()}, voices);
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
@@ -512,6 +521,7 @@ void TestPsgWaveVolumes()
             }
         }
     }
+
     SEQLIB_CHECK_EQ(starts, 16);
     SEQLIB_CHECK(levels.size() >= 14);
 }
@@ -540,31 +550,25 @@ void TestEnvelopeCounter()
             const Channel& c = seq.GetChannel(kFirstPsgChannel);
             matches &= (c.status ? int(c.envelope) : 0) == std::max(level, 0);
         }
+
         SEQLIB_CHECK(matches);
     }
 
     Sequencer seq(rom, info, 0);
     for (int counter : {-1, 15})
     {
-        bool threw = false;
-        try
-        {
-            seq.SetEnvelopeCounter(counter);
-        }
-        catch (const std::invalid_argument&)
-        {
-            threw = true;
-        }
+        const bool threw = Throws<std::invalid_argument>([&] { seq.SetEnvelopeCounter(counter); });
+
         SEQLIB_CHECK(threw);
     }
 }
 
 void TestPsgEchoStores()
 {
-    // After a release of 0, a track's echo holds the note at the echo's share of its level: 128 of 256, rounded up.
+    // After a release of 0, a track's echo keeps the note at the echo's share of its level: 128 of 256, rounded up.
     // NR12 (0x63) takes that level with bit 3 set and a step time of 0, and NR14 (0x65) restarts the channel. A sweep
-    // of 0 leaves NR10's bit 3 set, so the channel restarts once. The echo lasts 3 frames, then NR12 = 8 and NR14 =
-    // 0x80 turn the channel off.
+    // of 0 leaves NR10's bit 3 set. The channel therefore restarts once. The echo lasts 3 frames, then NR12 = 8 and
+    // NR14 = 0x80 turn the channel off.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(1, 2, 60, {0, 0, 15, 0})}});
     cart.Song({Track()
@@ -590,6 +594,7 @@ void TestPsgEchoStores()
             frame_numbers.push_back(f);
         }
     }
+
     SEQLIB_REQUIRE_EQ(frames.size(), 3);
 
     const uint32_t f = KeyToPsgFrequency(1, 60, 0);
@@ -625,17 +630,11 @@ void TestPsgStartingRegisters()
     {
         outputs = outputs || (std::get<0>(s) == 0x81 && std::get<2>(s) == 0x33);
     }
+
     SEQLIB_CHECK(outputs);
 
-    bool threw = false;
-    try
-    {
-        seq.SetSoundRegisters(std::vector<uint8_t>(16, 0));
-    }
-    catch (const std::invalid_argument&)
-    {
-        threw = true;
-    }
+    const bool threw = Throws<std::invalid_argument>([&] { seq.SetSoundRegisters(std::vector<uint8_t>(16, 0)); });
+
     SEQLIB_CHECK(threw);
 }
 

@@ -7,9 +7,9 @@
 // an item of its kind, and the bytes that no track reaches stay as data. The encoder writes the items back, and gives
 // the same bytes for a song that the decoder read.
 //
-// The driver counts time in frames: one tick of a song is one frame of the driver's routine, at the GBA's 59.7275 Hz.
-// A wait's value and a note's length are in those ticks. The driver's tempo never changes, and a song holds no tempo. A
-// note's length stays 0: a note sounds until the track's next note, or its next rest (kNoteOff).
+// The driver counts time in frames: one tick of a song is one frame of the driver's routine, at the GBA's 59.7275 Hz. A
+// wait's value and a note's length are in those ticks. The driver's tempo never changes, and a song contains no tempo.
+// A note's length stays 0: a note sounds until the track's next note, or its next rest (kNoteOff).
 //
 // The kinds:
 //   kWait       a delay
@@ -29,9 +29,9 @@
 //               command with a `velocity` of 0 takes level 15
 //   kLfoDepth   the vibrato's depth
 //   kPitchBend  `index` 0: F2, or in Dungeon Dice Monsters F3; 1: Dungeon Dice Monsters' F2; 2: its F1, for the next
-//   track kLoopStart  the track's loop point. `bytes` holds the bytes that the driver skips after it kLoopEnd    a loop
-//   of the song: every track goes back to its loop point, or to its start kEnd        `index` 0: the end of the track,
-//   until a song loop; 1: the end for good (Ultimate Masters' FD); 2: a stop
+//   track kLoopStart  the track's loop point. `bytes` contains the bytes that the driver skips after it kLoopEnd    a
+//   loop of the song: every track goes back to its loop point, or to its start kEnd        `index` 0: the end of the
+//   track, until a song loop; 1: the end for good (Ultimate Masters' FD); 2: a stop
 //               of the song
 //   kCall       `key` is the opcode and gives what the call sets first (CallSetsFirst), `value` the count of
 //               commands, `target` the item where they start and `index` the track whose start the offset counts from
@@ -41,9 +41,9 @@
 //               commands without a kind, such as F9's echo route and the PSG's pan bits and volumes
 //
 // A command's bytes can say more than its meaning: most opcodes ignore some bits. Where a command's or a delay's bytes
-// aren't the usual ones for its values, `encoding.opcode` holds kKeptBytes plus the first byte and `bytes` the others.
-// The encoder writes those bytes while they read as the item's values. After an edit that changes the values, it writes
-// the usual bytes.
+// aren't the usual ones for its values, `encoding.opcode` contains kKeptBytes plus the first byte and `bytes` the
+// others. The encoder writes those bytes while they read as the item's values. After an edit that changes the values,
+// it writes the usual bytes.
 //
 // A pitch bend's unit is a fraction of a range of 2 semitones: the driver's value is in 32nds of a semitone, or 16ths
 // in Dungeon Dice Monsters. The other values stay in the driver's units.
@@ -59,11 +59,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+
 #include "agblib/agb/encoded.h"
 #include "agblib/konami/driver.h"
 #include "agblib/konami/seqformat.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace agblib::konami
 {
@@ -90,7 +91,7 @@ struct Decoded
 Decoded DecodeSequence(std::span<const uint8_t> data, std::span<const uint16_t> offsets, Revision revision);
 
 // Decodes song `song` of the song table. The song's bytes run from its base to the last byte that a track reads, and on
-// to the next song's base where that lies less than kSongGap bytes further: a song can hold a few bytes that no track
+// to the next song's base where that is less than kSongGap bytes further: a song can contain a few bytes that no track
 // reaches after its tracks. Throws std::invalid_argument for a song whose entry is empty or names no byte of the ROM.
 Decoded DecodeSong(const Rom& rom, const DriverInfo& info, int song);
 
@@ -101,16 +102,16 @@ inline constexpr uint32_t kSongGap = 16;
 using Encoded = agb::Encoded;
 
 // Encodes `sequence`, with its tracks at the items `entries`, in the console's values nearest its units. Throws
-// std::invalid_argument for a command that the revision's bytes can't hold, a call's target before its track's start or
-// more than 0xFFFF bytes after it, a track's start past 0xFFFF bytes, and a sequence that the driver wouldn't read as
-// its items say: a track that reads a delay where a command lies, or the other way round, that reaches data or that
+// std::invalid_argument for a command that the revision's bytes can't contain, a call's target before its track's start
+// or more than 0xFFFF bytes after it, a track's start past 0xFFFF bytes, and a sequence that the driver wouldn't read
+// as its items say: a track that reads a delay where a command is, or the other way round, that reaches data or that
 // runs past the bytes.
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<const uint32_t> entries,
                        Revision revision);
 
 // The offset of each item of `sequence` in its bytes, then the end. The offsets don't depend on where the tracks start,
 // and the items don't have to read back as a song. Throws std::invalid_argument for a command that the revision's bytes
-// can't hold.
+// can't contain.
 std::vector<uint32_t> ItemOffsets(const ntdlib::commands::Sequence& sequence, Revision revision);
 
 // The scale of the value of a command of `kind` in revision `revision` (ntdlib::commands::UnitOf). A note's velocity

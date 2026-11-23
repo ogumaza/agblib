@@ -13,11 +13,11 @@
 namespace agblib::brownie
 {
 
-// A command of a channel's data, as the driver reads it.
+// A command of a channel's data as the driver reads it.
 struct Command
 {
     uint32_t size = 1;  // in bytes
-    bool waits = false; // a note, rest, hold or release, which ends the channel's reading until its length is over
+    bool waits = false; // a note, rest, hold or release: the channel reads nothing more until its length is over
     bool end = false;   // FF
     std::string text;
 };
@@ -47,7 +47,7 @@ Command DecodeCommand(const Rom& rom, const DriverInfo& info, uint32_t address, 
 // for each tempo, and no length sets.
 uint8_t NoteLength(const Rom& rom, const DriverInfo& info, uint8_t b, int set);
 
-// Writes a text listing of every command of each channel of a sound, as the driver plays them. Returns false and sets
+// Writes a text listing of every command of each channel of a sound as the driver plays them. Returns false and sets
 // `error` on failure.
 bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::string& path, std::string& error);
 

@@ -101,7 +101,7 @@ VolumeEnvelope EnvelopeFor(const DriverInfo& info, const Instrument& inst, const
         }
         else
         {
-            // A SoundFont's decay time is for a fall of 100 dB, so it reaches the sustain level in proportion.
+            // A SoundFont's decay time is for a fall of 100 dB. The decay reaches the sustain level in proportion.
             env.sustain = Centibels(level);
             env.decay = decay && env.sustain > 0 ? Timecents(1000.0 / env.sustain * decay / kFrameRate) : kInstant;
         }
@@ -302,10 +302,12 @@ sf2::Zone SoundfontBuilder::ZoneFor(const Instrument& voice, const EnvelopeSetti
     {
         z.generators.push_back(sf2::Generator::Value(sf2::kScaleTuning, 0));
     }
+
     if (voice.Loops())
     {
         z.generators.push_back(sf2::Generator::Value(sf2::kSampleModes, 1));
     }
+
     z.generators.push_back(sf2::Generator::Value(sf2::kSampleId, sample));
 
     return z;

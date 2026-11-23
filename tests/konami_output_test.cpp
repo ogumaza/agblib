@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MIT
 
-// Tests of the model of Konami's output stage and mixer (agblib/konami/output.h), and of the reference that runs a
-// game's driver (agblib/konami/game_driver.h). They build small synthetic cartridges in memory. No game ROM is needed.
-// Each expected value follows a rule of the driver's code, and the comments give the rule. The sequencer's records
-// count as given: the tests take a record's values from Records() where the stage stores them.
+// Tests of the model of Konami's output stage and mixer (agblib/konami/output.h). They build small synthetic
+// cartridges in memory. No game ROM is needed. Each expected value follows a rule of the driver's code, and the
+// comments give the rule. The sequencer's records count as given: the tests take a record's values from Records()
+// where the stage stores them.
 
-#include <array>
-#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <initializer_list>
@@ -18,7 +16,6 @@
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/konami/driver.h"
-#include "agblib/konami/game_driver.h"
 #include "agblib/konami/output.h"
 #include "agblib/konami/seqformat.h"
 #include "agblib/konami/sequencer.h"
@@ -32,47 +29,11 @@ using namespace konami_testing;
 using agblib::agb::kRomBase;
 using agblib::agb::RegisterWrite;
 using agblib::agb::Rom;
-using agblib::konami::DriverInfo;
-using agblib::konami::GameDriver;
-using agblib::konami::GameRoutines;
 using agblib::konami::kVoiceCoded;
 using agblib::konami::kVoiceLooped;
 using agblib::konami::kVoiceOn;
 using agblib::konami::Output;
 using agblib::konami::Revision;
-using agblib::konami::SongEntrySize;
-using agblib::konami::TrackCount;
-
-bool SameWrites(const std::vector<RegisterWrite>& writes, std::initializer_list<RegisterWrite> expected)
-{
-    bool same = writes.size() == expected.size();
-    if (!same)
-    {
-        std::printf("%zu stores, expected %zu\n", writes.size(), expected.size());
-        for (const RegisterWrite& w : writes)
-        {
-            std::printf("  %08X/%d = %X\n", w.address, w.size, w.value);
-        }
-    }
-
-    size_t i = 0;
-    for (const RegisterWrite& e : expected)
-    {
-        if (i >= writes.size() || writes[i].address != e.address || writes[i].size != e.size ||
-            writes[i].value != e.value)
-        {
-            if (i < writes.size())
-            {
-                std::printf("write %zu: %08X/%d = %X, expected %08X/%d = %X\n", i, writes[i].address, writes[i].size,
-                            writes[i].value, e.address, e.size, e.value);
-            }
-            same = false;
-        }
-        i++;
-    }
-
-    return same;
-}
 
 bool SameBytes(const std::vector<int8_t>& bytes, size_t from, std::initializer_list<int> expected)
 {
@@ -260,6 +221,7 @@ void TestPackedAndAdpcm()
         {
             bytes.push_back(int8_t(code));
         }
+
         m.Sample(0, 0x1000, 0x80000000u | 9, -1, bytes);
         const Rom rom = m.ToRom();
 
@@ -307,6 +269,7 @@ void TestEcho(uint32_t record_word, int sample, int dry, int wet)
     {
         XSFLIB_CHECK(a[i] == dry && b[i] == dry);
     }
+
     for (size_t i = 32; i < 64; i++)
     {
         XSFLIB_CHECK(a[i] == dry + wet && b[i] == dry + wet);
@@ -360,21 +323,21 @@ void TestUltimateStores()
     output.Frame();
     const auto& first = output.Records()[0];
     XSFLIB_CHECK(first.vol == 3 && first.trig != 0 && first.pitch == 24 * 32);
-    XSFLIB_CHECK(SameWrites(output.SoundWrites(), {{kSound3CntH, 2, 0},
-                                                   {kWaveRam, 4, 0},
-                                                   {kWaveRam + 4, 4, 0},
-                                                   {kWaveRam + 8, 4, 0},
-                                                   {kWaveRam + 12, 4, 0},
-                                                   {kSound3CntL, 2, 0x80},
-                                                   {kNr51, 1, 0xBA},
-                                                   {kSound1CntH, 2, uint32_t(3 << 12 | first.b2)},
-                                                   {kSound1CntX, 2, 0x8000u | (24 * 32)},
-                                                   {kSound2CntL, 2, 0x80},
-                                                   {kSound2CntH, 2, 0x8000},
-                                                   {kSound3CntH, 2, 0},
-                                                   {kSound3CntX, 2, 0},
-                                                   {kSound4CntL, 2, 0},
-                                                   {kSound4CntH, 2, 0x1234}}));
+    XSFLIB_CHECK(SameWrites(output.SoundWrites(), {{kRegSound3CntH, 2, 0},
+                                                   {kRegWaveRam, 4, 0},
+                                                   {kRegWaveRam + 4, 4, 0},
+                                                   {kRegWaveRam + 8, 4, 0},
+                                                   {kRegWaveRam + 12, 4, 0},
+                                                   {kRegSound3CntL, 2, 0x80},
+                                                   {kRegNr51, 1, 0xBA},
+                                                   {kRegSound1CntH, 2, uint32_t(3 << 12 | first.b2)},
+                                                   {kRegSound1CntX, 2, 0x8000u | (24 * 32)},
+                                                   {kRegSound2CntL, 2, 0x80},
+                                                   {kRegSound2CntH, 2, 0x8000},
+                                                   {kRegSound3CntH, 2, 0},
+                                                   {kRegSound3CntX, 2, 0},
+                                                   {kRegSound4CntL, 2, 0},
+                                                   {kRegSound4CntH, 2, 0x1234}}));
 
     // Each loop of the song stops the wave channel again, and the wave RAM's other bank takes the silent wave.
     for (int f = 0; f < 16 && !output.Song()->LoopedLastFrame(); f++)
@@ -385,8 +348,8 @@ void TestUltimateStores()
     XSFLIB_CHECK(output.Song()->LoopedLastFrame());
     const std::vector<RegisterWrite>& writes = output.SoundWrites();
     XSFLIB_CHECK(writes.size() >= 6);
-    XSFLIB_CHECK(writes[0].address == kSound3CntH && writes[0].value == 0);
-    XSFLIB_CHECK(writes[5].address == kSound3CntL && writes[5].value == 0xC0);
+    XSFLIB_CHECK(writes[0].address == kRegSound3CntH && writes[0].value == 0);
+    XSFLIB_CHECK(writes[5].address == kRegSound3CntL && writes[5].value == 0xC0);
 
     // The wave channel joins NR51 at its first note, on both sides: 0xFF.
     Image wave;
@@ -397,7 +360,7 @@ void TestUltimateStores()
     wave_output.Play(0);
     wave_output.Frame();
     XSFLIB_CHECK(wave_output.SoundWrites().size() > 6);
-    XSFLIB_CHECK(wave_output.SoundWrites()[6].address == kNr51 && wave_output.SoundWrites()[6].value == 0xFF);
+    XSFLIB_CHECK(wave_output.SoundWrites()[6].address == kRegNr51 && wave_output.SoundWrites()[6].value == 0xFF);
 }
 
 // The WCT 2004 layout. A record holds one pan byte. Its low nibble gives the right side's entry of the volume's row of
@@ -415,6 +378,7 @@ void TestWctLevels(uint32_t record_word, std::initializer_list<int> equal, std::
         m.Put8(kVolumes + volume * 16 + 15, 8);
         m.Put8(kVolumes + volume * 16 + 8, 4);
     }
+
     m.Sample(0, 0x1000, 8, 0, {-32, -1, 1, 127, -32, -1, 1, 127});
     const Rom rom = m.ToRom();
 
@@ -449,6 +413,7 @@ void TestWctPsg()
         m.Put8(kVolumes + volume * 16 + 15, 5);
         m.Put8(kVolumes + volume * 16 + 8, 3);
     }
+
     const Rom rom = m.ToRom();
 
     Output output(rom, InfoOf(Revision::kWct2004));
@@ -456,21 +421,21 @@ void TestWctPsg()
     output.Frame();
     const auto& r = output.Records()[0];
     const uint32_t frequency = 0x8000u | uint32_t(r.pitch);
-    XSFLIB_CHECK(SameWrites(output.SoundWrites(), {{kSound3CntH, 2, 0},
-                                                   {kWaveRam, 4, 0},
-                                                   {kWaveRam + 4, 4, 0},
-                                                   {kWaveRam + 8, 4, 0},
-                                                   {kWaveRam + 12, 4, 0},
-                                                   {kSound3CntL, 2, 0x80},
-                                                   {kNr51, 1, 0xA9},
-                                                   {kSound1CntH, 2, uint32_t(5 << 12 | r.b2)},
-                                                   {kSound1CntX, 2, frequency},
-                                                   {kSound2CntL, 2, uint32_t(3 << 12 | r.b2)},
-                                                   {kSound2CntH, 2, frequency},
-                                                   {kSound3CntH, 2, 0},
-                                                   {kSound3CntX, 2, 0},
-                                                   {kSound4CntL, 2, 0},
-                                                   {kSound4CntH, 2, 0x1234}}));
+    XSFLIB_CHECK(SameWrites(output.SoundWrites(), {{kRegSound3CntH, 2, 0},
+                                                   {kRegWaveRam, 4, 0},
+                                                   {kRegWaveRam + 4, 4, 0},
+                                                   {kRegWaveRam + 8, 4, 0},
+                                                   {kRegWaveRam + 12, 4, 0},
+                                                   {kRegSound3CntL, 2, 0x80},
+                                                   {kRegNr51, 1, 0xA9},
+                                                   {kRegSound1CntH, 2, uint32_t(5 << 12 | r.b2)},
+                                                   {kRegSound1CntX, 2, frequency},
+                                                   {kRegSound2CntL, 2, uint32_t(3 << 12 | r.b2)},
+                                                   {kRegSound2CntH, 2, frequency},
+                                                   {kRegSound3CntH, 2, 0},
+                                                   {kRegSound3CntX, 2, 0},
+                                                   {kRegSound4CntL, 2, 0},
+                                                   {kRegSound4CntH, 2, 0x1234}}));
 }
 
 void TestLevelTable()
@@ -487,6 +452,7 @@ void TestLevelTable()
         {
             m.Put8(kVolumes + volume * 16 + 15, 2);
         }
+
         for (uint32_t i = 0; i < 256; i++)
         {
             m.Put8(kLevelTable + 2 * 256 + i, uint8_t(i / 8));
@@ -547,6 +513,7 @@ void TestRingLevels()
     {
         m.Put8(kWaves + i, uint8_t(0x10 + i));
     }
+
     const Rom rom = m.ToRom();
 
     Output output(rom, InfoOf(Revision::kEternalDuelist));
@@ -558,23 +525,23 @@ void TestRingLevels()
     // A song's start stores NR51 and SOUNDCNT_H, and loads wave 0. A loop does the same. A ring's output stage then
     // stores NR51 from the four PSG records. Each holds its channel's bits for both sides. The channels' first rests
     // follow, at volume 0, with the squares' duty bytes of 0x80.
-    XSFLIB_CHECK(SameWrites(output.SoundWrites(), {{kNr51, 1, 0xFF},
-                                                   {kSoundCntH, 2, 0x330E},
-                                                   {kSound3CntH, 2, 0},
-                                                   {kWaveRam, 4, 0x13121110},
-                                                   {kWaveRam + 4, 4, 0x17161514},
-                                                   {kWaveRam + 8, 4, 0x1B1A1918},
-                                                   {kWaveRam + 12, 4, 0x1F1E1D1C},
-                                                   {kSound3CntL, 2, 0x80},
-                                                   {kNr51, 1, 0xFF},
-                                                   {kSound1CntH, 2, 0x80},
-                                                   {kSound1CntX, 2, 0x8000},
-                                                   {kSound2CntL, 2, 0x80},
-                                                   {kSound2CntH, 2, 0x8000},
-                                                   {kSound3CntH, 2, 0},
-                                                   {kSound3CntX, 2, 0},
-                                                   {kSound4CntL, 2, 0},
-                                                   {kSound4CntH, 2, 0x1234}}));
+    XSFLIB_CHECK(SameWrites(output.SoundWrites(), {{kRegNr51, 1, 0xFF},
+                                                   {kRegSoundCntH, 2, 0x330E},
+                                                   {kRegSound3CntH, 2, 0},
+                                                   {kRegWaveRam, 4, 0x13121110},
+                                                   {kRegWaveRam + 4, 4, 0x17161514},
+                                                   {kRegWaveRam + 8, 4, 0x1B1A1918},
+                                                   {kRegWaveRam + 12, 4, 0x1F1E1D1C},
+                                                   {kRegSound3CntL, 2, 0x80},
+                                                   {kRegNr51, 1, 0xFF},
+                                                   {kRegSound1CntH, 2, 0x80},
+                                                   {kRegSound1CntX, 2, 0x8000},
+                                                   {kRegSound2CntL, 2, 0x80},
+                                                   {kRegSound2CntH, 2, 0x8000},
+                                                   {kRegSound3CntH, 2, 0},
+                                                   {kRegSound3CntX, 2, 0},
+                                                   {kRegSound4CntL, 2, 0},
+                                                   {kRegSound4CntH, 2, 0x1234}}));
 
     std::vector<int8_t> a;
     std::vector<int8_t> b;
@@ -610,6 +577,7 @@ void TestRingWrap()
     {
         bytes.push_back(int8_t(16 * (1 + i % 7)));
     }
+
     m.Sample(0, 0x1000, uint32_t(kLength), -1, bytes);
     const Rom rom = m.ToRom();
 
@@ -636,6 +604,7 @@ void TestRingWrap()
     {
         XSFLIB_CHECK(a[size_t(i)] == bytes[size_t(672 + i)]);
     }
+
     XSFLIB_CHECK(AllZero(a, 10, 32));
     XSFLIB_CHECK(a[32] == bytes[size_t(kLength - 1)]);
     XSFLIB_CHECK(AllZero(a, 33, a.size()));
@@ -678,7 +647,7 @@ void TestRingNr51Twice()
     int stores = 0;
     for (const RegisterWrite& w : output.SoundWrites())
     {
-        stores += w.address == kNr51 ? 1 : 0;
+        stores += w.address == kRegNr51 ? 1 : 0;
     }
 
     // The song's start stores NR51 once, and the output stage twice.
@@ -703,6 +672,7 @@ void TestFifoVoice()
     {
         m.Put16(kWaves + i, uint16_t(0x1100 + i));
     }
+
     const Rom rom = m.ToRom();
 
     Output output(rom, FifoInfo());
@@ -719,14 +689,16 @@ void TestFifoVoice()
     // first rests, NR50 and the wave and noise channels' first rests. The voice's start then stores SOUNDCNT_H's high
     // byte with FIFO A's reset bit.
     const int nr50 = output.Song()->PsgVolume();
-    XSFLIB_CHECK(SameWrites(
-        output.SoundWrites(),
-        {{kSound1CntL, 2, 0},        {kSound3CntL, 2, 0x40},     {kWaveRam, 2, 0x1100},     {kWaveRam + 2, 2, 0x1102},
-         {kWaveRam + 4, 2, 0x1104},  {kWaveRam + 6, 2, 0x1106},  {kWaveRam + 8, 2, 0x1108}, {kWaveRam + 10, 2, 0x110A},
-         {kWaveRam + 12, 2, 0x110C}, {kWaveRam + 14, 2, 0x110E}, {kSound3CntL, 2, 0x80},    {kSound3CntX, 2, 0x8000},
-         {kSound1CntH, 2, 0x80},     {kSound1CntX, 2, 0x8000},   {kSound2CntL, 2, 0x80},    {kSound2CntH, 2, 0x8000},
-         {kNr50, 1, uint32_t(nr50)}, {kSound3CntH, 2, 0},        {kSound3CntX, 2, 0},       {kSound4CntL, 2, 0},
-         {kSound4CntH, 2, 0x8000},   {kSoundCntHHigh, 1, 0x3B}}));
+    XSFLIB_CHECK(
+        SameWrites(output.SoundWrites(),
+                   {{kRegSound1CntL, 2, 0},        {kRegSound3CntL, 2, 0x40},     {kRegWaveRam, 2, 0x1100},
+                    {kRegWaveRam + 2, 2, 0x1102},  {kRegWaveRam + 4, 2, 0x1104},  {kRegWaveRam + 6, 2, 0x1106},
+                    {kRegWaveRam + 8, 2, 0x1108},  {kRegWaveRam + 10, 2, 0x110A}, {kRegWaveRam + 12, 2, 0x110C},
+                    {kRegWaveRam + 14, 2, 0x110E}, {kRegSound3CntL, 2, 0x80},     {kRegSound3CntX, 2, 0x8000},
+                    {kRegSound1CntH, 2, 0x80},     {kRegSound1CntX, 2, 0x8000},   {kRegSound2CntL, 2, 0x80},
+                    {kRegSound2CntH, 2, 0x8000},   {kRegNr50, 1, uint32_t(nr50)}, {kRegSound3CntH, 2, 0},
+                    {kRegSound3CntX, 2, 0},        {kRegSound4CntL, 2, 0},        {kRegSound4CntH, 2, 0x8000},
+                    {kRegSoundCntHHigh, 1, 0x3B}}));
 
     // The first DMA takes the buffer as the start left it: silence. Its interrupt fills the next block, and so on. The
     // interrupt after the sample's last block stops the timer.
@@ -792,7 +764,7 @@ void TestFifoB()
     Output output(rom, FifoInfo());
     output.Play(0);
     output.Frame();
-    XSFLIB_CHECK(output.SoundWrites().back().address == kSoundCntHHigh);
+    XSFLIB_CHECK(output.SoundWrites().back().address == kRegSoundCntHHigh);
     XSFLIB_CHECK(output.SoundWrites().back().value == 0xF3);
     XSFLIB_CHECK(output.FifoCycles(0) == 0 && output.FifoCycles(1) == 0x180);
     std::vector<int8_t> a;
@@ -814,6 +786,7 @@ void TestFifoBend()
     {
         m.Put16(kPeriods + 2 * p, uint16_t(0x4000 - p));
     }
+
     FifoSample(m, 5, 100, 0x300, {});
     const Rom rom = m.ToRom();
 
@@ -830,138 +803,6 @@ void TestFifoBend()
     XSFLIB_CHECK(output.FifoCycles(0) == 0x4000);
     output.Mix(a, b);
     XSFLIB_CHECK(output.FifoCycles(0) == uint32_t(uint16_t(r.pitch)));
-}
-
-// The reference. Small programs stand in for a game's routines.
-constexpr uint32_t kReturn = kRomBase + 0x100; // bx lr
-constexpr uint32_t kFrameEntry = kRomBase + 0x110;
-constexpr uint32_t kStage = kRomBase + 0x130;
-constexpr uint32_t kArmMixer = kRomBase + 0x150;
-constexpr uint32_t kFifoIrq = kRomBase + 0x170;
-constexpr uint32_t kMixerBuffer = 0x03001000;
-constexpr uint32_t kDmaBuffer = 0x03002000;
-
-Rom ReferenceRom()
-{
-    agblib::testing::agb_files::CartImage m(0x1000);
-    m.PutHalfwords(kReturn, {0x4770});
-
-    // push {lr} / sub sp, #40 / movs r0, #0x55 / add r1, sp, #8 / strb r0, [r1, #3], then a call of the output stage /
-    // add sp, #40 / pop {r0} / bx r0
-    m.PutHalfwords(kFrameEntry, {0xB500, 0xB08A, 0x2055, 0xA902, 0x70C8});
-    m.PutBl(kFrameEntry + 10, kStage);
-    m.PutHalfwords(kFrameEntry + 14, {0xB00A, 0xBC01, 0x4700});
-
-    // The output stage stores FIFO A's reset bit, and stores what the register then reads as in NR51.
-    // ldr r3, =SOUNDCNT_H's high byte / movs r0, #0x3B / strb r0, [r3] / ldrb r1, [r3] / ldr r3, =NR51 / strb r1, [r3]
-    // / bx lr / nop
-    m.PutHalfwords(kStage, {0x4B03, 0x203B, 0x7018, 0x7819, 0x4B02, 0x7019, 0x4770, 0x46C0});
-    m.Put32(kStage + 16, kSoundCntHHigh);
-    m.Put32(kStage + 20, kNr51);
-
-    // The mixer, in ARM: it counts in the first byte of its buffer. ldr r0, [pc, #12] / ldrb r1, [r0] /
-    // add r1, r1, #1 / strb r1, [r0] / bx lr
-    m.Put32(kArmMixer, 0xE59F000C);
-    m.Put32(kArmMixer + 4, 0xE5D01000);
-    m.Put32(kArmMixer + 8, 0xE2811001);
-    m.Put32(kArmMixer + 12, 0xE5C01000);
-    m.Put32(kArmMixer + 16, 0xE12FFF1E);
-    m.Put32(kArmMixer + 20, kMixerBuffer);
-
-    // A DMA's interrupt routine counts in the first byte of the DMA's source.
-    // ldr r0, =source / ldrb r1, [r0] / adds r1, #1 / strb r1, [r0] / bx lr
-    m.PutHalfwords(kFifoIrq, {0x4803, 0x7801, 0x3101, 0x7001, 0x4770});
-    m.Put32(kFifoIrq + 16, kDmaBuffer);
-    return m.ToRom();
-}
-
-GameRoutines ReferenceRoutines()
-{
-    GameRoutines routines;
-    routines.init = kReturn;
-    routines.request_song = kReturn;
-    routines.start_song = kReturn;
-    routines.frame = kFrameEntry;
-    routines.output_stage = kStage;
-    routines.tracks = 2;
-    routines.fifo_b = 0x20;
-    return routines;
-}
-
-void TestReferenceFrame()
-{
-    const Rom rom = ReferenceRom();
-    GameRoutines routines = ReferenceRoutines();
-    routines.mixer = kArmMixer;
-    routines.fifo_buffer = kMixerBuffer;
-    GameDriver driver(rom, routines);
-    driver.Play(0);
-
-    // Timer 0's reload gives 0x400 cycles a point, and a block of 16 points 0x4000 cycles.
-    driver.Gba().Store(agblib::agb::kRegTimer0Reload, 2, 0x10000 - 0x400);
-    driver.Gba().Store(agblib::agb::kRegTimer0Reload + 2, 2, 0x80);
-    XSFLIB_CHECK(driver.BlockCycles() == 0x4000);
-    XSFLIB_CHECK(driver.Rate() == 16384.0);
-
-    // The records lie 8 bytes above the stack pointer at the output stage. A store with FIFO A's reset bit reads back
-    // without it, and the other bits stay.
-    XSFLIB_CHECK(driver.Frame());
-    XSFLIB_CHECK(driver.Records().size() == 2 && driver.Records()[0].vol == 0x55);
-    XSFLIB_CHECK(SameWrites(driver.SoundWrites(), {{kSoundCntHHigh, 1, 0x3B}, {kNr51, 1, 0x33}}));
-
-    // A store of the whole register loses both FIFOs' reset bits.
-    driver.Gba().Store(kSoundCntH, 2, 0xBB0E);
-    XSFLIB_CHECK(driver.Gba().Load(kSoundCntH, 2) == 0x330E);
-
-    // A frame holds 17 blocks and 0x940 cycles. The cycles left over reach a whole block in the 7th frame: 18 blocks.
-    std::vector<int8_t> a;
-    std::vector<int8_t> b;
-    int mixed = 0;
-    for (int f = 0; f < 7; f++)
-    {
-        if (f != 0)
-        {
-            driver.Frame();
-        }
-
-        driver.Mix(a, b);
-        XSFLIB_CHECK(a.size() == (f == 6 ? 18u : 17u) * 16);
-        XSFLIB_CHECK(b.size() == a.size());
-        mixed += int(a.size() / 16);
-        XSFLIB_CHECK(a[a.size() - 16] == int8_t(mixed));
-    }
-}
-
-void TestReferenceFifo()
-{
-    const Rom rom = ReferenceRom();
-    GameRoutines routines = ReferenceRoutines();
-    routines.fifo_irqs = {kFifoIrq, kFifoIrq};
-    GameDriver driver(rom, routines);
-    driver.Play(0);
-
-    // Timer 0 runs at 0x100 cycles a sample. DMA 1 takes FIFO A's bytes from the buffer. Its timing bits keep it from
-    // starting at the store. DMA 2 stays off. FIFO B takes nothing.
-    driver.Gba().Store(agblib::agb::kRegTimer0Reload, 2, 0x10000 - 0x100);
-    driver.Gba().Store(agblib::agb::kRegTimer0Reload + 2, 2, 0x80);
-    driver.Gba().Store(0x040000BC, 4, kDmaBuffer);
-    driver.Gba().Store(0x040000C6, 2, 0xB640);
-
-    // An empty FIFO takes 16 bytes at the first sample, and has 15 at the next: 16 more. It then takes 16 bytes for
-    // each 16 samples. The frame holds 1,097 samples of 0x100 cycles. Their DMAs come at samples 1, 2, 18, 34 and so on
-    // up to 1,090: 70.
-    std::vector<int8_t> a;
-    std::vector<int8_t> b;
-    driver.Frame();
-    driver.Mix(a, b);
-    XSFLIB_CHECK(a.size() == 70 * 16 && b.empty());
-    XSFLIB_CHECK(a[0] == 0 && a[16] == 1 && a[32] == 2 && a[17] == 0);
-
-    // The output stage's store of the reset bit empties the FIFO. The next frame's first samples behave as before. Its
-    // first sample comes 192 cycles into the frame, and it holds 1,097 again.
-    driver.Frame();
-    driver.Mix(a, b);
-    XSFLIB_CHECK(a.size() == 70 * 16);
 }
 
 } // namespace
@@ -996,8 +837,6 @@ int main()
     TestFifoTwoVoices();
     TestFifoB();
     TestFifoBend();
-    TestReferenceFrame();
-    TestReferenceFifo();
 
     return xsflib::testing::Summary("Konami's output");
 }

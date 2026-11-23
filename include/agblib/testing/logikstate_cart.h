@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -245,10 +246,12 @@ public:
             image_.Put32(address + kModuleSteps + pitch * 4, TestStep(pitch, module.rate));
             image_.Put16(address + kModulePeriods + pitch * 2, TestPeriod(pitch));
         }
+
         for (size_t i = 0; i < module.orders.size(); i++)
         {
             image_.Put8(address + kModuleOrderList + uint32_t(i), module.orders[i]);
         }
+
         for (uint32_t i = 0; i < uint32_t(kSamples); i++)
         {
             const uint32_t header = address + kModuleSamples + i * kSampleSize;
@@ -275,6 +278,7 @@ public:
                 }
             }
         }
+
         image_.Put32(address + kModulePatternBytes, at - (address + kModuleSize));
 
         return address;
@@ -304,10 +308,7 @@ public:
     // Sets the game code of the cartridge to `code`, of 4 letters.
     void SetGameCode(const char* code)
     {
-        for (uint32_t i = 0; i < 4; i++)
-        {
-            image_.Put8(0x080000AC + i, uint8_t(code[i]));
-        }
+        image_.SetGameCode(std::string_view(code, 4));
     }
 
     // Writes a table's data in the layout of Pinball Challenge Deluxe: the record, whose word +0x60 names `module`,
@@ -330,6 +331,7 @@ public:
                 pointer += 4;
             }
         }
+
         image_.Put32(kTableData + 4 + uint32_t(entries.size()) * 4, 0xFFFFFFFF);
 
         image_.Put32(kTableRecord, first_word);
@@ -427,10 +429,12 @@ private:
         {
             image_.Put32(address + kMod1Steps + pitch * 4, TestMod1Step(pitch, module.rate));
         }
+
         for (size_t i = 0; i < module.orders.size(); i++)
         {
             image_.Put8(address + kMod1OrderList + uint32_t(i), module.orders[i]);
         }
+
         uint32_t point_bytes = 0;
         for (uint32_t i = 0; i < uint32_t(kSamples); i++)
         {
@@ -459,6 +463,7 @@ private:
                 }
             }
         }
+
         image_.Put32(address + kMod1PatternBytes, at - (address + kMod1Size));
         image_.Put32(address + kMod1PointBytes, point_bytes);
         for (uint32_t i = 0; i < uint32_t(kSamples); i++)

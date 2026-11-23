@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
 #include "xsflib/testing/check.h"
 
 #include "agblib/agb/rom.h"
@@ -15,8 +17,6 @@
 #include "agblib/krawall/driver.h"
 #include "agblib/krawall/layout.h"
 #include "agblib/testing/krawall_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace
 {
@@ -81,6 +81,7 @@ void TestCommands()
             rows[i < decoded.entries[1] ? 0 : 1] += ntdlib::commands::FromUnit(items[i].value.value, {});
         }
     }
+
     SEQLIB_CHECK(rows[0] == 8 && rows[1] == 4);
 
     // The bytes come back, from the first pattern to the module's header, with each pattern where the table says.

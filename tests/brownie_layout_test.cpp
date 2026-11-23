@@ -14,6 +14,8 @@
 #include <variant>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/sar/layout.h"
 #include "seqlib/testing/check.h"
 #include "xsflib/bytes.h"
 #include "xsflib/testing/check.h"
@@ -25,13 +27,12 @@
 #include "agblib/brownie/layout.h"
 #include "agblib/brownie/sequencer.h"
 #include "agblib/testing/brownie_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/sar/layout.h"
 
 namespace
 {
 
 using namespace agblib::testing::brownie_cart;
+using seqlib::testing::Throws;
 
 namespace brownie = agblib::brownie;
 namespace sar = ntdlib::sar;
@@ -73,6 +74,7 @@ void Erase(ntdlib::commands::Sequence& sequence, size_t item)
             other.target--;
         }
     }
+
     for (ntdlib::commands::Label& label : sequence.labels)
     {
         label.item -= label.item > item ? 1 : 0;
@@ -98,6 +100,7 @@ bool PlaysTheSame(const Rom& a, const Rom& b, const DriverInfo& info, const Driv
         {
             return false;
         }
+
         for (size_t i = 0; i < x.size(); i++)
         {
             if (x[i].address != y[i].address || x[i].size != y[i].size || x[i].value != y[i].value)
@@ -162,11 +165,13 @@ void TestShrink()
     {
         duty++;
     }
+
     size_t zeros = duty;
     while (sequence.items[zeros].kind != Kind::kData)
     {
         zeros++;
     }
+
     Erase(sequence, zeros);
     Erase(sequence, duty);
 
@@ -291,7 +296,7 @@ void TestMovePastEnd()
     Cart cart;
     cart.Sound(1, {{0, {0xF0, kPsgHold, 0x89, 24, 0xFF}, {}}});
 
-    // Sound 2's data lies before its list, at an address with a remainder of 1.
+    // Sound 2's data is before its list, at an address with a remainder of 1.
     cart.MoveTo(kRomBase + 0x4000, kRomBase + 0x3FF1);
     cart.Sound(2, {{1, {0xF0, kPsgHold, 0x89, 26, 0xFF}, {}}});
     const Rom base = cart.ToRom();
@@ -302,6 +307,7 @@ void TestMovePastEnd()
     {
         bytes.pop_back();
     }
+
     bytes.insert(bytes.end(), 8, 0xFF);
     const size_t old_size = bytes.size();
     Rom rom;
@@ -325,6 +331,7 @@ void TestMovePastEnd()
     {
         SEQLIB_CHECK_EQ(grown.U8(at), 0xFF);
     }
+
     SEQLIB_CHECK(PlaysTheSame(rom, grown, info, grown_info, 2, 30));
 }
 
@@ -351,16 +358,7 @@ void TestRefusals()
     const Layout layout = brownie::Cut(rom, info);
     const auto refused = [](const Layout& l)
     {
-        try
-        {
-            brownie::Join(l);
-        }
-        catch (const std::invalid_argument&)
-        {
-            return true;
-        }
-
-        return false;
+        return Throws<std::invalid_argument>([&] { brownie::Join(l); });
     };
 
     // A piece of padding.
@@ -373,7 +371,7 @@ void TestRefusals()
     bad.pieces.emplace_back(ntdlib::sar::SequencePiece{uint32_t(bad.sequences.size()), 0, 4});
     SEQLIB_CHECK(refused(bad));
 
-    // A field whose place lies past its run, and a field whose item the region lacks.
+    // A field whose place is past its run, and a field whose item the region doesn't have.
     bad = layout;
     bad.fields[0].at.offset = 0x7FFFFFFF;
     SEQLIB_CHECK(refused(bad));
@@ -392,7 +390,7 @@ void TestRefusals()
     SEQLIB_CHECK(refused(bad));
 }
 
-// The free space lies past the last byte that the driver reads, in the run at the ROM's end. A ROM that ends with other
+// The free space is past the last byte that the driver reads, in the run at the ROM's end. A ROM that ends with other
 // bytes puts it at its end, on a multiple of 4.
 void TestFreeSpace()
 {

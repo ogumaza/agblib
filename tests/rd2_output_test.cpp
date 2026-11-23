@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "seqlib/testing/check.h"
 #include "xsflib/testing/check.h"
 
 #include "agblib/agb/gba.h"
@@ -32,6 +33,7 @@ using agblib::rd2::DriverInfo;
 using agblib::rd2::kFrameSamples;
 using agblib::rd2::Output;
 using agblib::rd2::VoiceMix;
+using seqlib::testing::Throws;
 
 constexpr uint32_t kFirstSample = kSamples + 8; // the first sample's header
 constexpr uint32_t kFirstPoints = kFirstSample + 16;
@@ -170,6 +172,7 @@ void TestPoints()
         const int point = int(at) * 4 - 128;
         same = same && output.FifoA()[i] == ByteOf(int16_t(left * point), Revision::kLinkToThePast);
     }
+
     Check(same, "the bytes follow the sample's points through its loop");
 }
 
@@ -446,6 +449,7 @@ void TestMixerSilent()
     {
         echoed.Frame();
     }
+
     Check(!echoed.MixerSilent(), "the history holds the voice's points");
 
     // A voice that plays points of 0 can still sound later on. The mixer isn't silent while it plays.
@@ -469,28 +473,14 @@ void TestEnhancedStartsBeforeTheSong()
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
     Output output(rom, info);
-    bool refused = false;
-    try
-    {
-        output.StartEnhancedMixing();
-    }
-    catch (const std::logic_error&)
-    {
-        refused = true;
-    }
+    bool refused = Throws<std::logic_error>([&] { output.StartEnhancedMixing(); });
+
     Check(refused, "the enhanced mode comes after the request");
 
     output.Play(0);
     output.Frame();
-    refused = false;
-    try
-    {
-        output.StartEnhancedMixing();
-    }
-    catch (const std::logic_error&)
-    {
-        refused = true;
-    }
+    refused = Throws<std::logic_error>([&] { output.StartEnhancedMixing(); });
+
     Check(refused, "the enhanced mode comes before the song's first frame");
 }
 

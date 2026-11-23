@@ -50,7 +50,7 @@ struct SoundWalk
 };
 
 // Follows channel `channel` of a sound as the driver reads it, up to every place that it can reach. A channel runs on
-// over a note, as it does in a later frame.
+// over a note as it does in a later frame.
 void WalkChannel(const Rom& rom, const DriverInfo& info, const SongChannel& channel, SoundWalk& walk,
                  std::set<std::pair<uint32_t, uint32_t>>& seen)
 {
@@ -309,7 +309,7 @@ bool IsWordItem(const Item& item)
            (item.kind == Kind::kEnd && item.index == 1);
 }
 
-// The bytes of an item that holds no address.
+// The bytes of an item that contains no address.
 uint32_t ItemSize(const Item& item)
 {
     switch (item.kind)
@@ -519,6 +519,7 @@ void WriteCommand(const Item& item, Revision revision, uint8_t* out)
         {
             throw std::invalid_argument("a command holds another number of bytes than the driver reads");
         }
+
         std::copy(item.bytes.begin(), item.bytes.end(), out + 1);
         break;
     default:
@@ -679,6 +680,7 @@ public:
             decoded_.sequence.items.push_back(placed.item);
             at = address + placed.size;
         }
+
         add_data(end);
     }
 
@@ -739,7 +741,7 @@ public:
     }
 
 private:
-    // An item at its address. An item that names a place holds the address until every item has its number.
+    // An item at its address. An item that names a place keeps the address until every item has its number.
     struct Placed
     {
         Item item;
@@ -772,6 +774,7 @@ private:
             {
                 place->second = placed;
             }
+
             return true;
         }
 
@@ -916,6 +919,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Revision revi
         item_at[offset] = uint32_t(i);
         offset += ItemSize(item);
     }
+
     encoded.offsets.push_back(offset);
 
     const auto address_of = [&](const Item& item)

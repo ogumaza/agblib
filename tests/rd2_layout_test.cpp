@@ -14,20 +14,24 @@
 #include <variant>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/sar/layout.h"
+#include "seqlib/testing/check.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/rd2/commands.h"
 #include "agblib/rd2/driver.h"
 #include "agblib/rd2/layout.h"
 #include "agblib/rd2/output.h"
 #include "agblib/testing/rd2_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/sar/layout.h"
 
 using xsflib::testing::Check;
 
 namespace
 {
+
+using agblib::testing::agb_tests::RomOf;
 
 namespace rd2 = agblib::rd2;
 namespace sar = ntdlib::sar;
@@ -36,11 +40,12 @@ using ntdlib::commands::Command;
 using ntdlib::commands::Kind;
 using rd2::Layout;
 using rd2::Rom;
+using seqlib::testing::Throws;
 
 constexpr Revision kRevision = Revision::kLinkToThePast;
 
-// Where a run of 0xFF at a cart's end starts. It lies past the 64 KiB that each bank's offsets reach. The cart's table
-// of banks ends where its first bank starts, and reads the bytes after the table as more banks.
+// Where a run of 0xFF at a cart's end starts. It is past the 64 KiB that each bank's offsets reach. The cart's table of
+// banks ends where its first bank starts, and reads the bytes after the table as more banks.
 constexpr uint32_t kRunStart = 0x30000;
 constexpr uint32_t kRunEnd = 0x40000;
 
@@ -67,13 +72,6 @@ std::vector<uint8_t> BytesOf(const Rom& rom)
     return std::vector<uint8_t>(rom.Ptr(kRomBase), rom.Ptr(kRomBase) + rom.Size());
 }
 
-Rom RomOf(std::vector<uint8_t> image)
-{
-    Rom rom;
-    rom.Assign(std::move(image));
-    return rom;
-}
-
 // Adds `size` bytes after the last item of `sequence`. No command reaches them.
 void Grow(ntdlib::commands::Sequence& sequence, size_t size)
 {
@@ -81,22 +79,6 @@ void Grow(ntdlib::commands::Sequence& sequence, size_t size)
     data.kind = Kind::kData;
     data.bytes.assign(size, 0xFD);
     sequence.items.push_back(std::move(data));
-}
-
-// Whether `body` throws std::invalid_argument.
-template <typename Body>
-bool Refuses(Body body)
-{
-    try
-    {
-        body();
-    }
-    catch (const std::invalid_argument&)
-    {
-        return true;
-    }
-
-    return false;
 }
 
 void TestCut()
@@ -159,10 +141,12 @@ void TestSequenceMoves()
         Check(moved.U8(kSequenceData + i) == 0, "its place holds zeros");
         Check(moved.U8(kSequenceData + 8 + i) == rom.U8(kSequenceData + 8 + i), "the next sequence stays");
     }
+
     for (uint32_t i = 0; i < 8; i++)
     {
         Check(moved.U8(place + i) == rom.U8(kSequenceData + i), "its bytes lie in the new place");
     }
+
     Check(moved.U8(place + 8) == 0xFD && moved.U8(place + 16) == 0xFD, "with the new bytes");
 
     const rd2::DriverInfo found = Detect(moved);
@@ -203,6 +187,7 @@ void TestNeighbours()
     {
         waits.Wait(1);
     }
+
     three.Sequences({{waits.End()}, {TrackData().Wait(4).End()}, {TrackData().Wait(5).End()}});
     const Rom rom_of_three = three.ToRom();
     Layout of_three = rd2::Cut(rom_of_three, Detect(rom_of_three));
@@ -217,8 +202,8 @@ void TestNeighbours()
 
 void TestStaysAfterItsTable()
 {
-    // A table that lies between two sequences. A sequence that moves can't go before its table: a table's offsets are
-    // positive, and detection reads the first entry for the table's size.
+    // A table between two sequences. A sequence that moves can't go before its table: a table's offsets are positive,
+    // and detection reads the first entry for the table's size.
     Cart cart = TwoSequences();
     const Rom rom = cart.ToRom();
     const rd2::DriverInfo info = Detect(rom);
@@ -267,10 +252,12 @@ void TestFreeSpace()
     {
         cart.Put8(kRomBase + a, 0xAB);
     }
+
     for (uint32_t a = kRunStart; a < kRunEnd; a++)
     {
         cart.Put8(kRomBase + a, 0xFF);
     }
+
     Rom rom = cart.ToRom();
     Layout layout = rd2::Cut(rom, Detect(rom));
     Check(layout.free.start == kRunStart + 0x100 && layout.free.padding == 0xFF, "the free space lies in the run");
@@ -306,6 +293,7 @@ void TestFiller()
     {
         cart.Put8(kRomBase + a, 0xAB);
     }
+
     const auto fill = [&cart](uint32_t from, uint32_t size, uint8_t byte)
     {
         for (uint32_t i = 0; i < size; i++)
@@ -327,7 +315,7 @@ void TestFiller()
     Layout layout = rd2::Cut(rom, info);
     Check(layout.free.filler == runs, "the cut keeps the filler runs");
     Grow(layout.sequences[0], 9);
-    Check(Refuses([&layout] { rd2::Join(layout); }), "no room without the filler runs");
+    Check(Throws<std::invalid_argument>([&layout] { rd2::Join(layout); }), "no room without the filler runs");
 
     rd2::JoinOptions options;
     options.filler = true;
@@ -336,7 +324,8 @@ void TestFiller()
     Check(joined.U32(kSequences) == kRomBase + 0x300100 - kSequences, "the sequence lies in the run of 0xFF");
 
     Grow(layout.sequences[0], 0x4000);
-    Check(Refuses([&layout, &options] { rd2::Join(layout, options); }), "no filler run with room");
+    Check(Throws<std::invalid_argument>([&layout, &options] { rd2::Join(layout, options); }),
+          "no filler run with room");
 }
 
 void TestSequencesThatStay()
@@ -390,23 +379,24 @@ void TestRefusals()
 
     Layout padding = cut;
     padding.pieces.emplace_back(ntdlib::sar::Padding{4});
-    Check(Refuses([&padding] { rd2::Join(padding); }), "a piece of padding");
+    Check(Throws<std::invalid_argument>([&padding] { rd2::Join(padding); }), "a piece of padding");
 
     Layout missing = cut;
     missing.sequences.pop_back();
-    Check(Refuses([&missing] { rd2::Join(missing); }), "a piece without a sequence");
+    Check(Throws<std::invalid_argument>([&missing] { rd2::Join(missing); }), "a piece without a sequence");
 
     Layout field = cut;
     field.fields[0].at = {1, 0};
-    Check(Refuses([&field] { rd2::Join(field); }), "a field in a sequence");
+    Check(Throws<std::invalid_argument>([&field] { rd2::Join(field); }), "a field in a sequence");
 
     Layout outside = cut;
     outside.fields[0].to.offset = 1000;
-    Check(Refuses([&outside] { rd2::Join(outside); }), "a field that names an item that a sequence lacks");
+    Check(Throws<std::invalid_argument>([&outside] { rd2::Join(outside); }),
+          "a field that names an item that a sequence lacks");
 
     Layout large = cut;
     std::get<std::vector<uint8_t>>(large.pieces[0]).resize(rd2::kLargestRom);
-    Check(Refuses([&large] { rd2::Join(large); }), "a ROM past 32 MiB");
+    Check(Throws<std::invalid_argument>([&large] { rd2::Join(large); }), "a ROM past 32 MiB");
 }
 
 void TestPlaysTheSame()
@@ -434,6 +424,7 @@ void TestPlaysTheSame()
         Check(before.SoundWrites().size() == after.SoundWrites().size(), "and stores the same");
         sounding += std::any_of(before.FifoA().begin(), before.FifoA().end(), [](int8_t b) { return b != 0; });
     }
+
     Check(sounding > 30, "the song sounds");
 }
 

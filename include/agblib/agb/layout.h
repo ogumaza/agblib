@@ -14,9 +14,10 @@
 #include <string_view>
 #include <vector>
 
+#include "ntdlib/sar/layout.h"
+
 #include "agblib/agb/encoded.h"
 #include "agblib/agb/rom.h"
-#include "ntdlib/sar/layout.h"
 
 namespace agblib::agb
 {
@@ -56,7 +57,7 @@ class Reached
 public:
     explicit Reached(const Rom& rom);
 
-    // Whether the driver reads the byte at `offset` from the ROM's start.
+    // Whether the driver reads the byte at `offset` from the ROM's start. `offset` is below the ROM's size.
     bool Holds(uint32_t offset) const;
 
     // Whether the driver reads any of the `size` bytes from `address` that are in the ROM.
@@ -81,16 +82,16 @@ uint64_t AlignUp(uint64_t value, uint64_t alignment);
 uint32_t EndRunOf(const Rom& rom, uint8_t byte);
 
 // The free space at the end of `rom`, without filler runs. Where the ROM ends with a run of 0xFF or of zeros, the free
-// space starts kFreeSpaceMargin bytes or more past the last byte of the run that `reached` holds, and past the offset
-// `floor`, on a multiple of kFreeSpaceMargin. The padding is the run's byte. Without such a run, the free space starts
-// at the ROM's end or at `floor`, whichever is later, on a multiple of 4 bytes. `reached` can be null: the driver then
-// reads none of the run.
+// space starts kFreeSpaceMargin bytes or more past the last byte of the run that `reached` contains, and past the
+// offset `floor`, on a multiple of kFreeSpaceMargin. The padding is the run's byte. Without such a run, the free space
+// starts at the ROM's end or at `floor`, whichever is later, on a multiple of 4 bytes. `reached` can be null: the
+// driver then reads none of the run.
 FreeSpace FreeSpaceOf(const Rom& rom, const Reached* reached, uint64_t floor = 0);
 
 // The runs of filler bytes in `rom` that each driver's FillerRuns returns: runs of 0xFF in the order of their places,
 // then, with `zeros`, runs of zeros in the order of their places. A filler run is in a run of `least_run` or more bytes
-// of 0xFF or of zeros that contains no byte that `reached` holds. A run at the ROM's end doesn't count. The filler run
-// starts kFreeSpaceMargin bytes or more into the run, on a multiple of kFreeSpaceMargin, and ends kFreeSpaceMargin
+// of 0xFF or of zeros that contains no byte that `reached` contains. A run at the ROM's end doesn't count. The filler
+// run starts kFreeSpaceMargin bytes or more into the run, on a multiple of kFreeSpaceMargin, and ends kFreeSpaceMargin
 // bytes before the run's end.
 std::vector<Span> FillerRunsOf(const Rom& rom, const Reached& reached, uint32_t least_run, bool zeros = true);
 
@@ -126,7 +127,7 @@ struct JoinRules
 // each sequence piece is encoded. A sequence that fits in its piece's room stays there. The others move, the largest
 // first and the earlier of two of a size: to the rooms of the sequences that move, where neighbours count as one, then
 // to the free space, then, with JoinRules::filler, to the filler runs. The constructor throws std::invalid_argument for
-// pieces that a GBA ROM can't hold and for sequences that don't fit.
+// pieces that a GBA ROM has no room for and for sequences that don't fit.
 class JoinedRom
 {
 public:

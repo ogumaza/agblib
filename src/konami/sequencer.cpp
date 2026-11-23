@@ -39,7 +39,7 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, int song) : rom_(ro
 {
     loop_frame_.fill(-1);
 
-    // A song whose entry isn't in the ROM keeps an empty header, so it plays nothing.
+    // A song whose entry isn't in the ROM keeps an empty header. It plays nothing.
     ReadSongHeader(rom, info.song_table, song, info.revision, header_);
 }
 
@@ -112,8 +112,8 @@ bool Sequencer::HasNextTrack(int track, const Command& c)
 
 void Sequencer::PassLoopPoint(int track, int delay)
 {
-    // Each loop point moves the track's start, so a loop takes the track back to the last one it passed. Those it
-    // passes once the song has looped don't change where the loop starts.
+    // Each loop point moves the track's start. A loop therefore takes the track back to the last one it passed. Those
+    // it passes once the song has looped don't change where the loop starts.
     if (loops_ == 0)
     {
         loop_frame_[size_t(track)] = int(frame_);
@@ -149,7 +149,7 @@ const std::array<TrackOutput, kTracks>& Sequencer::Step()
         return out_;
     }
 
-    // Tracks run from 15 down to 0. A loop command resets every track and the whole frame is run again from track 15,
+    // Tracks run from 15 down to 0. A loop command resets every track and the whole frame is run again from track 15
     // as the driver does.
     bool hung = false;
     for (int attempt = 0; attempt < 2; attempt++)
@@ -188,6 +188,7 @@ const std::array<TrackOutput, kTracks>& Sequencer::Step()
                 break;
             }
         }
+
         if (!restarted)
         {
             break;
@@ -421,8 +422,8 @@ UltimateMastersSequencer::Next UltimateMastersSequencer::RunCommand(int track, c
         break;
 
     case Op::kHoldOutput:
-        // FA xx with xx other than 0 holds the track back if the game's setting is 0 at that moment. FA 00 lets it go.
-        // A song request sets the setting to FF, and only a game that sets it to 0 after the request hears FA (see
+        // FA xx with xx other than 0 contains the track back if the game's setting is 0 at that moment. FA 00 lets it
+        // go. A song request sets the setting to FF, and only a game that sets it to 0 after the request plays FA (see
         // DriverInfo::live_songs).
         t.flags &= uint8_t(~kTrackHeld);
         if (c.value != 0 && request_.setting == 0)
@@ -509,6 +510,7 @@ UltimateMastersSequencer::Next UltimateMastersSequencer::RunCommand(int track, c
             {
                 std::snprintf(buf, sizeof buf, "unsupported opcode %02X; track stopped", c.opcode);
             }
+
             Warn(track, c.addr, rom_.Contains(c.addr) ? buf : "track runs past the end of the ROM; track stopped");
             t.flags = 0;
             return Next::kStop;

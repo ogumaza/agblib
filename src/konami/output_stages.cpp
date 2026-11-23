@@ -16,12 +16,14 @@
 #include <utility>
 #include <vector>
 
+#include "ntdlib/wave/sinc.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/konami/driver.h"
 #include "agblib/konami/seqformat.h"
 #include "agblib/konami/sequencer.h"
-#include "ntdlib/wave/sinc.h"
 #include "output_impl.h"
 
 namespace agblib::konami
@@ -62,7 +64,7 @@ void Output::Impl::NoteStart(OutputVoice& v, const TrackOutput& r, int right, in
     const uint32_t word = Pitched(r.pitch, rom.U32(header));
     v.step = uint16_t(word);
     v.fraction = uint16_t(word >> 16);
-    v.start = header + 12;
+    v.start = header + kSampleHeaderBytes;
     int32_t length = rom.S32(header + 4);
     uint8_t flags = kVoiceOn;
     if (length < 0)
@@ -77,7 +79,7 @@ void Output::Impl::NoteStart(OutputVoice& v, const TrackOutput& r, int right, in
         else if (rules.coded == Coded::kPacked)
         {
             // The table of pairs comes first.
-            v.start = header + 12 + 64;
+            v.start = header + kSampleHeaderBytes + kPackedPairBytes;
         }
     }
 
@@ -125,12 +127,12 @@ void Output::Impl::StorePsg(const std::array<TrackOutput, kTracks>& rec, bool wa
         const uint32_t f = frequency(r.pitch);
         if (r.trig)
         {
-            Store(kSound1CntH, 2, uint32_t(r.vol) << 12 | r.b2);
-            Store(kSound1CntX, 2, f);
+            Store(agb::kRegSound1CntH, 2, uint32_t(r.vol) << 12 | r.b2);
+            Store(agb::kRegSound1CntX, 2, f);
         }
         else
         {
-            Store(kSound1CntX, 2, f & 0x7FF);
+            Store(agb::kRegSound1CntX, 2, f & 0x7FF);
         }
     }
 
@@ -149,12 +151,12 @@ void Output::Impl::StorePsg(const std::array<TrackOutput, kTracks>& rec, bool wa
 
         if (r.trig)
         {
-            Store(kSound2CntL, 2, uint32_t(r.vol) << 12 | r.b2);
-            Store(kSound2CntH, 2, f);
+            Store(agb::kRegSound2CntL, 2, uint32_t(r.vol) << 12 | r.b2);
+            Store(agb::kRegSound2CntH, 2, f);
         }
         else
         {
-            Store(kSound2CntH, 2, f & 0x7FF);
+            Store(agb::kRegSound2CntH, 2, f & 0x7FF);
         }
     }
 
@@ -164,28 +166,28 @@ void Output::Impl::StorePsg(const std::array<TrackOutput, kTracks>& rec, bool wa
         const uint32_t f = frequency(r.pitch) & 0x7FF;
         if (r.vol == 0)
         {
-            Store(kSound3CntH, 2, 0);
+            Store(agb::kRegSound3CntH, 2, 0);
         }
         else if (r.trig || !wave_on_trigger)
         {
             WaveLoad(r.b2, r.vol);
-            Store(kSound3CntH, 2, 0x2000);
+            Store(agb::kRegSound3CntH, 2, 0x2000);
         }
 
-        Store(kSound3CntX, 2, f);
+        Store(agb::kRegSound3CntX, 2, f);
     }
 
     if (any(rec[3]))
     {
         const TrackOutput& r = rec[3];
-        Store(kSound4CntL, 2, uint32_t(r.vol) << 12);
+        Store(agb::kRegSound4CntL, 2, uint32_t(r.vol) << 12);
         if ((r.trig & 2) || (r.flags & 2))
         {
-            Store(kSound4CntH, 2, uint16_t(r.pitch));
+            Store(agb::kRegSound4CntH, 2, uint16_t(r.pitch));
         }
         else
         {
-            Store(kSound4CntH, 2, rom.U16(info.noise_table + uint32_t(r.pitch * 2)));
+            Store(agb::kRegSound4CntH, 2, rom.U16(info.noise_table + uint32_t(r.pitch * 2)));
         }
     }
 }
@@ -209,6 +211,7 @@ void Output::Impl::StageUltimate()
             {
                 mix &= ~0x80u;
             }
+
             if (r.pan_l > r.pan_r)
             {
                 mix &= ~0x08u;
@@ -231,7 +234,7 @@ void Output::Impl::StageUltimate()
     if (nr51 != mix)
     {
         nr51 = mix;
-        Store(kNr51, 1, mix);
+        Store(agb::kRegNr51, 1, mix);
     }
 
     StorePsg(records, true);
@@ -297,7 +300,7 @@ void Output::Impl::StageWct()
     if (nr51 != mix)
     {
         nr51 = mix;
-        Store(kNr51, 1, mix);
+        Store(agb::kRegNr51, 1, mix);
     }
 
     StorePsg(rec, false);
@@ -341,6 +344,7 @@ uint32_t Output::Impl::LevelsAndPansWct(std::array<TrackOutput, kTracks>& rec)
                     r.trig = 1;
                 }
             }
+
             continue;
         }
 
@@ -429,7 +433,7 @@ void Output::Impl::NoteStartRing(OutputVoice& v, const TrackOutput& r)
     v.step = uint16_t(word);
     v.fraction = uint16_t(word >> 16);
     v.count = rom.S32(header + 4);
-    v.position = header + 12;
+    v.position = header + kSampleHeaderBytes;
     v.key = uint16_t(key & 0x8FFFu);
     v.volume = r.vol;
     v.flags = rom.S32(header + 8) >= 0 ? kVoiceOn | kVoiceLooped : kVoiceOn;
@@ -442,10 +446,10 @@ void Output::Impl::NoteStartRing(OutputVoice& v, const TrackOutput& r)
 void Output::Impl::StageRing()
 {
     const std::array<TrackOutput, kTracks>& rec = records;
-    Store(kNr51, 1, nr51);
+    Store(agb::kRegNr51, 1, nr51);
     if (nr51_twice)
     {
-        Store(kNr51, 1, nr51);
+        Store(agb::kRegNr51, 1, nr51);
     }
 
     StorePsg(rec, false);
@@ -536,31 +540,31 @@ void Output::Impl::StageFifo()
     if (any(rec[0]))
     {
         const TrackOutput& r = rec[0];
-        Store(kSound1CntH, 2, uint32_t(r.vol) << 12 | r.b2 | r.key);
-        Store(kSound1CntX, 2, frequency(r.pitch));
+        Store(agb::kRegSound1CntH, 2, uint32_t(r.vol) << 12 | r.b2 | r.key);
+        Store(agb::kRegSound1CntX, 2, frequency(r.pitch));
     }
 
     if (any(rec[1]))
     {
         const TrackOutput& r = rec[1];
-        Store(kSound2CntL, 2, uint32_t(r.vol) << 12 | r.b2 | r.key);
-        Store(kSound2CntH, 2, frequency(r.pitch));
+        Store(agb::kRegSound2CntL, 2, uint32_t(r.vol) << 12 | r.b2 | r.key);
+        Store(agb::kRegSound2CntH, 2, frequency(r.pitch));
     }
 
-    Store(kNr50, 1, sequencer->PsgVolume());
+    Store(agb::kRegNr50, 1, sequencer->PsgVolume());
     if (any(rec[2]))
     {
         const TrackOutput& r = rec[2];
-        Store(kSound3CntH, 2, rom.U16(info.wave_volume_table + uint32_t(r.vol) * 2) | r.b2);
+        Store(agb::kRegSound3CntH, 2, rom.U16(info.wave_volume_table + uint32_t(r.vol) * 2) | r.b2);
         const uint32_t f = frequency(r.pitch);
-        Store(kSound3CntX, 2, wave_keeps_restart ? f : f & 0x7FFF);
+        Store(agb::kRegSound3CntX, 2, wave_keeps_restart ? f : f & 0x7FFF);
     }
 
     if (any(rec[3]))
     {
         const TrackOutput& r = rec[3];
-        Store(kSound4CntL, 2, uint32_t(r.vol) << 12);
-        Store(kSound4CntH, 2, frequency(r.pitch));
+        Store(agb::kRegSound4CntL, 2, uint32_t(r.vol) << 12);
+        Store(agb::kRegSound4CntH, 2, frequency(r.pitch));
     }
 
     for (int n = voice_count - 1; n >= 0; n--)
@@ -663,7 +667,7 @@ void Output::Impl::StartNotesFifo()
         {
             // The DMA and the timer stop, and the FIFO starts again with 4 bytes of 0. FIFO B also takes timer 1.
             timers[size_t(f)] = 0;
-            Store(kSoundCntHHigh, 1, sound_control_high | (f == 0 ? 0x08 : 0xF3));
+            Store(agb::kRegSoundCntHHigh, 1, sound_control_high | (f == 0 ? 0x08 : 0xF3));
             sound_control_high = (sound_control_high | (f == 0 ? 0x08 : 0xF3)) & 0x77;
             fifo.restarted = true;
             fifo.running = true;

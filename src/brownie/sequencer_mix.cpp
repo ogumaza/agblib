@@ -10,6 +10,8 @@
 #include <span>
 #include <vector>
 
+#include "agblib/agb/sinc_mix.h"
+#include "agblib/agb/sound_registers.h"
 #include "sequencer_internal.h"
 
 namespace agblib::brownie
@@ -238,7 +240,7 @@ void Sequencer::Mix()
 }
 
 // The FIFOs in the Magical Vacation revision: at each overflow of a FIFO's timer until the next frame, the FIFO plays a
-// point. If it then holds 16 or fewer, it asks for more. The request interrupts while the FIFO's DMA is on.
+// point. If it then contains 16 or fewer, it asks for more. The request interrupts while the FIFO's DMA is on.
 void Sequencer::RunFifos()
 {
     const uint64_t end = (uint64_t(frame_) + 1) * kFrameCycles;
@@ -253,6 +255,7 @@ void Sequencer::RunFifos()
             {
                 Interrupt(x);
             }
+
             f.next += Period(x);
         }
     }
@@ -309,7 +312,7 @@ std::array<uint8_t, agblib::agb::kSoundRegisterBytes> Sequencer::SoundRegisters(
 {
     std::array<uint8_t, agblib::agb::kSoundRegisterBytes> out = {};
     std::copy(registers_.begin(), registers_.end(), out.begin());
-    out[kIoSoundBias + 1 - kIoNr10] = 0x02;
+    out[agb::kRegSoundBias + 1 - kIoNr10] = 0x02;
     return out;
 }
 
@@ -362,7 +365,7 @@ void Sequencer::MixEnhancedVoice(int voice, int channel, std::array<float, 2> to
     e.levels = to;
     e.starting = false;
 
-    // The place moves by a point for each of the console's points that the frame's time holds.
+    // The place moves by a point for each of the console's points that the frame's time contains.
     const uint64_t move = (uint64_t(kFrameCycles) << 32) / period;
     const uint64_t start = e.position;
     e.position += move;
@@ -371,37 +374,18 @@ void Sequencer::MixEnhancedVoice(int voice, int channel, std::array<float, 2> to
         return;
     }
 
-    constexpr double kUnit = 4294967296.0;
-    const size_t samples = kEnhancedFrameSamples;
-    const ntdlib::wave::SincKernel& kernel =
-        ntdlib::wave::SincKernel::ForStep(double(move) / (double(samples) * kUnit));
-    const int64_t width = kernel.HalfWidth();
-    const int64_t first = int64_t(start >> 32) - (width - 1);
-    const int64_t last = int64_t((start + move) >> 32) + width;
-    std::vector<float> input(size_t(last - first + 1));
-    for (int64_t n = first; n <= last; n++)
-    {
-        input[size_t(n - first)] = PointOf(e, n);
-    }
-
     float* a = enhanced_->out.data();
-    float* b = a + samples;
-    const std::array<float, 2> slopes = {(to[0] - from[0]) / float(samples), (to[1] - from[1]) / float(samples)};
-    for (size_t i = 0; i < samples; i++)
-    {
-        const uint64_t position = start + uint64_t(i) * move / samples;
-        const int64_t point = int64_t(position >> 32);
-        const float value = kernel.At(&input[size_t(point - (width - 1) - first)], uint32_t(position >> 16) & 0xFFFF);
-        const float part_a = value * (from[0] + float(i) * slopes[0]);
-        const float part_b = value * (from[1] + float(i) * slopes[1]);
-        a[i] += part_a;
-        b[i] += part_b;
-        if (metering_)
+    agb::MixSincRamp(
+        start, move, kEnhancedFrameSamples, from, to, a, a + kEnhancedFrameSamples,
+        [&](int64_t n) { return PointOf(e, n); },
+        [&](float part_a, float part_b)
         {
-            MeterPart(channel, 0, std::fabs(part_a));
-            MeterPart(channel, 1, std::fabs(part_b));
-        }
-    }
+            if (metering_)
+            {
+                MeterPart(channel, 0, std::fabs(part_a));
+                MeterPart(channel, 1, std::fabs(part_b));
+            }
+        });
 }
 
 void Sequencer::MixEnhanced()

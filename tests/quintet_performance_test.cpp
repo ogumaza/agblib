@@ -13,6 +13,8 @@
 #include <tuple>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
 #include "seqlib/midi/reader.h"
 #include "seqlib/testing/check.h"
 
@@ -24,8 +26,6 @@
 #include "agblib/sequence_export/quintet/convert.h"
 #include "agblib/sequence_export/quintet/performance.h"
 #include "agblib/testing/quintet_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace agblib::sequence_export::quintet
 {
@@ -88,11 +88,13 @@ void TestPerformance()
             notes.emplace_back(0, ons[e.note - 1], e.key, e.tick);
         }
     }
+
     std::vector<std::tuple<int, uint64_t, int, uint64_t>> midi;
     for (const seqlib::midi::Note& n : seqlib::midi::Notes(seqlib::midi::Read(files.midi)))
     {
         midi.emplace_back(n.channel, n.on, n.key, n.off);
     }
+
     std::sort(notes.begin(), notes.end());
     std::sort(midi.begin(), midi.end());
 
@@ -150,6 +152,62 @@ uint64_t WalkTick(const agblib::quintet::Decoded& decoded, const std::vector<uin
     return tick;
 }
 
+// The notes of the first two channels of song 0, from its performance `p` and from its MIDI file, as (channel, start,
+// key, end) in order, and each channel's note starts. Checks that each note's command lies at the note's tick of its
+// stretch, and counts those notes.
+struct ChannelNotes
+{
+    std::vector<std::tuple<int, uint64_t, int, uint64_t>> notes;
+    std::vector<std::tuple<int, uint64_t, int, uint64_t>> midi;
+    std::array<std::vector<uint32_t>, 2> ons;
+    int walked = 0;
+};
+
+ChannelNotes TwoChannelNotes(const Rom& rom, const DriverInfo& info, const Performance& p, const ConvertSettings& opt)
+{
+    const SongFiles files = ConvertSongFiles(rom, info, 0, opt);
+    const agblib::quintet::Decoded decoded = agblib::quintet::DecodeRomSequence(rom, info, 0);
+    const std::vector<uint32_t> offsets =
+        agblib::quintet::ItemOffsets(decoded.sequence, agblib::quintet::TraitsOf(rom, info));
+
+    ChannelNotes out;
+    std::map<uint32_t, uint64_t> starts;
+    for (size_t t = 0; t < 2; t++)
+    {
+        for (const ntdlib::sequence_export::TrackEvent& e : p.tracks[t])
+        {
+            if (e.kind == ntdlib::sequence_export::EventKind::kNoteOn)
+            {
+                const ntdlib::sequence_export::NoteCommand& command = p.note_commands[e.note - 1];
+                SEQLIB_CHECK(command.stretch < p.stretches[t].size());
+                if (command.stretch < p.stretches[t].size())
+                {
+                    SEQLIB_CHECK_EQ(WalkTick(decoded, offsets, p.stretches[t][command.stretch], command.offset),
+                                    uint64_t(e.tick));
+                    out.walked++;
+                }
+
+                out.ons[t].push_back(e.tick);
+                starts[e.note] = e.tick;
+            }
+            else if (e.kind == ntdlib::sequence_export::EventKind::kNoteOff)
+            {
+                out.notes.emplace_back(int(t), starts[e.note], e.key, e.tick);
+            }
+        }
+    }
+
+    for (const seqlib::midi::Note& n : seqlib::midi::Notes(seqlib::midi::Read(files.midi)))
+    {
+        out.midi.emplace_back(n.channel, n.on, n.key, n.off);
+    }
+
+    std::sort(out.notes.begin(), out.notes.end());
+    std::sort(out.midi.begin(), out.midi.end());
+
+    return out;
+}
+
 // On a channel at another tempo than the first channel's, the stretches keep the contract of a stretch: its commands
 // run at the ticks that its waits give, at 37 of the MIDI file's ticks for each of the driver's, from its tick on.
 // Square 1 plays at tempo 120, and so does the MIDI file. Square 2 plays at tempo 90. Each of its ticks lasts
@@ -174,46 +232,7 @@ void TestPerformanceAtTwoTempos()
     ConvertSettings opt;
 
     const Performance p = PerformSong(rom, info, 0, opt);
-    const SongFiles files = ConvertSongFiles(rom, info, 0, opt);
-    const agblib::quintet::Decoded decoded = agblib::quintet::DecodeRomSequence(rom, info, 0);
-    const std::vector<uint32_t> offsets =
-        agblib::quintet::ItemOffsets(decoded.sequence, agblib::quintet::TraitsOf(rom, info));
-
-    const auto walk = [&](const ntdlib::sequence_export::Stretch& stretch, uint32_t offset)
-    {
-        return WalkTick(decoded, offsets, stretch, offset);
-    };
-
-    std::vector<std::tuple<int, uint64_t, int, uint64_t>> notes;
-    std::array<std::vector<uint32_t>, 2> ons;
-    std::map<uint32_t, uint64_t> starts;
-    int walked = 0;
-    for (size_t t = 0; t < 2; t++)
-    {
-        for (const ntdlib::sequence_export::TrackEvent& e : p.tracks[t])
-        {
-            if (e.kind == ntdlib::sequence_export::EventKind::kNoteOn)
-            {
-                const ntdlib::sequence_export::NoteCommand& command = p.note_commands[e.note - 1];
-                SEQLIB_REQUIRE(command.stretch < p.stretches[t].size());
-                SEQLIB_CHECK_EQ(walk(p.stretches[t][command.stretch], command.offset), uint64_t(e.tick));
-                walked++;
-                ons[t].push_back(e.tick);
-                starts[e.note] = e.tick;
-            }
-            else if (e.kind == ntdlib::sequence_export::EventKind::kNoteOff)
-            {
-                notes.emplace_back(int(t), starts[e.note], e.key, e.tick);
-            }
-        }
-    }
-    std::vector<std::tuple<int, uint64_t, int, uint64_t>> midi;
-    for (const seqlib::midi::Note& n : seqlib::midi::Notes(seqlib::midi::Read(files.midi)))
-    {
-        midi.emplace_back(n.channel, n.on, n.key, n.off);
-    }
-    std::sort(notes.begin(), notes.end());
-    std::sort(midi.begin(), midi.end());
+    const auto [notes, midi, ons, walked] = TwoChannelNotes(rom, info, p, opt);
 
     const std::vector<ntdlib::sequence_export::Stretch>& square2 = p.stretches[1];
     SEQLIB_REQUIRE(ons[0].size() == 4 && ons[1].size() == 5 && square2.size() >= 8);
@@ -265,40 +284,7 @@ void TestPerformanceAfterTempo()
     ConvertSettings opt;
 
     const Performance p = PerformSong(rom, info, 0, opt);
-    const SongFiles files = ConvertSongFiles(rom, info, 0, opt);
-    const agblib::quintet::Decoded decoded = agblib::quintet::DecodeRomSequence(rom, info, 0);
-    const std::vector<uint32_t> offsets =
-        agblib::quintet::ItemOffsets(decoded.sequence, agblib::quintet::TraitsOf(rom, info));
-
-    std::vector<std::tuple<int, uint64_t, int, uint64_t>> notes;
-    std::array<std::vector<uint32_t>, 2> ons;
-    std::map<uint32_t, uint64_t> starts;
-    for (size_t t = 0; t < 2; t++)
-    {
-        for (const ntdlib::sequence_export::TrackEvent& e : p.tracks[t])
-        {
-            if (e.kind == ntdlib::sequence_export::EventKind::kNoteOn)
-            {
-                const ntdlib::sequence_export::NoteCommand& command = p.note_commands[e.note - 1];
-                SEQLIB_REQUIRE(command.stretch < p.stretches[t].size());
-                SEQLIB_CHECK_EQ(WalkTick(decoded, offsets, p.stretches[t][command.stretch], command.offset),
-                                uint64_t(e.tick));
-                ons[t].push_back(e.tick);
-                starts[e.note] = e.tick;
-            }
-            else if (e.kind == ntdlib::sequence_export::EventKind::kNoteOff)
-            {
-                notes.emplace_back(int(t), starts[e.note], e.key, e.tick);
-            }
-        }
-    }
-    std::vector<std::tuple<int, uint64_t, int, uint64_t>> midi;
-    for (const seqlib::midi::Note& n : seqlib::midi::Notes(seqlib::midi::Read(files.midi)))
-    {
-        midi.emplace_back(n.channel, n.on, n.key, n.off);
-    }
-    std::sort(notes.begin(), notes.end());
-    std::sort(midi.begin(), midi.end());
+    const auto [notes, midi, ons, walked] = TwoChannelNotes(rom, info, p, opt);
 
     SEQLIB_REQUIRE(ons[0].size() == 4 && ons[1].size() == 5);
     SEQLIB_CHECK(notes == midi);

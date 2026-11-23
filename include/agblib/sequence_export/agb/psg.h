@@ -34,7 +34,7 @@ std::string SquareName(int duty);
 // are at `amplitude`. A low step's points are at -`amplitude`.
 std::vector<int16_t> SquareCycle(int duty, int16_t amplitude);
 
-// Middle C, which the square and wave samples play on their root key.
+// Middle C: the root key that the square and wave samples play on.
 constexpr double kMiddleC = 261.6255653005986;
 
 // Returns the equal-tempered pitch of MIDI key `key` in Hz, with key 60 at middle C.
@@ -61,7 +61,7 @@ using KeyTuning = std::array<int, 128>;
 // Returns a tuning of `cents` on every key.
 KeyTuning UniformTuning(int cents);
 
-// Returns the runs of keys that `tuning` tunes alike, from key 0 to key 127, as the first and last key of each.
+// Returns the runs of keys that `tuning` tunes alike, from key 0 to key 127 as the first and last key of each.
 std::vector<std::pair<int, int>> TuningRuns(const KeyTuning& tuning);
 
 // Returns the cents from `hz` up to the pitch of a square channel at frequency setting `setting` (0-2047), to the
@@ -93,9 +93,9 @@ constexpr uint32_t NextLfsr(uint32_t lfsr, bool narrow)
 constexpr int kFifoLevel = 128;
 
 // The level of a PSG channel at volume v (0-15) on one side, as a full-scale waveform, relative to a full-scale FIFO
-// sample: 2v of kFifoLevel. That's how the GBA mixes them with the PSG at 100% and a master volume of 7. The PSG puts
-// out 0 to v on a channel. The master volume scales that by 8, and the 100% setting divides it by 4. The FIFOs' samples
-// are scaled by 4. PsgScaleOf() gives the factor for other settings.
+// sample: 2v of kFifoLevel. The GBA mixes them this way with the PSG at 100% and a master volume of 7. The PSG puts out
+// 0 to v on a channel. The master volume scales that by 8, and the 100% setting divides it by 4. The FIFOs' samples are
+// scaled by 4. PsgScaleOf() gives the factor for other settings.
 constexpr int kPsgLevelPerVolume = 2;
 
 // The PSG's level on each side: the master volume and the PSG's share of the mix.
@@ -107,11 +107,11 @@ struct PsgScale
 // Returns the PSG's level on each side under SOUNDCNT_L, whose low byte is NR50, and SOUNDCNT_H.
 PsgScale PsgScaleOf(uint16_t soundcnt_l, uint16_t soundcnt_h);
 
-// Returns the share of the wave channel's full level that SOUND3CNT_H sets. The register holds NR31 in its low byte and
-// NR32 in its high byte. Bits 13 and 14 give 0%, 100%, 50% or 25%. Bit 15 gives 75% instead.
+// Returns the share of the wave channel's full level that SOUND3CNT_H sets. The register contains NR31 in its low byte
+// and NR32 in its high byte. Bits 13 and 14 give 0%, 100%, 50% or 25%. Bit 15 gives 75% instead.
 double WaveShare(uint16_t sound3cnt_h);
 
-// The registers of a PSG channel after a frame, as PsgModel reads them.
+// The registers of a PSG channel after a frame as PsgModel reads them.
 struct PsgRegisters
 {
     uint16_t nr10 = 0;      // square 1's sweep
@@ -187,7 +187,7 @@ public:
     // channel's volume at the start of frame `f` (0-15), or -1 if the channel is off.
     int Volume(uint32_t f);
 
-    // Returns the model. It holds the frequency and the sweep's changes of the last frame taken in.
+    // Returns the model. It contains the frequency and the sweep's changes of the last frame taken in.
     const PsgModel& Model() const
     {
         return model_;
@@ -276,7 +276,7 @@ public:
     // Each returns the name and zones of an instrument whose notes switch from duty or wave shape `first` to `second`
     // after `frames` frames (SwitchZones()). If `frames` is 0, the notes play `first` alone. Each run of keys that
     // `tuning` tunes alike gets separate zones with the run's cents. Both samples are added to `file` on first use.
-    // `shapes` holds the wave shapes by number.
+    // `shapes` contains the wave shapes by number.
     NamedZones SquareInstrument(Sf2File& file, int first, int frames, int second, const KeyTuning& tuning);
     NamedZones WaveInstrument(Sf2File& file, const WaveShapes& shapes, int first, int frames, int second,
                               const KeyTuning& tuning);

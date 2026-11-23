@@ -96,6 +96,7 @@ inline void AppendStream(std::vector<uint8_t>& out, const std::vector<uint16_t>&
         {
             out.push_back(uint8_t(value >> 8));
         }
+
         out.push_back(uint8_t(value));
     };
     for (size_t i = 0; i < rows.size();)
@@ -105,9 +106,11 @@ inline void AppendStream(std::vector<uint8_t>& out, const std::vector<uint16_t>&
         {
             n++;
         }
+
         put(uint8_t(n), rows[i]);
         i += n;
     }
+
     out.push_back(0);
 }
 
@@ -122,6 +125,7 @@ inline std::vector<uint8_t> MakeBlock(const std::vector<std::vector<TestCell>>& 
         b.push_back(cell.volume);
         c.push_back(uint16_t(cell.effect << 8 | cell.operand));
     }
+
     std::vector<uint8_t> data;
     AppendStream(data, a, true);
     const uint32_t stream_b = uint32_t(data.size());
@@ -163,6 +167,7 @@ inline uint32_t PutModule(CartImage& cart, uint32_t address, const TestModule& m
     {
         cart.Put32(address + kMod30RateWord, kMod30Rate0);
     }
+
     cart.Put32(address + layout.order_count, uint32_t(module.orders.size()));
     cart.Put32(address + layout.pattern_count, uint32_t(module.patterns.size()));
     cart.Put32(address + layout.rows, module.rows);
@@ -185,6 +190,7 @@ inline uint32_t PutModule(CartImage& cart, uint32_t address, const TestModule& m
             const std::vector<uint8_t> block = MakeBlock(module.patterns[p], c);
             bytes.insert(bytes.end(), block.begin(), block.end());
         }
+
         cart.Put32(address + layout.pattern_table + 4 * uint32_t(p),
                    module.layout == Mod30Layout::kB ? offset : uint32_t(bytes.size()));
         cart.PutBytes(address + layout.patterns + offset, bytes);
@@ -212,6 +218,7 @@ inline uint32_t PutBank(CartImage& cart, uint32_t address, const std::vector<Tes
         {
             cart.Put16(h, uint16_t(s.length));
         }
+
         cart.Put16(fields, uint16_t(s.fine_tune));
         cart.Put16(fields + 2, s.volume);
         cart.Put16(fields + 4, s.loop_start);
@@ -237,6 +244,7 @@ inline CartImage MakeCart(const std::vector<TestModule>& modules, const std::vec
     {
         cart.Put16(kLinearTable + uint32_t(i) * 2, LinearEntry(i));
     }
+
     uint32_t at = kFirstModule;
     addresses.clear();
     for (const TestModule& m : modules)
@@ -244,6 +252,7 @@ inline CartImage MakeCart(const std::vector<TestModule>& modules, const std::vec
         addresses.push_back(at);
         at = (PutModule(cart, at, m) + 3) & ~3u;
     }
+
     bank = at;
     PutBank(cart, bank, samples, header_size);
 

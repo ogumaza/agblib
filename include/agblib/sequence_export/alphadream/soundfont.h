@@ -47,7 +47,7 @@ constexpr int PresetNumber(Kind kind, int instrument)
     return int(kind) * 512 + instrument;
 }
 
-// The instruments that songs play, which become a SoundFont's presets. One set can serve all of a game's songs, for a
+// The instruments that songs play. They become a SoundFont's presets. One set can serve all of a game's songs, for a
 // shared SoundFont.
 class InstrumentSet
 {

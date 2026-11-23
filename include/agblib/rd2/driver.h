@@ -74,7 +74,7 @@ struct MusicSettings
 };
 
 // A sound effect: a track of one of the sound effects' sequences. Such a sequence starts with a table of its tracks.
-// The table holds a halfword for each track: its offset from the sequence's start. The game's request names the
+// The table contains a halfword for each track: its offset from the sequence's start. The game's request names the
 // sequence and the track. The driver then plays the track alone on a player (see docs/rd2.md).
 struct Effect
 {
@@ -83,7 +83,7 @@ struct Effect
     uint32_t address = 0; // the track's first command, or 0 if the entry gives none
 };
 
-// The driver's tables in a ROM, and the tables the game gives it. Each table of offsets holds a word for each entry,
+// The driver's tables in a ROM, and the tables the game gives it. Each table of offsets contains a word for each entry,
 // counted from the table's start.
 struct DriverInfo
 {
@@ -119,7 +119,7 @@ struct DriverInfo
     std::vector<uint32_t> effect_sequence_addresses;
     std::vector<uint32_t> effect_bank_list_addresses;
     std::vector<Effect> sound_effects; // each track of each of the sound effects' sequences, in order
-    std::vector<std::string> log;      // detection results, as text
+    std::vector<std::string> log;      // detection results as text
     std::vector<std::string> warnings; // assumptions detection had to make
 };
 

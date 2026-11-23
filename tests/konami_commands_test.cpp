@@ -12,14 +12,15 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+#include "seqlib/testing/check.h"
 #include "xsflib/testing/check.h"
 
 #include "agblib/konami/commands.h"
 #include "agblib/konami/driver.h"
 #include "agblib/konami/seqformat.h"
 #include "agblib/testing/agb_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 using xsflib::testing::Check;
 
@@ -34,6 +35,7 @@ using konami::Revision;
 using ntdlib::commands::Command;
 using ntdlib::commands::Kind;
 using ntdlib::commands::kOne;
+using seqlib::testing::Throws;
 
 // Every track of a song of `revision` at `offset`, but for those that `first` gives.
 std::vector<uint16_t> Offsets(Revision revision, uint16_t offset, std::vector<uint16_t> first = {})
@@ -65,16 +67,7 @@ std::vector<uint8_t> BytesOfCommand(const Command& item, Revision revision)
 
 bool Throws(const Command& item, Revision revision)
 {
-    try
-    {
-        static_cast<void>(BytesOfCommand(item, revision));
-    }
-    catch (const std::invalid_argument&)
-    {
-        return true;
-    }
-
-    return false;
+    return seqlib::testing::Throws<std::invalid_argument>([&] { static_cast<void>(BytesOfCommand(item, revision)); });
 }
 
 // Each command of the Ultimate Masters revision on a PSG track.
@@ -190,6 +183,7 @@ void TestSampleNotes()
         {
             offsets[size_t(t)] = uint16_t(bytes.size());
         }
+
         const Decoded decoded = DecodeSequence(all, offsets, r);
         const std::vector<Command>& items = decoded.sequence.items;
         Check(!decoded.opaque && items.size() == 14, "the sample track's items");
@@ -334,6 +328,7 @@ void TestOlderRevisions()
     {
         ed_offsets[size_t(t)] = 9;
     }
+
     const Decoded ed_items = DecodeSequence(duelist, ed_offsets, ed);
     const std::vector<Command>& di = ed_items.sequence.items;
     Check(!ed_items.opaque && di.size() == 10, "Eternal Duelist's items");
@@ -590,6 +585,7 @@ void TestNewCommands()
         {
             bytes.push_back(uint8_t(b));
         }
+
         return bytes;
     };
 
@@ -672,15 +668,8 @@ void TestNewCommands()
     {
         ntdlib::commands::Sequence sequence;
         sequence.items = std::move(items);
-        try
-        {
-            static_cast<void>(EncodeSequence(sequence, entries, r));
-        }
-        catch (const std::invalid_argument&)
-        {
-            return true;
-        }
-        return false;
+
+        return Throws<std::invalid_argument>([&] { static_cast<void>(EncodeSequence(sequence, entries, r)); });
     };
     Check(refused({end}), "a track that starts with a command");
     Check(refused({command(Kind::kWait, 1), command(Kind::kWait, 1), end}), "two waits in a row");
@@ -717,15 +706,9 @@ void TestItemOffsets()
                             Revision::kWct2004);
     Check(again == encoded.offsets, "the offsets are the encoder's");
 
-    bool refused = false;
-    try
-    {
-        konami::ItemOffsets({{Command{.kind = Kind::kMainVolume}}, {}}, Revision::kKitaro);
-    }
-    catch (const std::invalid_argument&)
-    {
-        refused = true;
-    }
+    const bool refused = Throws<std::invalid_argument>(
+        [&] { konami::ItemOffsets({{Command{.kind = Kind::kMainVolume}}, {}}, Revision::kKitaro); });
+
     Check(refused, "a command that the revision lacks has no offset");
 }
 
@@ -748,6 +731,7 @@ void TestSongsOfCart()
         {
             image[entry + uint32_t(i)] = uint8_t(address >> (8 * i));
         }
+
         offsets.resize(10, 0);
         for (std::size_t t = 0; t < offsets.size(); t++)
         {
@@ -782,15 +766,8 @@ void TestSongsOfCart()
     konami::DriverInfo missing = info;
     missing.song_table = kRomBase + 0x300;
     rom.Assign(std::vector<uint8_t>(0x400, 0));
-    bool threw = false;
-    try
-    {
-        static_cast<void>(konami::DecodeSong(rom, missing, 0));
-    }
-    catch (const std::invalid_argument&)
-    {
-        threw = true;
-    }
+    const bool threw = Throws<std::invalid_argument>([&] { static_cast<void>(konami::DecodeSong(rom, missing, 0)); });
+
     Check(threw, "an empty entry has no bytes");
 }
 

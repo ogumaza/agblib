@@ -2,7 +2,8 @@
 
 // The model of Ubisoft Milan's driver. It follows the game's code: the sequencer's step that the VBlank runs, the sound
 // update in the game's main loop, the mixer's progress through each voice's sample, and the writes that the PSG's notes
-// make. The sound update frees the voices whose samples ended, and moves the piece on to its next sequence.
+// make (sequencer_psg.cpp). The sound update frees the voices whose samples ended, and moves the piece on to its next
+// sequence.
 
 #include "agblib/ubimilan/sequencer.h"
 
@@ -15,64 +16,19 @@
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/warnings.h"
 #include "agblib/ubimilan/driver.h"
 #include "agblib/ubimilan/song.h"
+#include "sequencer_internal.h"
 
 namespace agblib::ubimilan
 {
 
-using agblib::agb::kFrameCycles;
-using agblib::agb::WarnOnce;
 namespace
 {
 
-// The PSG's registers that the driver writes.
-constexpr uint32_t kNr10 = 0x04000060;
-constexpr uint32_t kNr11 = 0x04000062;
-constexpr uint32_t kNr13 = 0x04000064;
-constexpr uint32_t kNr21 = 0x04000068;
-constexpr uint32_t kNr23 = 0x0400006C;
-constexpr uint32_t kNr30 = 0x04000070;
-constexpr uint32_t kNr31 = 0x04000072;
-constexpr uint32_t kNr33 = 0x04000074;
-constexpr uint32_t kNr41 = 0x04000078;
-constexpr uint32_t kNr43 = 0x0400007C;
-constexpr uint32_t kNr50 = 0x04000080;
-constexpr uint32_t kWaveRam = 0x04000090;
-
-// The sound control registers that the game's start writes, and what it writes.
-constexpr uint32_t kSoundCntHLow = 0x04000082;
-constexpr uint32_t kSoundCntHHigh = 0x04000083;
-constexpr uint32_t kSoundCntX = 0x04000084;
-constexpr uint32_t kSoundBias = 0x04000088;
-constexpr uint32_t kBiosBias = 0x0200;
-constexpr uint32_t kBiasResolution = 0x4000;
-
-// A channel's frequency register.
-constexpr std::array<uint32_t, kPsgChannels> kFrequencyRegisters = {kNr13, kNr23, kNr33};
-
-// The highest volume that the game's sound update allows a voice.
-constexpr uint32_t kMostVolume = 0x40;
-
-// A sample resource's fields, from the resource's address.
-constexpr uint32_t kSampleLoops = 1;
-constexpr uint32_t kSampleLength = 4;
-constexpr uint32_t kSampleLoopStart = 8;
-constexpr uint32_t kSampleLoopEnd = 12;
-constexpr uint32_t kSampleData = 16;
-
-// The kinds that the game's sound update takes for the sequence after the next.
-constexpr uint8_t kSoundUpdateKeeps = kSample;
-
-// An instrument's fields, from its 16 bytes.
-constexpr uint32_t kModulationDelay = 4;
-constexpr uint32_t kModulationDepth = 6;
-constexpr uint32_t kModulationPeriod = 8;
-constexpr uint32_t kSlideFrames = 10;
-constexpr uint32_t kInstrumentFlags = 12;
-
-// Reads a word as the CPU reads it: from the word that holds the address, turned to put the address's byte lowest.
+// Reads a word as the CPU reads it: from the word that contains the address, turned to put the address's byte lowest.
 uint32_t BusWord(const Rom& rom, uint32_t address)
 {
     const uint32_t aligned = address & ~3u;
@@ -84,29 +40,6 @@ uint32_t BusWord(const Rom& rom, uint32_t address)
 
     const uint32_t turn = 8 * (address & 3);
     return turn ? word >> turn | word << (32 - turn) : word;
-}
-
-// An instrument's flags: modulation, a pitch mode, and a note that doesn't start the channel again.
-constexpr uint16_t kModulation = 1;
-constexpr uint16_t kPitchMode = 2;
-constexpr uint16_t kLegato = 4;
-
-// Returns the byte that gives a key's place in the PSG's frequency table: 36 keys down on the squares and 12 on the
-// wave channel.
-int KeyIndex(int channel, int key)
-{
-    if (channel == kWaveChannel)
-    {
-        return (key - 12) & 0xFF;
-    }
-
-    return (key - 36) & 0xFF;
-}
-
-// Divides as the game's library does: towards 0, with 0 for a divisor of 0.
-int32_t Divide(int32_t a, int32_t b)
-{
-    return b ? int32_t(int64_t(a) / int64_t(b)) : 0;
 }
 
 // Returns the warning for the unknown status byte `status` at `address`.
@@ -164,7 +97,7 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, int song, bool stri
         voices_[size_t(kit_voice_)].busy = true;
     }
 
-    for (uint32_t address : {kNr11, kNr21, kNr31, kNr41})
+    for (uint32_t address : {agb::kRegNr11, agb::kRegNr21, agb::kRegNr31, agb::kRegNr41})
     {
         Write(address, 2, 0);
     }
@@ -209,8 +142,8 @@ void Sequencer::StartSamplePiece(int song)
 
 void Sequencer::NextSamplePass(Voice& voice)
 {
-    // The voice goes on looping. A file that loops on its markers needs a note for each pass. Each note starts on the
-    // frame nearest the moment that the pass starts.
+    // The voice goes on looping. A file that loops on its markers requires a note for each pass. Each note starts on
+    // the frame nearest the moment that the pass starts.
     const uint64_t cycles = (runs_ + 1) * kRunOutput * OutputCycles(info_);
     const uint32_t frame = uint32_t((cycles + kFrameCycles / 2) / kFrameCycles);
     EndNote(voice.note, frame);
@@ -226,6 +159,7 @@ void Sequencer::NextSamplePass(Voice& voice)
         n.key += kLoopKeyOffset;
         n.skip = sample.loop_start;
     }
+
     voice.note = int(notes_.size());
     notes_.push_back(n);
     sequence_starts_.push_back(frame);
@@ -256,6 +190,7 @@ uint32_t Sequencer::NextSequence(int ahead) const
         {
             return 0;
         }
+
         index -= count;
     }
 
@@ -294,6 +229,7 @@ std::vector<RegisterWrite> Sequencer::Step(std::vector<MixerRun>* runs)
             runs_++;
         }
     }
+
     frame_++;
 
     // The writes since the last step. The first step's include the piece's start.
@@ -309,6 +245,7 @@ void Sequencer::SequencerStep()
     {
         return;
     }
+
     if (wait_)
     {
         wait_--;
@@ -340,6 +277,7 @@ void Sequencer::SequencerStep()
                 active_ = false;
                 piece_playing_ = false;
             }
+
             next_ = !active_ ? 0 : strict_ ? after_next_ : NextSequence(2);
             changed_ = true;
             continue;
@@ -350,6 +288,7 @@ void Sequencer::SequencerStep()
             Stop("its commands run out of the ROM");
             return;
         }
+
         RunCommand(rom_.U8(pointer_++));
     }
 
@@ -394,6 +333,7 @@ void Sequencer::RunCommand(int status)
 
             return;
         }
+
         [[fallthrough]];
 
     default:
@@ -488,13 +428,14 @@ void Sequencer::Program(int channel, int program)
         const uint32_t wave = info_.wave_table + 32 * uint32_t(program);
         for (int bank = 0; bank < 2; bank++)
         {
-            Write(kNr30, 2, bank ? 0x60 : 0x20);
+            Write(agb::kRegNr30, 2, bank ? 0x60 : 0x20);
             for (uint32_t i = 0; i < 16; i++)
             {
-                Write(kWaveRam + i, 1, rom_.U8(wave + 16 * uint32_t(bank) + i));
+                Write(agb::kRegWaveRam + i, 1, rom_.U8(wave + 16 * uint32_t(bank) + i));
             }
         }
     }
+
     psg.program = program;
 }
 
@@ -536,11 +477,13 @@ void Sequencer::KitNoteOn(int key, int velocity)
         {
             v = voices_[size_t(i)].busy ? v : i;
         }
+
         if (v < 0)
         {
             Warn("a note of channel 9 finds no voice, on which the game writes before the voices");
             return;
         }
+
         voices_[size_t(v)].busy = true;
         kit_voice_ = v;
     }
@@ -550,6 +493,7 @@ void Sequencer::KitNoteOn(int key, int velocity)
     {
         EndNote(voice.note, frame_);
     }
+
     StartVoice(voice, sample, velocity);
 
     Note n = NewNote(kKitChannel, key, velocity, kit_program_);
@@ -569,6 +513,7 @@ void Sequencer::StartVoice(Voice& voice, const GameSample& sample, int velocity)
         voice.loop_start = sample.data + sample.loop_start;
         voice.loop_end = sample.data + sample.loop_end;
     }
+
     voice.volume = uint32_t(velocity);
     voice.stopped = false;
 }
@@ -582,6 +527,7 @@ void Sequencer::KitNoteOff()
         EndNote(voice.note, frame_);
         voice.note = -1;
     }
+
     voice.stopped = true;
     voice.busy = false;
 }
@@ -596,8 +542,8 @@ void Sequencer::NoiseNoteOn(int key, int velocity)
     // The key's entry in the noise table. Its second byte is ORed with the velocity, to NR42.
     const uint32_t entry = info_.noise_table + 4 * uint32_t(key);
     const uint8_t envelope = uint8_t(rom_.U8(entry + 1) | velocity);
-    Write(kNr41, 2, rom_.U8(entry) | (envelope << 8));
-    Write(kNr43, 2, rom_.U16(entry + 2));
+    Write(agb::kRegNr41, 2, rom_.U8(entry) | (envelope << 8));
+    Write(agb::kRegNr43, 2, rom_.U16(entry + 2));
 
     Note n = NewNote(kKitChannel, key, velocity, kit_program_);
     n.envelope = envelope;
@@ -618,288 +564,6 @@ void Sequencer::NoiseNoteOff(int key)
             EndNote(int(i), frame_);
             break;
         }
-    }
-}
-
-void Sequencer::PsgNoteOn(int channel, int key, int velocity)
-{
-    if (!info_.instrument_tables[size_t(channel)] || !info_.frequency_table)
-    {
-        return;
-    }
-
-    // A note continues from the one before if the channel plays and the instrument has legato. Otherwise it starts the
-    // channel. Either way the channel stores the new key, and the next note-off has to match it.
-    PsgChannel& psg = psg_[size_t(channel)];
-    const int index = KeyIndex(channel, key);
-    Note n = NewNote(channel, key, velocity, psg.program);
-    const uint32_t flags = info_.instrument_tables[0] + 16 * uint32_t(psg.program + 30 * channel) + kInstrumentFlags;
-    if (psg.playing && (rom_.U16(flags) & kLegato))
-    {
-        PsgLegato(channel, index);
-        n.legato = true;
-        if (psg.note >= 0)
-        {
-            n.duty = notes_[size_t(psg.note)].duty;
-            n.envelope = notes_[size_t(psg.note)].envelope;
-        }
-    }
-    else
-    {
-        PsgStart(channel, index, velocity);
-        psg.playing = true;
-        const uint32_t inst = Instrument(channel, psg.program);
-        n.duty = channel == 0 ? rom_.U8(inst + 1) : channel == 1 ? rom_.U8(inst) : 0;
-        n.envelope = uint8_t(velocity | (channel == 0 ? rom_.U8(inst + 2) : channel == 1 ? rom_.U8(inst + 1) : 0));
-    }
-    psg.index = index;
-
-    if (psg.note >= 0)
-    {
-        EndNote(psg.note, frame_);
-    }
-    psg.note = int(notes_.size());
-    notes_.push_back(n);
-}
-
-uint32_t Sequencer::Instrument(int channel, int program) const
-{
-    return info_.instrument_tables[size_t(channel)] + 16 * uint32_t(program & 0xFF);
-}
-
-uint16_t Sequencer::Frequency(int index) const
-{
-    return rom_.U16(info_.frequency_table + 2 * uint32_t(index));
-}
-
-uint16_t Sequencer::FineFrequency(int32_t cents) const
-{
-    return info_.fine_table ? rom_.U16(info_.fine_table + 2 * uint32_t(cents)) : 0;
-}
-
-void Sequencer::PsgStart(int channel, int index, int velocity)
-{
-    // The instrument's bytes and the velocity, which is ORed into the envelope. The wave channel's DAC comes on, and
-    // its velocity is its volume. The last byte for the channel goes above the frequency setting, in NRx4.
-    PsgChannel& psg = psg_[size_t(channel)];
-    const uint32_t inst = Instrument(channel, psg.program);
-    uint32_t frequency_register = 0;
-    uint32_t high = 0;
-    if (channel == 0)
-    {
-        Write(kNr10, 2, rom_.U8(inst));
-        Write(kNr11, 2, rom_.U8(inst + 1) | (uint32_t(velocity | rom_.U8(inst + 2)) << 8));
-        frequency_register = kNr13;
-        high = uint32_t(rom_.U8(inst + 3)) << 8;
-    }
-    else if (channel == 1)
-    {
-        Write(kNr21, 2, rom_.U8(inst) | (uint32_t(velocity | rom_.U8(inst + 1)) << 8));
-        frequency_register = kNr23;
-        high = uint32_t(rom_.U8(inst + 2)) << 8;
-    }
-    else
-    {
-        Write(kNr30, 2, 0xA0);
-        Write(kNr31, 2, rom_.U8(inst) | (uint32_t(velocity) << 8));
-        frequency_register = kNr33;
-        high = uint32_t(rom_.U8(inst + 1)) << 8;
-    }
-
-    // The modulation starts with its delay. Without the fine table, the model leaves out the modulation and the pitch
-    // mode, as detection warns.
-    const uint16_t kept = info_.fine_table ? 0xFFFF : uint16_t(~(kModulation | kPitchMode));
-    const uint16_t flags = rom_.U16(inst + kInstrumentFlags) & kept;
-    Modulation& mod = psg.modulation;
-    if (flags & kModulation)
-    {
-        mod.value = rom_.U16(inst + kModulationDelay);
-        mod.step = Divide(int32_t(uint32_t(rom_.U16(inst + kModulationDepth)) << 16),
-                          int32_t(rom_.U16(inst + kModulationPeriod)) * 2);
-        mod.depth = rom_.U16(inst + kModulationDepth);
-        mod.state = 1;
-    }
-    else
-    {
-        mod.state = 0;
-    }
-
-    // The pitch mode's first note starts at its key. A later one glides there from the note before, or from where a
-    // glide has reached.
-    PitchMode& pitch = psg.pitch;
-    const int32_t target = 100 * index;
-    if (!(flags & kPitchMode))
-    {
-        Write(frequency_register, 2, (high | Frequency(index)) & 0xFFFF);
-        pitch.state = 0;
-        return;
-    }
-
-    switch (pitch.state)
-    {
-    case 0:
-        Write(frequency_register, 2, (high | Frequency(index)) & 0xFFFF);
-        pitch.frames = rom_.U16(inst + kSlideFrames);
-        pitch.state = 1;
-        pitch.previous = pitch.current = pitch.target = target;
-        break;
-
-    case 1:
-        Write(frequency_register, 2, (high | Frequency(psg.index)) & 0xFFFF);
-        Glide(pitch, inst, target);
-        break;
-
-    case 2:
-    case 3:
-        Write(frequency_register, 2, (high | FineFrequency(pitch.current)) & 0xFFFF);
-        Glide(pitch, inst, target);
-        break;
-
-    default:
-        break;
-    }
-}
-
-void Sequencer::Glide(PitchMode& pitch, uint32_t inst, int32_t target) const
-{
-    // A glide to the note's place in cents, over the instrument's frames. A glide to the place of the last target
-    // keeps its step at 0. The pitch then stays where it is unless it's below the target.
-    if (pitch.state == 1)
-    {
-        pitch.state = 2;
-    }
-    else
-    {
-        pitch.previous = pitch.target;
-    }
-
-    pitch.target = target;
-    if (target == pitch.previous)
-    {
-        pitch.step = 0;
-        return;
-    }
-
-    pitch.frames = rom_.U16(inst + kSlideFrames);
-    pitch.step = Divide(target - pitch.current, pitch.frames);
-    pitch.state = 2;
-}
-
-void Sequencer::PsgLegato(int channel, int index)
-{
-    // A legato note writes only the frequency setting of its key, without a restart, or glides there in the pitch
-    // mode. On the wave channel, the pitch-mode check reads all the flags. A wave instrument with legato therefore
-    // always uses the glide code. Without a glide state, the frequency stays.
-    PsgChannel& psg = psg_[size_t(channel)];
-    const uint32_t inst = Instrument(channel, psg.program);
-    const uint16_t flags =
-        rom_.U16(info_.instrument_tables[0] + 16 * uint32_t(psg.program + 30 * channel) + kInstrumentFlags);
-    const bool pitch_mode = channel == kWaveChannel ? flags != 0 : (flags & kPitchMode) != 0;
-    if (!pitch_mode)
-    {
-        Write(channel == 0 ? kNr13 : channel == 1 ? kNr23 : kNr33, 2, Frequency(index));
-    }
-    else if (psg.pitch.state >= 1 && psg.pitch.state <= 3)
-    {
-        Glide(psg.pitch, inst, 100 * index);
-    }
-}
-
-void Sequencer::PsgNoteOff(int channel, int key)
-{
-    // A note-off silences the channel if its key is the one that the last note set. GCC warns that a negative channel
-    // would index past psg_. at() checks the index.
-    PsgChannel& psg = psg_.at(size_t(channel));
-    if (psg.index != KeyIndex(channel, key))
-    {
-        return;
-    }
-
-    psg.playing = false;
-    Write(channel == 0 ? kNr11 : channel == 1 ? kNr21 : kNr31, 2, 0);
-    if (psg.note >= 0)
-    {
-        EndNote(psg.note, frame_);
-        psg.note = -1;
-    }
-}
-
-void Sequencer::PsgUpdate()
-{
-    // Each frame after the commands, the sequencer moves the modulation and the glide of each PSG channel on. If
-    // either sets a place in cents, the channel gets the frequency setting at that place in the fine table, without a
-    // restart. The modulation alone moves the place of the channel key. The modulation and the glide continue after a
-    // note-off.
-    for (int c = 0; c < kPsgChannels; c++)
-    {
-        PsgChannel& psg = psg_[size_t(c)];
-        int32_t mod = 0;
-        int32_t glide = 0;
-        Modulation& m = psg.modulation;
-        if (m.state)
-        {
-            switch (m.state)
-            {
-            case 1:
-                if (m.value == 0)
-                {
-                    m.state = 2;
-                }
-                else
-                {
-                    m.value--;
-                }
-                break;
-
-            case 2:
-            case 3:
-                m.value = int32_t(uint32_t(m.value) + uint32_t(m.step));
-                if ((m.value >> 16) > m.depth)
-                {
-                    m.state = 4;
-                }
-                break;
-
-            case 4:
-                m.value = int32_t(uint32_t(m.value) - uint32_t(m.step));
-                if (int64_t(m.value >> 16) + m.depth < 0)
-                {
-                    m.state = 3;
-                }
-                break;
-
-            default:
-                break;
-            }
-            mod = m.state == 1 ? 0 : int16_t(uint32_t(m.value) >> 16);
-        }
-
-        PitchMode& p = psg.pitch;
-        if (p.state)
-        {
-            if (p.state == 2)
-            {
-                const bool reached = p.step > 0 ? p.current >= p.target : p.current <= p.target;
-                if (reached)
-                {
-                    p.current = p.target;
-                    p.state = 3;
-                }
-                else
-                {
-                    p.current += p.step;
-                }
-            }
-            glide = p.current;
-        }
-
-        if (!mod && !glide)
-        {
-            continue;
-        }
-
-        const int32_t cents = glide + mod + (glide ? 0 : 100 * psg.index);
-        Write(kFrequencyRegisters[size_t(c)], 2, FineFrequency(cents));
     }
 }
 
@@ -1116,6 +780,7 @@ void Sequencer::GamePsgNoteOn(int channel, int key, int velocity)
         PsgStart(channel, index, velocity);
         psg.playing = true;
     }
+
     psg.index = index;
 }
 
@@ -1143,21 +808,21 @@ void Sequencer::GamePieceUpdate()
 std::vector<RegisterWrite> Sequencer::InitWrites() const
 {
     std::vector<RegisterWrite> writes;
-    writes.push_back({kSoundCntHLow, 1, 0x0E});
-    writes.push_back({kSoundCntHHigh, 1, 0xA9});
-    writes.push_back({kSoundCntX, 1, 0x80});
-    writes.push_back({kSoundBias, 2, kBiosBias | kBiasResolution});
+    writes.push_back({agb::kRegSoundCntH, 1, 0x0E});
+    writes.push_back({agb::kRegSoundCntHHigh, 1, 0xA9});
+    writes.push_back({agb::kRegSoundCntX, 1, 0x80});
+    writes.push_back({agb::kRegSoundBias, 2, kBiosBias | kBiasResolution});
     for (uint32_t bank = 0; bank < 2; bank++)
     {
-        writes.push_back({kNr30, 2, bank ? 0x60u : 0x20u});
+        writes.push_back({agb::kRegNr30, 2, bank ? 0x60u : 0x20u});
         for (uint32_t i = 0; i < 16; i++)
         {
-            writes.push_back({kWaveRam + i, 1, rom_.U8(info_.wave_table + 16 * bank + i)});
+            writes.push_back({agb::kRegWaveRam + i, 1, rom_.U8(info_.wave_table + 16 * bank + i)});
         }
     }
 
-    writes.push_back({kNr50, 2, 0xFF33});
-    writes.push_back({kSoundCntX, 2, 0x8F});
+    writes.push_back({agb::kRegNr50, 2, 0xFF33});
+    writes.push_back({agb::kRegSoundCntX, 2, 0x8F});
 
     return writes;
 }

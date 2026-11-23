@@ -14,22 +14,25 @@
 #include <variant>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/sar/layout.h"
 #include "xsflib/bytes.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/konami/commands.h"
 #include "agblib/konami/driver.h"
 #include "agblib/konami/layout.h"
 #include "agblib/konami/seqformat.h"
 #include "agblib/konami/sequencer.h"
 #include "agblib/testing/agb_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/sar/layout.h"
 
 using xsflib::testing::Check;
 
 namespace
 {
+
+using agblib::testing::agb_tests::RomOf;
 
 namespace konami = agblib::konami;
 namespace sar = ntdlib::sar;
@@ -102,13 +105,6 @@ konami::DriverInfo InfoOf(int songs = 3)
     return info;
 }
 
-Rom RomOf(std::vector<uint8_t> image)
-{
-    Rom rom;
-    rom.Assign(std::move(image));
-    return rom;
-}
-
 // Adds `size` bytes after the last item of `sequence`. No command reaches them.
 void Grow(ntdlib::commands::Sequence& sequence, std::size_t size)
 {
@@ -152,6 +148,7 @@ void TestCut()
         const auto* piece = std::get_if<ntdlib::sar::SequencePiece>(&layout.pieces[i + 1]);
         Check(piece && piece->sequence == i && piece->room == rooms[i], "a song's room is the size of its bytes");
     }
+
     const auto* after = std::get_if<std::vector<uint8_t>>(&layout.pieces[4]);
     Check(after && after->size() == image.size() - kSongsEnd, "the last run ends with the ROM");
 
@@ -230,6 +227,7 @@ void TestSongMoves()
         {
             xsflib::StoreLe16(&expected[kTable + 4 + 2 * t], 7);
         }
+
         Check(konami::Join(layout) == expected, "a song that shrinks stays, with zeros after it");
     }
 
@@ -467,6 +465,7 @@ void TestRefusals()
                 field.to.offset = 9;
             }
         }
+
         Check(JoinThrows(layout, {}, "0xFFFF"), "a track past 0xFFFF bytes is refused");
     }
 
@@ -511,6 +510,7 @@ void TestPlaysTheSame()
     {
         Grow(sequence, 9);
     }
+
     const Rom grown = RomOf(konami::Join(layout));
 
     bool any = false;
@@ -539,6 +539,7 @@ void TestPlaysTheSame()
         }
         Check(same, "a moved song gives the same records");
     }
+
     Check(any, "the songs play something");
 }
 
@@ -555,6 +556,7 @@ void TestDetection()
         {
             xsflib::StoreLe16(&image[kCode + 2 * i], sum[i]);
         }
+
         xsflib::StoreLe32(&image[kCode + 0x10], kRomBase + kTable);
         const uint16_t reader[] = {0x781D, 0x2DFC, 0xDD1E, 0x2DFF, 0xD107, 0x2DFD,
                                    0xD100, 0x2DEF, 0xDC00, 0x2DE0, 0xD110};
@@ -585,6 +587,7 @@ void TestDetection()
     {
         Grow(sequence, 9);
     }
+
     konami::DriverInfo grown_info;
     const bool found_grown = konami::DetectDriver(RomOf(konami::Join(layout)), overrides, grown_info, error);
     Check(found_grown && grown_info.song_table == info.song_table && grown_info.song_count == info.song_count &&

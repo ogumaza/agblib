@@ -9,12 +9,15 @@
 #include <string>
 #include <vector>
 
+#include "seqlib/midi/performance.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/rd2/commands.h"
 #include "agblib/rd2/driver.h"
 #include "agblib/rd2/sequencer.h"
 #include "agblib/rd2/song.h"
+#include "agblib/sequence_export/agb/performance_steps.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "converted_notes.h"
 
@@ -106,26 +109,11 @@ TrackStretches StretchesOf(const Rom& rom, const DriverInfo& info, const std::ve
         {
             stretch.entry = ntdlib::sequence_export::Entry::kReturn;
         }
+
         stretches[t].push_back(stretch);
     }
 
     return stretches;
-}
-
-// Sets `setting` of the track's mix to `value` at `tick`. A later change in the same tick replaces an earlier one.
-void AddChange(std::vector<ntdlib::sequence_export::MixChange>& changes, uint32_t tick,
-               ntdlib::sequence_export::Mix setting, int value)
-{
-    const auto same = std::find_if(changes.rbegin(), changes.rend(), [&](const ntdlib::sequence_export::MixChange& c)
-                                   { return c.tick == tick && c.setting == setting; });
-    if (same != changes.rend())
-    {
-        same->value = int16_t(value);
-    }
-    else
-    {
-        changes.push_back({tick, setting, int16_t(value)});
-    }
 }
 
 // A track's volume, pan and echo, in the units of Performance::mix.
@@ -164,16 +152,19 @@ TrackMix MixOf(const Rom& rom, const std::vector<TrackRead>& reads, uint64_t end
             const TrackLevels& copy = *started[t];
             if (copy.volume != now.volume)
             {
-                AddChange(changes, tick, ntdlib::sequence_export::Mix::kVolume, copy.volume);
+                agb::AddMixChange(changes, tick, ntdlib::sequence_export::Mix::kVolume, copy.volume);
             }
+
             if (copy.pan != now.pan)
             {
-                AddChange(changes, tick, ntdlib::sequence_export::Mix::kPan, copy.pan);
+                agb::AddMixChange(changes, tick, ntdlib::sequence_export::Mix::kPan, copy.pan);
             }
+
             if (copy.echo != now.echo)
             {
-                AddChange(changes, tick, ntdlib::sequence_export::Mix::kSendA, copy.echo);
+                agb::AddMixChange(changes, tick, ntdlib::sequence_export::Mix::kSendA, copy.echo);
             }
+
             now = copy;
             started[t].reset();
         }
@@ -182,17 +173,17 @@ TrackMix MixOf(const Rom& rom, const std::vector<TrackRead>& reads, uint64_t end
         if (read.op == kVolumeCommand)
         {
             now.volume = value;
-            AddChange(changes, tick, ntdlib::sequence_export::Mix::kVolume, value);
+            agb::AddMixChange(changes, tick, ntdlib::sequence_export::Mix::kVolume, value);
         }
         else if (read.op == kPanCommand)
         {
             now.pan = value - kCentre;
-            AddChange(changes, tick, ntdlib::sequence_export::Mix::kPan, now.pan);
+            agb::AddMixChange(changes, tick, ntdlib::sequence_export::Mix::kPan, now.pan);
         }
         else if (read.op == kEchoCommand)
         {
             now.echo = value;
-            AddChange(changes, tick, ntdlib::sequence_export::Mix::kSendA, value);
+            agb::AddMixChange(changes, tick, ntdlib::sequence_export::Mix::kSendA, value);
         }
         else if (read.op == kStartTrackCommand && value < kPlayerTracks)
         {
@@ -201,21 +192,6 @@ TrackMix MixOf(const Rom& rom, const std::vector<TrackRead>& reads, uint64_t end
     }
 
     return mix;
-}
-
-// The stretch of `stretches` that runs the read at `offset` by `tick`: the last that began by then and holds it.
-uint32_t StretchOf(const std::vector<ntdlib::sequence_export::Stretch>& stretches, uint32_t offset, uint32_t tick)
-{
-    for (size_t i = stretches.size(); i-- > 0;)
-    {
-        const ntdlib::sequence_export::Stretch& s = stretches[i];
-        if (s.tick <= tick && s.first <= offset && offset <= s.last)
-        {
-            return uint32_t(i);
-        }
-    }
-
-    return 0;
 }
 
 } // namespace
@@ -248,9 +224,10 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
         perf.tempo.push_back(
             {TickOfUnits(units), 60.0 * kFrameRate * tempo / double(kDriverTicksPerQuarter * kTickUnits)});
     }
+
     for (int t = 0; t < kPlayerTracks; t++)
     {
-        perf.track_names[size_t(t)] = "Track " + std::to_string(t);
+        perf.track_names[size_t(t)] = seqlib::midi::DefaultTrackName(t);
     }
 
     perf.stretches = StretchesOf(rom, info, converted.reads, perf.base, converted.end);
@@ -262,19 +239,11 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
         std::vector<ntdlib::sequence_export::TrackEvent>& events = perf.tracks[size_t(n.track)];
         const uint32_t tick = TickOfUnits(n.units);
         const uint32_t number = uint32_t(n.bank) * 128 + uint32_t(n.instrument);
-        if (preset[size_t(n.track)] != number)
-        {
-            preset[size_t(n.track)] = number;
-            ntdlib::sequence_export::TrackEvent event;
-            event.tick = tick;
-            event.kind = ntdlib::sequence_export::EventKind::kPreset;
-            event.preset = number;
-            events.push_back(event);
-        }
+        agb::AddPresetEvent(events, preset[size_t(n.track)], tick, number);
 
         ntdlib::sequence_export::NoteCommand command;
         command.offset = n.command - perf.base;
-        command.stretch = StretchOf(perf.stretches[size_t(n.track)], command.offset, tick);
+        command.stretch = agb::StretchOf(perf.stretches[size_t(n.track)], command.offset, tick);
         const uint32_t id = uint32_t(perf.note_commands.size()) + 1;
         perf.note_commands.push_back(command);
         perf.midi_places.push_back({n.on_tick, n.off_tick});
@@ -285,13 +254,7 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
         on.key = uint8_t(n.key);
         on.value = uint8_t(n.velocity);
         on.note = id;
-        events.push_back(on);
-
-        ntdlib::sequence_export::TrackEvent off = on;
-        off.tick = std::max(TickOfUnits(n.off_tick), tick + 1);
-        off.kind = ntdlib::sequence_export::EventKind::kNoteOff;
-        off.value = 0;
-        events.push_back(off);
+        agb::AddNoteEvents(events, on, std::max(TickOfUnits(n.off_tick), tick + 1));
     }
 
     return perf;

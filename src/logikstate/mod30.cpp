@@ -12,7 +12,6 @@
 
 namespace agblib::logikstate
 {
-
 namespace
 {
 
@@ -90,13 +89,14 @@ uint32_t PatternEnd(const Rom& rom, uint32_t block, uint32_t channels)
         {
             return 0;
         }
+
         block += kMod30BlockHeader + size;
     }
 
     return rom.Contains(block - 1) ? block : 0;
 }
 
-// A stream of runs, as the drivers' readers keep it.
+// A stream of runs as the drivers' readers keep it.
 struct Stream
 {
     uint32_t address = 0;
@@ -114,6 +114,7 @@ uint16_t NextRow(const Rom& rom, Stream& stream, bool wide)
             wide ? uint16_t(rom.U8(stream.address + 1) << 8 | rom.U8(stream.address + 2)) : rom.U8(stream.address + 1);
         stream.address += wide ? 3 : 2;
     }
+
     stream.count--;
 
     return stream.value;
@@ -182,6 +183,7 @@ bool ReadMod30Module(const Rom& rom, uint32_t address, Mod30Module& module)
     {
         m.orders[size_t(i)] = rom.U8(address + layout.orders + uint32_t(i));
     }
+
     m.real_orders = m.order_count;
     if (m.layout != Mod30Layout::kA)
     {
@@ -218,6 +220,7 @@ bool ReadMod30Module(const Rom& rom, uint32_t address, Mod30Module& module)
         {
             return false;
         }
+
         m.end = std::max(m.end, end);
     }
 
@@ -309,6 +312,7 @@ bool FindMod30Bank(const Rom& rom, const std::vector<uint32_t>& modules, Mod30Ba
             {
                 return false;
             }
+
             any = any || s.length != 0;
         }
 
@@ -334,6 +338,7 @@ bool FindMod30Bank(const Rom& rom, const std::vector<uint32_t>& modules, Mod30Ba
                 found = true;
             }
         }
+
         if (found)
         {
             return true;
@@ -366,6 +371,7 @@ bool DecodeMod30Pattern(const Rom& rom, uint32_t block, uint32_t channels, uint3
         {
             streams[s].address = bounds[s];
         }
+
         for (uint32_t r = 0; r < rows; r++)
         {
             Mod30Cell& cell = cells[c][r];
@@ -389,6 +395,7 @@ bool DecodeMod30Pattern(const Rom& rom, uint32_t block, uint32_t channels, uint3
                 return false;
             }
         }
+
         block = data + size;
     }
 

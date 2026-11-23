@@ -15,6 +15,7 @@
 
 #include "xsflib/bytes.h"
 
+#include "agblib/agb/cut_steps.h"
 #include "agblib/rd2/commands.h"
 #include "agblib/rd2/sequencer.h"
 
@@ -27,7 +28,7 @@ using agb::kRomBase;
 
 // The bytes of each of the driver's tables. A note's index reaches one entry past the pitch table and the frequency
 // table. E2 can give a bend a range that reads further past the pitch table. That counts only as far as a note's index:
-// a game's tables can lie just before a sequence of sound effects.
+// a game's tables can be just before a sequence of sound effects.
 constexpr uint32_t kPitchTableBytes = (kLastIndex + 2) * 4;
 constexpr uint32_t kFrequencyTableBytes = (kLastIndex + 2) * 2;
 constexpr uint32_t kNoiseTableBytes = kLastIndex + 1;
@@ -70,7 +71,7 @@ struct CutSequence
 std::map<uint32_t, CutSequence> ReadSequences(const Rom& rom, const DriverInfo& info)
 {
     std::map<uint32_t, CutSequence> sequences;
-    std::map<uint32_t, bool> kinds; // whether each address holds a sound effects' sequence
+    std::map<uint32_t, bool> kinds; // whether each address contains a sound effects' sequence
     for (int s = 0; s < SequenceCount(info); s++)
     {
         const uint32_t address = SequenceAddress(info, s);
@@ -83,31 +84,20 @@ std::map<uint32_t, CutSequence> ReadSequences(const Rom& rom, const DriverInfo& 
             {
                 sequences.at(address).usable = false;
             }
+
             continue;
         }
 
         kinds[address] = effects;
         CutSequence sequence;
         sequence.decoded = DecodeRomSequence(rom, info, s);
-        for (const ntdlib::commands::Command& item : sequence.decoded.sequence.items)
+        const auto encode = [&]()
         {
-            if (item.kind == ntdlib::commands::Kind::kData)
-            {
-                sequence.size += uint32_t(item.bytes.size());
-            }
-        }
-        try
-        {
-            const Encoded encoded = EncodeSequence(sequence.decoded.sequence, info.revision);
-            sequence.size = uint32_t(encoded.bytes.size());
-            sequence.usable = !sequence.decoded.opaque && address % kSequenceAlignment == 0 &&
-                              rom.Contains(address, sequence.size) &&
-                              std::equal(encoded.bytes.begin(), encoded.bytes.end(), rom.Ptr(address));
-        }
-        catch (const std::invalid_argument&)
-        {
-            // The sequence stays among the ROM's bytes, up to the end of its data.
-        }
+            return EncodeSequence(sequence.decoded.sequence, info.revision);
+        };
+        const agb::CutSize cut = agb::SizeOfCut(rom, address, sequence.decoded, encode);
+        sequence.size = cut.size;
+        sequence.usable = cut.usable && address % kSequenceAlignment == 0;
         sequences.emplace(address, std::move(sequence));
     }
 
@@ -120,7 +110,7 @@ struct DriverData
     std::set<uint32_t> starts;
     std::vector<Span> tables; // from 0x08000000
 
-    // Whether `size` bytes from `address` hold such a start, or lie in a table.
+    // Whether `size` bytes from `address` contain such a start, or are in a table.
     bool Touches(uint32_t address, uint32_t size) const
     {
         const auto found = starts.lower_bound(address);
@@ -168,6 +158,7 @@ DriverData DriverDataOf(const Rom& rom, const DriverInfo& info)
             data.tables.push_back({address, size});
         }
     };
+
     const auto offsets = [&](uint32_t address)
     {
         table(address, 4 * TableEntries(rom, address));
@@ -192,10 +183,12 @@ DriverData DriverDataOf(const Rom& rom, const DriverInfo& info)
     {
         data.starts.insert(list);
     }
+
     for (const uint32_t list : info.effect_bank_list_addresses)
     {
         data.starts.insert(list);
     }
+
     data.starts.merge(EntriesOf(rom, info.banks));
     for (const uint32_t set : EntriesOf(rom, info.sample_sets))
     {
@@ -215,28 +208,33 @@ Reached ReachedBytes(const Rom& rom, const DriverInfo& info, const std::map<uint
     {
         reached.Mark(table.start, table.size);
     }
+
     for (const auto& [address, sequence] : sequences)
     {
         reached.Mark(address, sequence.size);
     }
+
     for (const uint32_t list : info.bank_list_addresses)
     {
         reached.Mark(list, kBankListBytes);
     }
+
     for (const uint32_t list : info.effect_bank_list_addresses)
     {
         reached.Mark(list, kBankListBytes);
     }
+
     for (const uint32_t bank : EntriesOf(rom, info.banks))
     {
         reached.Mark(bank, kBankBytes);
     }
+
     for (const uint32_t set : EntriesOf(rom, info.sample_sets))
     {
         reached.Mark(set, 4 * uint64_t(TableEntries(rom, set)));
         for (const uint32_t sample : EntriesOf(rom, set))
         {
-            // A header of 4 words holds the sample's length and its loop's end, in points.
+            // A header of 4 words contains the sample's length and its loop's end, in points.
             reached.Mark(sample, 16 + uint64_t(std::max(rom.U32(sample), rom.U32(sample + 12))));
         }
     }
@@ -249,26 +247,16 @@ Reached ReachedBytes(const Rom& rom, const DriverInfo& info, const std::map<uint
 // when the sequence moved.
 void MarkFixed(const DriverData& data, std::map<uint32_t, CutSequence>& sequences)
 {
-    auto reader = sequences.end(); // the sequence that reads furthest
-    uint32_t read_to = 0;          // where that sequence's bytes end
-    for (auto it = sequences.begin(); it != sequences.end(); ++it)
+    const auto size = [](const CutSequence& sequence)
     {
-        const uint32_t end = it->first + it->second.size;
-        if (data.Touches(it->first, it->second.size))
-        {
-            it->second.usable = false;
-        }
-        if (reader != sequences.end() && it->first < read_to)
-        {
-            it->second.usable = false;
-            reader->second.usable = false;
-        }
-        if (reader == sequences.end() || end > read_to)
-        {
-            reader = it;
-            read_to = end;
-        }
-    }
+        return sequence.size;
+    };
+
+    const auto stays = [&](uint32_t address, uint32_t bytes)
+    {
+        return data.Touches(address, bytes);
+    };
+    agb::MarkReadTwice(sequences, size, stays);
 }
 
 // Returns the place in the pieces of `layout` of an address in a run.
@@ -315,9 +303,10 @@ Layout Cut(const Rom& rom, const DriverInfo& info)
         layout.sequences.push_back(std::move(sequence.decoded.sequence));
         at = address + sequence.size;
     }
+
     agb::AddRomRun(rom, at, rom.End(), layout.pieces);
 
-    // The fields of a table's entries lie in the run that holds the table: the sequences lie clear of it.
+    // The fields of a table's entries are in the run that contains the table: the sequences are clear of it.
     const auto add_fields = [&](uint32_t table, std::span<const uint32_t> addresses)
     {
         for (size_t s = 0; s < addresses.size(); s++)
@@ -330,6 +319,7 @@ Layout Cut(const Rom& rom, const DriverInfo& info)
             }
         }
     };
+
     add_fields(info.sequences, info.sequence_addresses);
     add_fields(info.effects, info.effect_sequence_addresses);
 
@@ -344,6 +334,7 @@ std::vector<uint8_t> Join(Revision revision, std::span<const ntdlib::commands::S
     {
         return EncodeSequence(sequences[sequence], revision);
     };
+
     agb::JoinedRom rom(pieces, sequences.size(), fields, free,
                        {.alignment = kSequenceAlignment, .after_tables = true, .filler = options.filler}, encode);
     for (const ntdlib::sar::Field& field : fields)

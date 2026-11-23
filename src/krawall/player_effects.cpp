@@ -21,7 +21,6 @@
 
 namespace agblib::krawall
 {
-
 namespace
 {
 
@@ -34,6 +33,7 @@ bool SlideLevel(int8_t& level, uint8_t slide)
         level = std::max<int8_t>(int8_t(level - (slide & 0xF)), 0);
         return true;
     }
+
     if (slide >> 4)
     {
         level = std::min<int8_t>(int8_t(level + (slide >> 4)), 64);
@@ -82,6 +82,7 @@ void Player::Effect(Channel& c, int effect, bool on_row)
             OldPatternJump(op);
             break;
         }
+
         goto_order_ = int8_t(op);
         break;
 
@@ -117,6 +118,7 @@ void Player::Effect(Channel& c, int effect, bool on_row)
         {
             c.fine_volume_slide = op;
         }
+
         if (effect == kVolumeSlideDownFine)
         {
             VolumeDown(c, c.fine_volume_slide);
@@ -165,6 +167,7 @@ void Player::Effect(Channel& c, int effect, bool on_row)
             {
                 step = op;
             }
+
             const int by = fine ? step << 2 : step;
             if (effect == kPortaUpFine || effect == kPortaUpExtraFine)
             {
@@ -204,6 +207,7 @@ void Player::Effect(Channel& c, int effect, bool on_row)
         {
             c.channel_volume = 64;
         }
+
         SetPlayedVolume(c);
         break;
 
@@ -474,10 +478,12 @@ void Player::VolumeSlideXm(Channel& c, bool on_row)
         {
             c.volume_slide = c.effect_op;
         }
+
         if (c.effect == kVolumeSlideVibratoXm && c.restore_note && c.last_effect == kVibrato)
         {
             c.restore_note = 0;
         }
+
         return;
     }
 
@@ -519,6 +525,7 @@ void Player::PortaNote(Channel& c, bool on_row)
         {
             c.porta_step = c.effect_op;
         }
+
         return;
     }
 
@@ -537,6 +544,7 @@ void Player::PortaNote(Channel& c, bool on_row)
         {
             c.period = c.porta_goal;
         }
+
         if (c.glissando)
         {
             if (c.period < period_of(c.gliss_note))
@@ -546,6 +554,7 @@ void Player::PortaNote(Channel& c, bool on_row)
                     c.gliss_note++;
                 } while (c.period < period_of(c.gliss_note));
             }
+
             if (c.period > period_of(c.gliss_note))
             {
                 c.gliss_note--;
@@ -559,6 +568,7 @@ void Player::PortaNote(Channel& c, bool on_row)
         {
             c.period = c.porta_goal;
         }
+
         if (c.glissando)
         {
             if (c.period > period_of(c.gliss_note))
@@ -568,6 +578,7 @@ void Player::PortaNote(Channel& c, bool on_row)
                     c.gliss_note--;
                 } while (c.period > period_of(c.gliss_note));
             }
+
             if (c.period < period_of(c.gliss_note))
             {
                 c.gliss_note++;
@@ -584,6 +595,7 @@ void Player::PortaNote(Channel& c, bool on_row)
         SetChannelFreq(c);
         return;
     }
+
     const uint16_t period = rom_.U16(info_.periods + 2 * uint32_t(c.gliss_note));
     c.played_period = int16_t(period);
     SetFreq(c.handle, FrequencyOf(period));
@@ -601,14 +613,17 @@ void Player::Vibrato(Channel& c, bool on_row)
     {
         c.vibrato_pos = vibrato_offset_;
     }
+
     if (c.effect_op & 0xF)
     {
         c.vibrato_depth = uint8_t((c.effect_op & 0xF) << 2);
     }
+
     if (c.effect_op & 0xF0)
     {
         c.vibrato_speed = uint8_t(c.effect_op >> 4);
     }
+
     if (c.restore_note && c.last_effect == kVolumeSlideVibrato)
     {
         c.restore_note = 0;
@@ -633,6 +648,7 @@ void Player::Tremor(Channel& c, bool on_row)
         c.tremor_on = uint8_t((op >> 4) + 1);
         c.tremor_cycle = uint8_t(c.tremor_on + (op & 0xF) + 1);
     }
+
     if (c.tremor_count == c.tremor_on && Since2004())
     {
         c.played_volume = 0;
@@ -650,6 +666,7 @@ void Player::Tremor(Channel& c, bool on_row)
         SetChannelVolume(c);
         c.restore_note = 0;
     }
+
     c.tremor_count++;
 }
 
@@ -662,10 +679,12 @@ void Player::Tremolo(Channel& c, bool on_row)
         {
             c.tremolo_pos = 0;
         }
+
         if (op & 0xF)
         {
             c.tremolo_depth = uint8_t(op & 0xF);
         }
+
         if (op & 0xF0)
         {
             c.tremolo_speed = uint8_t(op >> 4);
@@ -688,6 +707,7 @@ void Player::Tremolo(Channel& c, bool on_row)
             const int channel_volume = info_.build < Build::kV1_2_2_17 ? 1 : c.channel_volume;
             SetVol(c.handle, uint32_t(volume * channel_volume * c.envelope_volume) >> 6);
         }
+
         c.tremolo_pos = uint8_t((c.tremolo_pos + c.tremolo_speed) & 0x3F);
         c.restore_note = 1;
     }
@@ -702,10 +722,12 @@ void Player::Panbrello(Channel& c, bool on_row)
         {
             c.panbrello_pos = 0;
         }
+
         if (op & 0xF)
         {
             c.panbrello_depth = uint8_t(op & 0xF);
         }
+
         if (op & 0xF0)
         {
             c.panbrello_speed = uint8_t(op >> 4);
@@ -725,7 +747,7 @@ void Player::Panbrello(Channel& c, bool on_row)
 void Player::PanSlide(Channel& c, bool on_row)
 {
     // On the row, a fine slide (xF or Fx) slides once by twice its step. The fine slide right marks the volume slide as
-    // fine rather than the pan slide, as this build does.
+    // fine rather than the pan slide as this build does.
     if (on_row)
     {
         if (c.effect_op)
@@ -745,6 +767,7 @@ void Player::PanSlide(Channel& c, bool on_row)
             c.volume_slide_once = 1;
             PanRight(c, right << 1);
         }
+
         return;
     }
 
@@ -773,10 +796,12 @@ void Player::Retrig(Channel& c, bool on_row)
         {
             c.retrig = c.effect_op;
         }
+
         if (!c.play_note && c.retrig)
         {
             SetPos(c.handle, 0);
         }
+
         return;
     }
 
@@ -810,6 +835,7 @@ void Player::Retrig(Channel& c, bool on_row)
         {
             c.volume = 64;
         }
+
         SetChannelVolume(c);
     }
 }
@@ -822,10 +848,12 @@ void Player::Arpeggio(Channel& c, bool on_row)
         {
             c.arpeggio = c.effect_op;
         }
+
         if (!c.play_note)
         {
             SetChannelFreq(c);
         }
+
         c.arpeggio_step = 0;
         return;
     }
@@ -842,6 +870,7 @@ void Player::Arpeggio(Channel& c, bool on_row)
     {
         c.arpeggio_step = 0;
     }
+
     int16_t note = c.note;
     if (c.arpeggio_step == 1)
     {
@@ -873,6 +902,7 @@ void Player::PatternLoop(Channel& c)
         loop_count_ = int8_t(c.effect_op);
         loop_active_ = 1;
     }
+
     loop_count_--;
     if (loop_count_ == -1)
     {

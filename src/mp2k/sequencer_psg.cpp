@@ -12,14 +12,16 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/wave/sinc.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/warnings.h"
 #include "agblib/mp2k/commands.h"
 #include "agblib/mp2k/driver.h"
 #include "agblib/mp2k/sequencer.h"
 #include "agblib/mp2k/song.h"
-#include "ntdlib/wave/sinc.h"
 #include "sequencer_shared.h"
 
 namespace agblib::mp2k
@@ -28,16 +30,12 @@ namespace agblib::mp2k
 namespace
 {
 
-constexpr uint32_t kRegNr51 =
-    0x04000081; // each channel's outputs: the right side in the low 4 bits, the left in the high
-
-constexpr uint32_t kRegWaveRam = 0x04000090;
-
 // NRx2's direction bit: the hardware's envelope rises with it, and falls without it.
 constexpr uint8_t kEnvelopeUp = 0x08;
 
 // The wave channel's NR32 for each level of the envelope: mute, then 25%, 50%, 75% and the full volume. The driver's
-// table holds 16 levels. The SDK's tables put the numbers 0 to 15 after it, so a level of 16 to 31 mutes the channel.
+// table has 16 levels. The SDK's tables put the numbers 0 to 15 after it. A level of 16 to 31 therefore mutes the
+// channel.
 constexpr uint8_t kWaveVolumes[32] = {0x00, 0x00, 0x60, 0x60, 0x60, 0x60, 0x40, 0x40, 0x40, 0x40, 0x80,
                                       0x80, 0x80, 0x80, 0x20, 0x20, 0,    1,    2,    3,    4,    5,
                                       6,    7,    8,    9,    10,   11,   12,   13,   14,   15};
@@ -158,6 +156,7 @@ Next StepEnvelope(Channel& c)
     {
         c.modify |= kModifyVolume;
     }
+
     SetPsgVolume(c);
 
     const uint8_t phase = c.status & kStatusEnvelope;
@@ -279,7 +278,7 @@ Next MetroidDecayStep(Channel& c)
 }
 
 // Starts a PSG channel's decay, or its sustain if the voice's decay is 0. The count goes to the full level, then a
-// level down at once, so the hardware restarts a level below the full level and falls (0x08001414).
+// level down at once. The hardware therefore restarts a level below the full level and falls (0x08001414).
 Next MetroidDecay(Channel& c)
 {
     if (!c.decay)
@@ -337,6 +336,7 @@ Next MetroidStart(Channel& c)
         MetroidPhase(c, 0);
         return Next::kStep;
     }
+
     if (!c.attack)
     {
         return MetroidDecay(c);
@@ -367,6 +367,7 @@ Next StepMetroidEnvelope(Channel& c)
     {
         return c.counter ? Next::kStep : Next::kOff;
     }
+
     if ((c.status & kStatusStop) && (c.status & kStatusEnvelope))
     {
         if (!c.release || c.length)
@@ -378,6 +379,7 @@ Next StepMetroidEnvelope(Channel& c)
         MetroidPhase(c, c.release);
         return MetroidReleaseStep(c);
     }
+
     if (c.counter)
     {
         return Next::kStep;
@@ -399,6 +401,7 @@ Next StepMetroidEnvelope(Channel& c)
             c.envelope = c.sustain_goal;
             c.counter = 1;
         }
+
         return Next::kStep;
     default:
         return MetroidReleaseStep(c);
@@ -413,12 +416,13 @@ void Sequencer::SetEnvelopeCounter(int counter)
     {
         throw std::invalid_argument("the PSG envelopes' frame counter runs from 0 to 14");
     }
+
     c15_ = uint8_t(counter);
 }
 
 void Sequencer::RunPsg()
 {
-    // The steps of the hardware's envelopes are 64 a second, so every 15th frame takes two.
+    // The steps of the hardware's envelopes are 64 a second. Every 15th frame therefore takes two.
     c15_ = c15_ ? uint8_t(c15_ - 1) : 14;
 
     // The console's PSG channels, then the grown ones.
@@ -509,6 +513,7 @@ void Sequencer::RunPsg()
             c15--;
             next = StepEnvelope(c);
         }
+
         if (next == Next::kOff)
         {
             StopPsg(n, c.unit);
@@ -519,6 +524,13 @@ void Sequencer::RunPsg()
         }
 
         CheckAudible(index);
+
+        // NR32 mutes the wave channel at a volume without bits 5 to 7.
+        const bool sounds = n == 3 ? (kWaveVolumes[c.envelope & 31] & 0xE0) != 0 : c.envelope > c.lag;
+        if (sounds)
+        {
+            MarkSounded(index);
+        }
 
         // A fixed-pitch voice's frequency is rounded to suit the output's resolution. The driver rounds it when it
         // changes, and rounding it again changes nothing.
@@ -549,6 +561,7 @@ void Sequencer::StartPsgRegisters(int n, Channel& c)
     {
         return UnitAddress(c.unit, address);
     };
+
     switch (n)
     {
     case 3:
@@ -557,10 +570,12 @@ void Sequencer::StartPsgRegisters(int n, Channel& c)
             WriteSound(at(r.nrx0), 1, 0x40);
             for (uint32_t i = 0; i < 4; i++)
             {
-                WriteSound(at(kRegWaveRam + 4 * i), 4, rom_.U32(c.wave + 4 * i));
+                WriteSound(at(agb::kRegWaveRam + 4 * i), 4, rom_.U32(c.wave + 4 * i));
             }
+
             c.pattern = c.wave;
         }
+
         WriteSound(at(r.nrx0), 1, 0);
         WriteSound(at(r.nrx1), 1, c.length);
         c.n4 = c.length ? 0xC0 : 0x80;
@@ -574,6 +589,7 @@ void Sequencer::StartPsgRegisters(int n, Channel& c)
         {
             WriteSound(at(r.nrx0), 1, c.sweep);
         }
+
         WriteSound(at(r.nrx1), 1, (c.wave << 6) + c.length);
         break;
     }
@@ -589,6 +605,7 @@ void Sequencer::WritePsgRegisters(int n, Channel& c)
     {
         return UnitAddress(c.unit, address);
     };
+
     if (c.modify & kModifyPitch)
     {
         // The noise channel keeps its type in NR43's bit 3. The frequency's high bits go in NRx4.
@@ -599,11 +616,11 @@ void Sequencer::WritePsgRegisters(int n, Channel& c)
 
     if (c.modify & kModifyVolume)
     {
-        WriteSound(at(kRegNr51), 1, (SoundRegister(at(kRegNr51)) & ~c.pan_mask) | c.pan);
+        WriteSound(at(agb::kRegNr51), 1, (SoundRegister(at(agb::kRegNr51)) & ~c.pan_mask) | c.pan);
         if (n == 3)
         {
-            // An envelope above 31 needs a wave voice whose sustain is above 16. The driver then reads further past its
-            // table than kWaveVolumes covers, and the model wraps into kWaveVolumes. No song of the test images has
+            // An envelope above 31 requires a wave voice whose sustain is above 16. The driver then reads further past
+            // its table than kWaveVolumes covers, and the model wraps into kWaveVolumes. No song of the test images has
             // one. The first volume after a note starts restarts the wave channel.
             WriteSound(at(r.nrx2), 1, kWaveVolumes[c.envelope & 31]);
             if (c.n4 & 0x80)
@@ -665,6 +682,7 @@ void Sequencer::WriteSound(uint32_t address, int size, uint32_t value)
     {
         value &= (1u << (8 * size)) - 1;
     }
+
     for (int i = 0; i < size; i++)
     {
         const uint32_t byte = address + uint32_t(i);
@@ -678,6 +696,7 @@ void Sequencer::WriteSound(uint32_t address, int size, uint32_t value)
             sound_registers_[byte - agb::kRegSound1CntL] = uint8_t(value >> (8 * i));
         }
     }
+
     sound_writes_.push_back({address, uint8_t(size), value});
 }
 
@@ -688,6 +707,7 @@ uint8_t Sequencer::SoundRegister(uint32_t address) const
         const uint32_t offset = address - agb::kGrownPsgRegisters;
         return grown_registers_[offset / agb::kGrownPsgBytes][offset % agb::kGrownPsgBytes];
     }
+
     return sound_registers_[address - agb::kRegSound1CntL];
 }
 

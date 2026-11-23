@@ -104,10 +104,10 @@ constexpr ArmPattern kEnvelopeLookup[] = {{0xE4D20001, kExact}, {0xE59F3000, kAn
 constexpr ArmPattern kSampleLookup[] = {{0xE4D20001, kExact}, {0xE59F3000, kAny12}, {0xE7930100, kExact}};
 constexpr ArmPattern kWaveLookup[] = {{0xE4D20001, kExact}, {0xE59F3000, kAny12}, {0xE7934100, kExact}};
 
-// The init's setting of Timer 0, which sets the FIFOs' rate: ldr r1, =reload; ldr r0, [r1]; strh r0, [r3, #0xa0].
+// The init's setting of Timer 0. Timer 0 sets the FIFOs' rate: ldr r1, =reload; ldr r0, [r1]; strh r0, [r3, #0xa0].
 constexpr ArmPattern kTimerSetting[] = {{0xE59F1000, kAny12}, {0xE5910000, kExact}, {0xE1C30AB0, kExact}};
 
-// The commands whose routines hold the envelope, sample set and wave tables.
+// The commands whose routines contain the envelope, sample set and wave tables.
 constexpr int kEnvelopeCommand = 0x10;
 constexpr int kSampleCommand = 0x01;
 constexpr int kWaveCommand = 0x1C;
@@ -232,6 +232,7 @@ void LogFindings(DriverInfo& info)
         info.log.push_back(std::string(LayoutOf(info.revision).name) +
                            " revision of the driver, per-frame routine at " + Hex(info.frame_routine));
     }
+
     if (info.revision == Revision::kMagicalVacation)
     {
         info.log.push_back("samples: one on each FIFO, at each note's rate, rate table " + Hex(info.rate_table));
@@ -240,6 +241,7 @@ void LogFindings(DriverInfo& info)
     {
         info.log.push_back("mixer: " + std::to_string(info.mix_rate) + " Hz");
     }
+
     info.log.push_back("song table at " + Hex(info.song_table) + ": " + std::to_string(info.song_count) + " sound" +
                        (info.song_count == 1 ? "" : "s"));
     info.log.push_back("command table " + Hex(info.command_table) + ", length table " + Hex(info.length_table) +
@@ -296,6 +298,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
     {
         info.song_table = overrides.song_table;
     }
+
     if (!info.frame_routine && !overrides.song_table)
     {
         error.clear();

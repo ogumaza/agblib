@@ -477,6 +477,7 @@ bool DecodeEvent(const Rom& rom, uint32_t address, uint8_t running, Event& event
     {
         event.arg[i] = rom.U8(at + uint32_t(i));
     }
+
     event.size = uint8_t(at + uint32_t(args) - address);
 
     if (c == kCmdGoto || c == kCmdPatt)
@@ -605,8 +606,8 @@ TrackLayout ScanTrack(const Rom& rom, uint32_t address, int note_arguments)
     // The tick at which each command was first played, by its place.
     std::map<TrackWalk::Place, uint64_t> first;
 
-    // The keys of the ties that no end of tie has released yet, and the track's last key, which a note, tie or end of
-    // tie without one uses.
+    // The keys of the ties that no end of tie has released yet, and the track's last key. A note, tie or end of tie
+    // without a key uses the last key.
     std::multiset<uint8_t> ties;
     uint8_t key = 0;
 
@@ -632,12 +633,13 @@ TrackLayout ScanTrack(const Rom& rom, uint32_t address, int note_arguments)
         const uint64_t length = c > kCmdTie ? uint64_t(ClockLength(c - kCmdTie) + (e.args >= 3 ? e.arg[2] : 0)) : 0;
         layout.last_command = std::max(layout.last_command, walk.Tick() + length);
 
-        // A note, tie or end of tie can give the track a new key. An end of tie releases one of the ties on its key, as
-        // the driver releases the newest note it's playing there.
+        // A note, tie or end of tie can give the track a new key. An end of tie releases one of the ties on its key.
+        // The driver releases the newest note that it plays there.
         if ((c >= kCmdTie || c == kCmdEot) && e.args >= 1)
         {
             key = e.arg[0];
         }
+
         if (c == kCmdTie)
         {
             ties.insert(key);
@@ -687,7 +689,7 @@ TrackLayout ScanTrack(const Rom& rom, uint32_t address, int note_arguments)
         }
     }
 
-    // The track's end releases the notes it's still playing, which cuts a note short, or ends a tie.
+    // The track's end releases the notes that it still plays. That cuts a note short, or ends a tie.
     layout.end = walk.Tick();
     layout.last_command = ties.empty() ? std::min(layout.last_command, walk.Tick()) : walk.Tick();
 

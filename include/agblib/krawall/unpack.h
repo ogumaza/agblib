@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 // The compressed data of the music files in games whose modified Krawall loads each module into RAM before it plays
-// it. docs/krawall.md describes the format.
+// it. The comments of Unpack() in unpack.cpp give the stream's codes.
 
 #pragma once
 

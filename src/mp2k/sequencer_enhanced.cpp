@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/wave/sinc.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/agb/warnings.h"
@@ -19,7 +21,6 @@
 #include "agblib/mp2k/driver.h"
 #include "agblib/mp2k/sequencer.h"
 #include "agblib/mp2k/song.h"
-#include "ntdlib/wave/sinc.h"
 #include "sequencer_shared.h"
 
 namespace agblib::mp2k
@@ -31,6 +32,7 @@ void Sequencer::StartEnhancedMixing()
     {
         throw std::logic_error("the enhanced mode mixes after StartMixing()");
     }
+
     enhanced_ = true;
     enhanced_channels_.assign(channels_.size(), EnhancedChannel{});
     enhanced_out_.assign(2 * size_t(agb::kEnhancedFrameSamples), 0.0f);
@@ -44,6 +46,7 @@ std::span<const float> Sequencer::EnhancedRight() const
     {
         return {};
     }
+
     return std::span<const float>(enhanced_out_).first(agb::kEnhancedFrameSamples);
 }
 
@@ -53,13 +56,15 @@ std::span<const float> Sequencer::EnhancedLeft() const
     {
         return {};
     }
+
     return std::span<const float>(enhanced_out_)
         .subspan(info_.mono ? 0 : agb::kEnhancedFrameSamples, agb::kEnhancedFrameSamples);
 }
 
 void Sequencer::StartEnhancedPart()
 {
-    // The part of the frame in the buffer, and in the enhanced mode's history: 0 to the frames that the buffer holds.
+    // The part of the frame in the buffer, and in the enhanced mode's history: 0 to the frames that the buffer has room
+    // for.
     const size_t samples = agb::kEnhancedFrameSamples;
     const size_t parts = dma_period_;
     const size_t part = part_ / (uint32_t(info_.samples_per_frame) * uint32_t(PointsPerMixed()));
@@ -72,6 +77,7 @@ void Sequencer::StartEnhancedPart()
         std::copy(enhanced_echo_.begin(), enhanced_echo_.end(), enhanced_out_.begin());
         return;
     }
+
     if (!reverb_)
     {
         std::fill(enhanced_out_.begin(), enhanced_out_.end(), 0.0f);
@@ -94,8 +100,10 @@ void Sequencer::StartEnhancedPart()
             right[i] = (here_right[i] + next_right[i]) * scale;
             left[i] = right[i];
         }
+
         return;
     }
+
     const float scale = float(reverb_) / 512.0f;
     for (size_t i = 0; i < samples; i++)
     {
@@ -136,11 +144,13 @@ void Sequencer::MixEnhanced(int index, const Channel& c, const Wave& wave, std::
         {
             e.history = {};
         }
+
         std::copy(e.history.begin(), e.history.end(), input.begin());
         for (size_t i = 0; i < points + kAhead; i++)
         {
             input[32 + i] = saw ? float(raw[i]) * 0.5f : float(raw[i]);
         }
+
         std::copy(input.begin() + points, input.begin() + points + 32, e.history.begin());
         if (!sounds)
         {
@@ -155,18 +165,20 @@ void Sequencer::MixEnhanced(int index, const Channel& c, const Wave& wave, std::
             const size_t point = size_t(position >> 23);
             add(i, kernel.At(&input[32 + point + 1 - width], uint32_t(position & 0x7FFFFF) >> 7));
         }
+
         return;
     }
 
-    // The sample as the console's mixer plays it: forwards or backwards, compressed or not, with or without a loop,
-    // and its step for each of the console's points. A newer driver's mixer leaves a compressed voice with an
-    // uncompressed sample out. In Camelot's mixer, as in its driver, a loop of no length plays as no loop.
+    // The sample as the console's mixer plays it: forwards or backwards, compressed or not, with or without a loop, and
+    // its step for each of the console's points. A newer driver's mixer leaves a compressed voice with an uncompressed
+    // sample out. In Camelot's mixer and driver, a loop of no length plays as no loop.
     const bool special = !info_.camelot_mixer && info_.special_samples && (c.type & (kVoiceReverse | kVoiceCompressed));
     const bool reverse = special && (c.type & kVoiceReverse);
     if (special && !reverse && wave.type == 0)
     {
         return;
     }
+
     const bool compressed = special && wave.type != 0;
 
     // A sample of 4-bit steps in Camelot's mixer plays its decoded points, and has no loop.
@@ -202,6 +214,7 @@ void Sequencer::MixEnhanced(int index, const Channel& c, const Wave& wave, std::
             {
                 at = wave.loop_start + (at - wave.loop_start) % loop_length;
             }
+
             if (at < wave_size)
             {
                 const uint32_t point = reverse ? wave.size - 1 - uint32_t(at) : uint32_t(at);
@@ -216,6 +229,7 @@ void Sequencer::MixEnhanced(int index, const Channel& c, const Wave& wave, std::
                 }
             }
         }
+
         input[size_t(n - first)] = value;
     }
 
@@ -237,6 +251,7 @@ void Sequencer::EndEnhancedPart()
     {
         std::fill(enhanced_out_.begin(), enhanced_out_.end(), 0.0f);
     }
+
     const float* right = enhanced_out_.data();
     const float* left = right + samples;
     float* history_right = enhanced_history_.data();

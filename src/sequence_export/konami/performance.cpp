@@ -17,13 +17,13 @@
 #include "agblib/konami/driver.h"
 #include "agblib/konami/seqformat.h"
 #include "agblib/konami/sequencer.h"
+#include "agblib/sequence_export/agb/performance_steps.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "converted_notes.h"
 
 namespace agblib::sequence_export::konami
 {
 
-using agblib::agb::kFrameRate;
 using agblib::agb::Rom;
 using agblib::konami::Command;
 using agblib::konami::DriverInfo;
@@ -47,8 +47,8 @@ struct RanCommand
 };
 
 // Gives the offset of a read from the song's base, at the start of an item of the decoded song. Dungeon Dice Monsters'
-// FA holds a delay and a command in its last two bytes. A track reads them after a loop of the song, and the decoded
-// song holds them in FA's item. Such a read's offset is the offset of FA.
+// FA contains a delay and a command in its last two bytes. A track reads them after a loop of the song, and the decoded
+// song contains them in FA's item. Such a read's offset is the offset of FA.
 class ReadOffsets
 {
 public:
@@ -94,6 +94,7 @@ std::array<std::vector<RanCommand>, kTracks> CommandsOf(const std::vector<TrackR
         {
             continue;
         }
+
         if (read.track < 0)
         {
             for (std::vector<RanCommand>& track : commands)
@@ -103,6 +104,7 @@ std::array<std::vector<RanCommand>, kTracks> CommandsOf(const std::vector<TrackR
                     track.pop_back();
                 }
             }
+
             continue;
         }
 
@@ -133,6 +135,7 @@ std::array<std::vector<ntdlib::sequence_export::Stretch>, kTracks> StretchesOf(c
         {
             continue;
         }
+
         if (read.track < 0)
         {
             last.fill(nullptr);
@@ -182,27 +185,12 @@ std::array<std::vector<ntdlib::sequence_export::Stretch>, kTracks> StretchesOf(c
         {
             stretch.entry = ntdlib::sequence_export::Entry::kJump;
         }
+
         stretch.depth = depth[t];
         stretches[t].push_back(stretch);
     }
 
     return stretches;
-}
-
-// Sets `setting` of the track's mix to `value` at `tick`. A later change in the same tick replaces an earlier one.
-void AddChange(std::vector<ntdlib::sequence_export::MixChange>& changes, uint32_t tick,
-               ntdlib::sequence_export::Mix setting, int value)
-{
-    const auto same = std::find_if(changes.rbegin(), changes.rend(), [&](const ntdlib::sequence_export::MixChange& c)
-                                   { return c.tick == tick && c.setting == setting; });
-    if (same != changes.rend())
-    {
-        same->value = int16_t(value);
-    }
-    else
-    {
-        changes.push_back({tick, setting, int16_t(value)});
-    }
 }
 
 // The pan from -64 to 63 of a track's levels on the left and the right, each from 0 to 15.
@@ -232,37 +220,38 @@ std::array<std::vector<ntdlib::sequence_export::MixChange>, kTracks> MixOf(
             case Op::kSetVolume:
                 if (c.vol >= 0)
                 {
-                    AddChange(changes, ran.frame, ntdlib::sequence_export::Mix::kVolume, c.vol);
+                    agb::AddMixChange(changes, ran.frame, ntdlib::sequence_export::Mix::kVolume, c.vol);
                 }
                 break;
 
             case Op::kNextNote:
                 if (c.vol >= 0 && t + 1 < kTracks)
                 {
-                    AddChange(mix[size_t(t + 1)], ran.frame, ntdlib::sequence_export::Mix::kVolume, c.vol);
+                    agb::AddMixChange(mix[size_t(t + 1)], ran.frame, ntdlib::sequence_export::Mix::kVolume, c.vol);
                 }
                 break;
 
             case Op::kPairVolumes:
-                AddChange(changes, ran.frame, ntdlib::sequence_export::Mix::kVolume, c.value & 15);
+                agb::AddMixChange(changes, ran.frame, ntdlib::sequence_export::Mix::kVolume, c.value & 15);
                 if (t + 1 < kTracks)
                 {
-                    AddChange(mix[size_t(t + 1)], ran.frame, ntdlib::sequence_export::Mix::kVolume, c.value >> 4);
+                    agb::AddMixChange(mix[size_t(t + 1)], ran.frame, ntdlib::sequence_export::Mix::kVolume,
+                                      c.value >> 4);
                 }
                 break;
 
             case Op::kPan:
-                AddChange(changes, ran.frame, ntdlib::sequence_export::Mix::kPan, c.value - 0x40);
+                agb::AddMixChange(changes, ran.frame, ntdlib::sequence_export::Mix::kPan, c.value - 0x40);
                 break;
 
             case Op::kPanLevels:
-                AddChange(changes, ran.frame, ntdlib::sequence_export::Mix::kPan,
-                          PanOfLevels(c.value >> 4, c.value & 15));
+                agb::AddMixChange(changes, ran.frame, ntdlib::sequence_export::Mix::kPan,
+                                  PanOfLevels(c.value >> 4, c.value & 15));
                 break;
 
             case Op::kPsgPan:
-                AddChange(changes, ran.frame, ntdlib::sequence_export::Mix::kPan,
-                          PanOfLevels(((c.value >> (t + 4)) & 1) * 15, ((c.value >> t) & 1) * 15));
+                agb::AddMixChange(changes, ran.frame, ntdlib::sequence_export::Mix::kPan,
+                                  PanOfLevels(((c.value >> (t + 4)) & 1) * 15, ((c.value >> t) & 1) * 15));
                 break;
 
             default:
@@ -280,21 +269,6 @@ std::array<std::vector<ntdlib::sequence_export::MixChange>, kTracks> MixOf(
     }
 
     return mix;
-}
-
-// The stretch of `stretches` that runs the read at `offset` by `tick`: the last that began by then and holds it.
-uint32_t StretchOf(const std::vector<ntdlib::sequence_export::Stretch>& stretches, uint32_t offset, uint32_t tick)
-{
-    for (size_t i = stretches.size(); i-- > 0;)
-    {
-        const ntdlib::sequence_export::Stretch& s = stretches[i];
-        if (s.tick <= tick && s.first <= offset && offset <= s.last)
-        {
-            return uint32_t(i);
-        }
-    }
-
-    return 0;
 }
 
 // What started a note of a track.
@@ -338,6 +312,7 @@ public:
         {
             return {track, NoteCause::kOther, c};
         }
+
         if (from_before)
         {
             if (const Command* c = InFrame(track - 1, frame, /*notes=*/false, /*next_track=*/false))
@@ -351,6 +326,7 @@ public:
         {
             return {track, NoteCause::kEarlier, c};
         }
+
         if (from_before)
         {
             if (const Command* c = BeforeFrame(track - 1, frame, true))
@@ -453,22 +429,7 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
     perf.base = header.base;
     const ConvertedSong converted = ConvertedNotes(rom, info, song, settings);
     perf.warnings = converted.warnings;
-    perf.truncated = converted.truncated;
-    perf.end_tick = converted.end_frame;
-    perf.seconds = double(converted.end_frame) / kFrameRate;
-    perf.midi_end_tick = converted.end_tick;
-    if (converted.loops)
-    {
-        perf.loop = seqlib::midi::Performance::Loop{converted.loop_start, converted.loop_end};
-        perf.loops = settings.loops;
-    }
-
-    perf.timebase = uint32_t(std::max(std::lround(converted.quarter_frames), 1L));
-    if (converted.quarter_frames <= 0)
-    {
-        perf.timebase = 24;
-    }
-    perf.tempo.push_back({0, 60 * kFrameRate / perf.timebase});
+    agb::SetFrameTimes(perf, converted, settings.loops);
     for (int t = 0; t < kTracks; t++)
     {
         perf.track_names[size_t(t)] = TrackNameOf(t);
@@ -485,23 +446,16 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
     {
         std::vector<ntdlib::sequence_export::TrackEvent>& events = perf.tracks[size_t(n.track)];
         const uint32_t number = uint32_t(n.bank) * 128 + uint32_t(n.program);
-        if (preset[size_t(n.track)] != number)
-        {
-            preset[size_t(n.track)] = number;
-            ntdlib::sequence_export::TrackEvent event;
-            event.tick = n.on_frame;
-            event.kind = ntdlib::sequence_export::EventKind::kPreset;
-            event.preset = number;
-            events.push_back(event);
-        }
+        agb::AddPresetEvent(events, preset[size_t(n.track)], n.on_frame, number);
 
         const Started started = starts.Find(n.track, n.on_frame);
         ntdlib::sequence_export::NoteCommand command;
         if (started.command)
         {
             command.offset = offsets.Of(started.command->addr);
-            command.stretch = StretchOf(perf.stretches[size_t(started.track)], command.offset, n.on_frame);
+            command.stretch = agb::StretchOf(perf.stretches[size_t(started.track)], command.offset, n.on_frame);
         }
+
         const uint32_t id = uint32_t(perf.note_commands.size()) + 1;
         perf.note_commands.push_back(command);
         perf.note_starts.push_back({uint8_t(started.track), started.cause});
@@ -513,13 +467,7 @@ Performance PerformSong(const Rom& rom, const DriverInfo& info, int song, const 
         on.key = uint8_t(n.key);
         on.value = uint8_t(n.velocity);
         on.note = id;
-        events.push_back(on);
-
-        ntdlib::sequence_export::TrackEvent off = on;
-        off.tick = n.off_frame;
-        off.kind = ntdlib::sequence_export::EventKind::kNoteOff;
-        off.value = 0;
-        events.push_back(off);
+        agb::AddNoteEvents(events, on, n.off_frame);
     }
 
     return perf;

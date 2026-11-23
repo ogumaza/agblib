@@ -310,7 +310,7 @@ void ListChannel(const Rom& rom, const DriverInfo& info, int c, uint32_t start, 
     const bool byte_notes = TraitsOf(info.revision).byte_notes;
     uint32_t address = start;
     uint64_t tick = 0;
-    uint32_t dot_ticks = 0;                        // the length of the note just before, which a dot adds half of
+    uint32_t dot_ticks = 0;                        // the length of the note just before: a dot adds half of it
     int tie_note = -1;                             // the first byte of the note just before: D4 can tie to it
     std::vector<std::pair<uint32_t, int>> repeats; // each open repeat's start and the passes left
     for (int n = 0; n < kMaxListedCommands; n++)
@@ -350,12 +350,14 @@ void ListChannel(const Rom& rom, const DriverInfo& info, int c, uint32_t start, 
             tie_note = rom.U8(address - cmd.size);
             continue;
         }
+
         if (b == 0xD1 && dot_ticks)
         {
             tick += dot_ticks / 2;
             dot_ticks = 0;
             continue;
         }
+
         if (tie)
         {
             dot_ticks = 0;
@@ -375,6 +377,7 @@ void ListChannel(const Rom& rom, const DriverInfo& info, int c, uint32_t start, 
             {
                 left = rom.U8(address - 1) ? rom.U8(address - 1) : 256;
             }
+
             if (--left > 0)
             {
                 address = repeats.back().first;

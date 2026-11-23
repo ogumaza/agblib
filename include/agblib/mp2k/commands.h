@@ -13,7 +13,7 @@
 // (Encoding::arguments). The decoder reads each command with the state of the tracks that reach it. Where two tracks
 // reach a command with states that give it other values, the decoder keeps the song as data. The encoder writes the
 // items as they say. Their bytes play as the items where each item that leaves something out follows commands that
-// leave the track in the state that the item holds: the decoder then gives the items back.
+// leave the track in the state that the item has. The decoder then gives the items back.
 //
 // A note reads up to `note_arguments` bytes after its code: the SDK's library reads a key, a velocity and an extra
 // length (3), and Metroid Fusion's sequencer a key and a velocity alone (2, NoteArguments). The decoder and the encoder
@@ -39,10 +39,11 @@
 #include <span>
 #include <vector>
 
-#include "agblib/agb/encoded.h"
-#include "agblib/mp2k/song.h"
 #include "ntdlib/commands/sequence.h"
 #include "ntdlib/commands/units.h"
+
+#include "agblib/agb/encoded.h"
+#include "agblib/mp2k/song.h"
 
 namespace agblib::mp2k
 {
@@ -115,6 +116,7 @@ PlayedCommand ReadPlayedCommand(const ByteAt& byte_at, uint32_t at, const Runnin
     {
         return static_cast<uint8_t>(byte_at(at++));
     };
+
     const auto u32 = [&next_byte]
     {
         uint32_t value = next_byte();
@@ -147,6 +149,7 @@ PlayedCommand ReadPlayedCommand(const ByteAt& byte_at, uint32_t at, const Runnin
             played.after.running = code;
         }
     }
+
     played.code = code;
 
     // A note, or an end of a tie: the arguments that are there, each below 0x80.
@@ -159,10 +162,12 @@ PlayedCommand ReadPlayedCommand(const ByteAt& byte_at, uint32_t at, const Runnin
         {
             arguments[count++] = next_byte();
         }
+
         if (count >= 1)
         {
             played.after.key = arguments[0];
         }
+
         if (count >= 2)
         {
             played.after.velocity = arguments[1];
@@ -197,6 +202,7 @@ PlayedCommand ReadPlayedCommand(const ByteAt& byte_at, uint32_t at, const Runnin
             {
                 usual_code = i;
             }
+
             if (length_code != usual_code)
             {
                 command.encoding.length_code = static_cast<uint8_t>(length_code);
@@ -312,6 +318,7 @@ PlayedCommand ReadPlayedCommand(const ByteAt& byte_at, uint32_t at, const Runnin
             default:
                 break;
             }
+
             if (command.kind == Kind::kEnd || x == kXcmdWait)
             {
                 command.encoding.opcode = static_cast<uint16_t>(kCmdXcmd << 8 | x);
@@ -349,8 +356,8 @@ struct Decoded
 Decoded DecodeSequence(std::span<const uint8_t> data, uint32_t base, std::span<const uint32_t> entries,
                        int note_arguments = 3);
 
-// Decodes the song with `header`: the bytes from its first track's start up to the header. Throws
-// std::invalid_argument where the tracks don't lie in the ROM before the header.
+// Decodes the song with `header`: the bytes from its first track's start up to the header. Throws std::invalid_argument
+// where the tracks aren't in the ROM before the header.
 Decoded DecodeSong(const Rom& rom, const SongHeader& header, int note_arguments = 3);
 
 // Whether a track goes on to the next command after `command`. A jump, a repeat for ever and an end end it. A return
@@ -361,10 +368,10 @@ bool FallsThrough(const ntdlib::commands::Command& command);
 using Encoded = agb::Encoded;
 
 // Encodes `sequence` at address `base`, with the console's values nearest its units, for a driver whose notes read up
-// to `note_arguments` bytes (NoteArguments). Throws std::invalid_argument for a command that the bytes can't hold,
+// to `note_arguments` bytes (NoteArguments). Throws std::invalid_argument for a command that the bytes can't express,
 // such as a wait of no code's length, a value past the console's range, a target past the items, or a note that leaves
-// out its arguments before a byte below 0x80. With 2 note arguments, a note of no code's length throws too: such a
-// note takes a TIE and an end of the tie.
+// out its arguments before a byte below 0x80. With 2 note arguments, a note of no code's length throws too: such a note
+// requires a TIE and an end of the tie.
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, uint32_t base, int note_arguments = 3);
 
 // The scale of the value of a command of `kind` (ntdlib::commands::UnitOf). A note's velocity takes the unchanged

@@ -12,22 +12,23 @@
 #include "agblib/agb/arm.h"
 #include "agblib/agb/rom.h"
 #include "agblib/agb/thumb.h"
+#include "driver_files.h"
 #include "driver_internal.h"
+#include "driver_songs.h"
 
 namespace agblib::krawall
 {
-
 namespace
 {
 
-// The mixer's rate that the model's rates and ticks are for: the library's default, which sets the step of a sample's
-// points as 4 times its frequency and the sound timer's ticks from 15 seconds of the mix.
+// The mixer's rate that the model's rates and ticks are for: the library's default. At that rate, the step of a
+// sample's points is 4 times its frequency, and the sound timer's ticks come from 15 seconds of the mix.
 constexpr int kModelRate = 16384;
 
-// The starts of the version strings that the library's builds hold.
+// The starts of the version strings that the library's builds contain.
 constexpr const char* kVersionTexts[] = {"$Id: Krawall", "$Id: player.c"};
 
-// The start of the player's tables, which are the same in every build.
+// The start of the player's tables. It's the same in every build.
 constexpr int16_t kSine[] = {0, 25, 50, 74, 98, 120, 142, 162, 180, 197, 212, 225, 236, 244, 250, 254};
 constexpr int16_t kRamp[] = {0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120};
 constexpr int16_t kSquare[] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
@@ -43,7 +44,7 @@ struct BuildCode
     const char* version;   // the start of the build's version string, or nullptr if its code alone tells it apart
     const char* play;      // the start of krapPlay()
     const char* tables;    // the note on of the row's routine, whose ldr literals give the instruments and the samples
-    int instruments_index; // or -1 for a build whose modules hold their instruments
+    int instruments_index; // or -1 for a build whose modules contain their instruments
     int samples_index;
     const char* timer; // the timers' setup in kragInit(), whose constant gives timer 0's reload: the mixer's rate
     int timer_index;
@@ -51,8 +52,8 @@ struct BuildCode
     int frame_index;
     int frame_shift_index; // the lsls whose shift scales the movs to the samples of a frame, or -1 for a shift of 1
 
-    // The starts of kragInit(), which the game calls with its choice of stereo, and of kramQualityMode() and
-    // kramSetMasterVol(). kragInit() calls kramSetMasterVol() itself, kInitMasterCall bytes in, before the game can.
+    // The starts of kragInit(), kramQualityMode() and kramSetMasterVol(). The game calls kragInit() with its choice of
+    // stereo. kragInit() calls kramSetMasterVol() itself, kInitMasterCall bytes in, before the game can.
     const char* init;
     const char* quality;
     const char* master;
@@ -65,7 +66,7 @@ struct BuildCode
 constexpr uint32_t kInitMasterCall = 6;
 
 // The game's sound init calls kramSetMasterVol() within this many bytes after its call of kragInit(). A game can call
-// it elsewhere too, as Shrek SuperSlam's pause does at 0x0801A24E.
+// it elsewhere too as Shrek SuperSlam's pause does at 0x0801A24E.
 constexpr uint32_t kInitMasterWindow = 0x80;
 
 // The code of the build of 2003/09/01. The builds of player.c, 1.2.2.10 to 1.4, have the same krapPlay(), timers,
@@ -81,7 +82,7 @@ constexpr const char* kTablesPlayerC = "0407 49xx 0BBA 588F 00x0 616F 3802 5A39 
 constexpr const char* kQualityPlayerC = "B510 4Axx 2802 DCxx 7010 4Axx 4Cxx 2018 1C91 780A 2A00";
 constexpr const char* kMasterPlayerC = "B5F0 4Cxx 4Exx 1C05 2100 2000 11C3 1C1A 2B7F DD00";
 
-// The player of the builds from 2004/09/17 on, which the three share: krapPlay(), and the row's note on.
+// The player that the three builds from 2004/09/17 on share: krapPlay(), and the row's note on.
 constexpr const char* kPlay2004 = "B5F0 4657 464E 4645 B4E0 4680 2002 1C0F 4692 Fxxx Fxxx 2003 Fxxx Fxxx 2204";
 constexpr const char* kTables2004 = "0431 48xx 0B8A 5886 007C 61AE 3C02 5B31 48xx 008E 5984 616C";
 constexpr const char* kTimer2004 = "4Bxx 49xx 48xx 800B 3102 4Bxx 8008 3906 800B";
@@ -200,6 +201,7 @@ uint32_t HalfwordsAt(const Rom& rom, uint32_t at, const int16_t (&values)[N])
     {
         return 0;
     }
+
     for (size_t i = 0; i < N; i++)
     {
         if (int16_t(rom.U16(at + 2 * uint32_t(i))) != values[i])
@@ -258,6 +260,7 @@ std::vector<uint32_t> FindArmCalls(const Rom& rom, uint32_t routine)
         {
             continue;
         }
+
         if (rom.U32(at + 4) == kMovLrPc && rom.U32(at + 8) == (kBx | reg))
         {
             calls.push_back(at);
@@ -265,7 +268,7 @@ std::vector<uint32_t> FindArmCalls(const Rom& rom, uint32_t routine)
         else if (reg != 0 && rom.Contains(at, 16) && (rom.U32(at + 4) & kMovR0Mask) == kMovR0 &&
                  rom.U32(at + 8) == kMovLrPc && rom.U32(at + 12) == (kBx | reg))
         {
-            // The call starts after the move, so that ArmArgument() reads it.
+            // The call starts after the move. ArmArgument() then reads it.
             calls.push_back(at + 8);
         }
     }
@@ -319,6 +322,7 @@ int64_t ArmArgument(const Rom& rom, uint32_t call)
                 {
                     return -1;
                 }
+
                 continue;
             }
 
@@ -334,11 +338,13 @@ int64_t ArmArgument(const Rom& rom, uint32_t call)
                 const uint32_t imm = word & 0xFF;
                 return rotate ? int64_t((imm >> rotate) | (imm << (32 - rotate))) & 0xFFFFFFFF : int64_t(imm);
             }
+
             if ((word & 0xFFEF0FF0) == 0xE1A00000)
             {
                 reg = word & 0xF;
                 continue;
             }
+
             return -1;
         }
 
@@ -350,6 +356,7 @@ int64_t ArmArgument(const Rom& rom, uint32_t call)
             {
                 return -1;
             }
+
             continue;
         }
 
@@ -378,6 +385,7 @@ int CallArgument(const Rom& rom, uint32_t routine)
             return before & 0xFF;
         }
     }
+
     for (uint32_t call : FindArmCalls(rom, routine))
     {
         const int64_t value = ArmArgument(rom, call);
@@ -420,6 +428,7 @@ int64_t CallLiteral(const Rom& rom, uint32_t routine, uint32_t skip)
             return value;
         }
     }
+
     for (uint32_t call : FindArmCalls(rom, routine))
     {
         const int64_t value = ArmArgument(rom, call);
@@ -474,37 +483,6 @@ bool MatchesBuild(const Rom& rom, const BuildCode& code, uint32_t version, uint3
     return versioned && (!code.mixer || FindFirstThumb(rom, code.mixer));
 }
 
-// Returns true if a pattern's header is one the player can read: a row count, and an index of every 4th row's data that
-// starts at the data and doesn't go back.
-bool PlausiblePattern(const Rom& rom, Build build, uint32_t at)
-{
-    const uint32_t data = PatternData(build, at);
-    if (!rom.Contains(at, data - at))
-    {
-        return false;
-    }
-
-    const uint32_t rows = PatternRows(rom, build, at);
-    if (rows == 0 || rom.U16(at) != 0)
-    {
-        return false;
-    }
-
-    uint16_t last = 0;
-    for (uint32_t i = 1; i < kPatternIndexEntries && 4 * i < rows; i++)
-    {
-        const uint16_t offset = rom.U16(at + 2 * i);
-        if (offset < last || !rom.Contains(data + offset))
-        {
-            return false;
-        }
-
-        last = offset;
-    }
-
-    return true;
-}
-
 // Finds the modules by their headers, in the order they're in the ROM.
 std::vector<uint32_t> ScanModules(const Rom& rom, Build build)
 {
@@ -553,6 +531,7 @@ void FindModuleTable(const Rom& rom, const std::vector<uint32_t>& modules, uint3
         {
             run_start = at;
         }
+
         if (run > count && run >= 2)
         {
             table = run_start;
@@ -572,10 +551,10 @@ bool ReadTables(const Rom& rom, const BuildCode& code, uint32_t table_code, Driv
 
     // The player's tables.
     info.sine = FindTable(rom, kSine);
-    // The ramp's first values turn up in other data too, as in Franklin's Great Adventures. So do the square wave's,
-    // all 255. The ramp follows the sine, and the square wave follows the ramp. Where no ramp follows the sine, the
-    // ramp is the first copy of its values that the square wave follows. Cocoto Kart Racer's data hold another copy of
-    // the ramp's first values before the player's tables.
+    // The ramp's first values turn up in other data too as in Franklin's Great Adventures. So do the square wave's, all
+    // 255. The ramp follows the sine, and the square wave follows the ramp. Where no ramp follows the sine, the ramp is
+    // the first copy of its values that the square wave follows. Cocoto Kart Racer's data contain another copy of the
+    // ramp's first values before the player's tables.
     info.ramp = info.sine ? HalfwordsAt(rom, info.sine + 128, kRamp) : 0;
     if (!info.ramp)
     {
@@ -589,6 +568,7 @@ bool ReadTables(const Rom& rom, const BuildCode& code, uint32_t table_code, Driv
             }
         }
     }
+
     info.square = info.ramp ? HalfwordsAt(rom, info.ramp + 128, kSquare) : 0;
     info.random = FindTable(rom, kRandom);
     info.periods = FindTable(rom, kPeriods);
@@ -613,8 +593,8 @@ bool ReadTables(const Rom& rom, const BuildCode& code, uint32_t table_code, Driv
     return true;
 }
 
-// Reads the mixer's rate and the samples it mixes a frame, which the build of the library sets. Returns false and sets
-// `error` if the code that sets them isn't found.
+// Reads the mixer's rate and the samples it mixes a frame as the build of the library sets them. Returns false and
+// sets `error` if the code that sets them isn't found.
 bool ReadMixRate(const Rom& rom, const BuildCode& code, DriverInfo& info, std::string& error)
 {
     const uint32_t timer = FindFirstThumb(rom, code.timer);
@@ -625,6 +605,7 @@ bool ReadMixRate(const Rom& rom, const BuildCode& code, DriverInfo& info, std::s
         error = "found Krawall, but not its mixer's rate";
         return false;
     }
+
     info.mix_rate = int((1u << 24) / (0x10000 - reload));
     const int shift =
         code.frame_shift_index >= 0 ? (rom.U16(frame + 2 * uint32_t(code.frame_shift_index)) >> 6) & 0x1F : 1;
@@ -650,8 +631,8 @@ void ReadGameSettings(const Rom& rom, const BuildCode& code, DriverInfo& info)
     info.stereo = stereo != 0;
     info.quality = uint8_t(std::max(mode, 0));
 
-    // The game's master volume, from its call to kramSetMasterVol() rather than kragInit()'s. The sound init's call,
-    // which follows the game's call of kragInit(), comes first. Without one, the first call with a literal counts.
+    // The game's master volume, from its call to kramSetMasterVol() rather than kragInit()'s. The sound init's call
+    // follows the game's call of kragInit(), and comes first. Without one, the first call with a literal counts.
     const uint32_t master = FindFirstThumb(rom, code.master);
     int64_t master_volume = -1;
     if (init && master)
@@ -667,16 +648,19 @@ void ReadGameSettings(const Rom& rom, const BuildCode& code, DriverInfo& info)
             {
                 master_volume = ThumbCallLiteral(rom, call);
             }
+
             if (master_volume >= 0)
             {
                 break;
             }
         }
     }
+
     if (master_volume < 0 && master)
     {
         master_volume = CallLiteral(rom, master, init ? init + kInitMasterCall : 0);
     }
+
     if (master_volume >= 0)
     {
         info.master_volume = uint32_t(master_volume);
@@ -694,6 +678,7 @@ void ReadGameSettings(const Rom& rom, const BuildCode& code, DriverInfo& info)
             stereo = game.stereo;
             info.stereo = stereo != 0;
         }
+
         info.music_volume = game.music_volume;
         info.music_fade_in = game.music_fade_in;
         if (game.quality >= 0)
@@ -741,6 +726,7 @@ uint32_t ListModules(const Rom& rom, const DriverOverrides& overrides, DriverInf
                     break;
                 }
             }
+
             info.modules.push_back(at);
         }
 
@@ -753,6 +739,7 @@ uint32_t ListModules(const Rom& rom, const DriverOverrides& overrides, DriverInf
     {
         info.modules.push_back(rom.U32(info.module_table + 4 * uint32_t(i)));
     }
+
     for (uint32_t at : found)
     {
         if (std::find(info.modules.begin(), info.modules.end(), at) == info.modules.end())
@@ -760,6 +747,7 @@ uint32_t ListModules(const Rom& rom, const DriverOverrides& overrides, DriverInf
             info.modules.push_back(at);
         }
     }
+
     if (overrides.module_count > 0 && info.modules.size() > size_t(overrides.module_count))
     {
         info.modules.resize(size_t(overrides.module_count));
@@ -776,6 +764,7 @@ void LogDetection(const Rom& rom, uint32_t table, DriverInfo& info)
     {
         info.log.push_back("version: " + VersionText(rom, info.version));
     }
+
     info.log.push_back(std::string("build: ") + BuildName(info.build));
     std::snprintf(text, sizeof text, "krapPlay(): %s, samples: %s, instruments: %s", Hex(info.play).c_str(),
                   Hex(info.samples).c_str(), info.instruments ? Hex(info.instruments).c_str() : "in each module");
@@ -790,6 +779,7 @@ void LogDetection(const Rom& rom, uint32_t table, DriverInfo& info)
         std::snprintf(text, sizeof text, "music volume: %u", unsigned(info.music_volume));
         info.log.push_back(text);
     }
+
     if (info.music_fade_in)
     {
         std::snprintf(text, sizeof text, "the game fades the music in from 0 by %u a frame",
@@ -813,192 +803,12 @@ void LogDetection(const Rom& rom, uint32_t table, DriverInfo& info)
 
 } // namespace
 
-bool ReadModule(const Rom& rom, Build build, uint32_t address, ModuleInfo& module)
-{
-    module = ModuleInfo();
-    if (!rom.Contains(address, kModulePatterns))
-    {
-        return false;
-    }
-
-    module.address = address;
-    module.channels = rom.U8(address + kModuleChannels);
-    module.order_count = rom.U8(address + kModuleOrderCount);
-    module.restart = rom.U8(address + kModuleRestart);
-    for (uint32_t i = 0; i < 256; i++)
-    {
-        module.orders[i] = rom.U8(address + kModuleOrders + i);
-    }
-    for (uint32_t i = 0; i < 32; i++)
-    {
-        module.channel_pan[i] = rom.S8(address + kModuleChannelPans + i);
-    }
-    for (uint32_t i = 0; i < 64; i++)
-    {
-        module.song_starts[i] = rom.U8(address + kModuleSongStarts + i);
-    }
-    module.global_volume = rom.U8(address + kModuleGlobalVolume);
-    module.speed = rom.U8(address + kModuleSpeed);
-    module.tempo = rom.U8(address + kModuleTempo);
-    const uint8_t flags[3] = {rom.U8(address + kModuleFlags), rom.U8(address + kModuleFlags + 1),
-                              rom.U8(address + kModuleFlags + 2)};
-    module.instruments = flags[0] != 0;
-    module.linear = flags[1] != 0;
-    module.fast_slides = flags[2] != 0;
-    module.volume_opt = rom.U8(address + kModuleFlags + 3);
-    module.amiga_limits = rom.U8(address + kModuleFlags + 4);
-
-    // The header's flags are bytes of 0 or 1, and the pans are within the player's range.
-    if (module.channels == 0 || module.channels > 32 || module.order_count == 0 || module.speed == 0)
-    {
-        return false;
-    }
-    for (uint8_t f : {flags[0], flags[1], flags[2], module.volume_opt, module.amiga_limits})
-    {
-        if (f > 1)
-        {
-            return false;
-        }
-    }
-    for (int c = 0; c < module.channels; c++)
-    {
-        if (module.channel_pan[size_t(c)] < -64 || module.channel_pan[size_t(c)] > 64)
-        {
-            return false;
-        }
-    }
-
-    // The orders name the patterns. Their table follows the header. In the modified build, the address of the
-    // module's instruments comes before it.
-    const uint32_t table = address + ModulePatterns(build);
-    if (build == Build::kModified)
-    {
-        module.instruments_at = rom.U32(address + kModuleInstruments);
-    }
-
-    int patterns = 0;
-    for (int i = 0; i < module.order_count; i++)
-    {
-        const uint8_t o = module.orders[size_t(i)];
-        if (o < kOrderSkip)
-        {
-            patterns = std::max(patterns, o + 1);
-        }
-    }
-    if (patterns == 0 || !rom.Contains(table, 4 * uint32_t(patterns)))
-    {
-        return false;
-    }
-    for (int p = 0; p < patterns; p++)
-    {
-        const uint32_t pattern = rom.U32(table + 4 * uint32_t(p));
-        if (!PlausiblePattern(rom, build, pattern))
-        {
-            return false;
-        }
-
-        module.patterns.push_back(pattern);
-    }
-
-    return true;
-}
-
-uint32_t SampleEnd(const Rom& rom, Build build, uint32_t sample)
-{
-    // The modified build's header gives the points' count where the others give the address after them.
-    const uint32_t end = rom.U32(sample + kSampleEnd);
-    return build == Build::kModified ? sample + kSamplePoints + end : end;
-}
-
-uint32_t ModulePatterns(Build build)
-{
-    return build == Build::kModified ? kModifiedPatterns : kModulePatterns;
-}
-
-const char* BuildName(Build build)
-{
-    switch (build)
-    {
-    case Build::kV1_2_2_10:
-        return "player.c 1.2.2.10 of 2002/08/24";
-    case Build::kV1_2_2_14:
-        return "player.c 1.2.2.14 of 2002/09/12";
-    case Build::kV1_2_2_15:
-        return "player.c 1.2.2.15 of 2002/12/19";
-    case Build::kV1_2_2_17:
-        return "player.c 1.2.2.17 of 2003/01/13";
-    case Build::kV1_4:
-        return "player.c 1.4 of 2003/03/19";
-    case Build::k2003_09_01:
-        return "2003/09/01";
-    case Build::k2004_09_17:
-        return "2004/09/17";
-    case Build::k2004_11_14:
-        return "2004/11/14";
-    case Build::k2005_04_21:
-        return "2005-04-21";
-    case Build::kUnsigned:
-        return "unsigned";
-    case Build::kModified:
-        return "modified";
-    }
-
-    return "unknown";
-}
-
-uint32_t PatternRows(const Rom& rom, Build build, uint32_t pattern)
-{
-    return build < Build::k2004_09_17 ? rom.U8(pattern + kPatternRows) : rom.U16(pattern + kPatternRows);
-}
-
-uint32_t PatternData(Build build, uint32_t pattern)
-{
-    return pattern + kPatternRows + (build < Build::k2004_09_17 ? 1 : 2);
-}
-
-RowEntry ReadEntry(const Rom& rom, Build build, uint8_t flags, uint32_t& at)
-{
-    // Up to 2003/09/01, the note is in the first byte's top 7 bits. The second byte holds the instrument's low 8 bits,
-    // and the first byte's low bit holds its 9th. From 2004/09/17 on, the note is in the first byte's low 7 bits, the
-    // second byte holds the instrument's low 8 bits, and where the first byte's top bit is set, a third byte holds its
-    // top 8.
-    RowEntry entry;
-    entry.channel = flags & kEntryChannel;
-    if ((flags & kEntryNote) && build < Build::k2004_09_17)
-    {
-        const uint8_t b0 = rom.U8(at++);
-        entry.instrument = uint16_t(rom.U8(at++) | ((b0 & 1) << 8));
-        entry.note = uint8_t(b0 >> 1);
-    }
-    else if (flags & kEntryNote)
-    {
-        const uint8_t b0 = rom.U8(at++);
-        entry.instrument = rom.U8(at++);
-        if (b0 & 0x80)
-        {
-            entry.instrument = uint16_t(entry.instrument | (rom.U8(at++) << 8));
-        }
-        entry.note = uint8_t(b0 & 0x7F);
-    }
-    if (flags & kEntryVolume)
-    {
-        entry.volume = rom.U8(at++);
-    }
-    if (flags & kEntryEffect)
-    {
-        entry.effect = rom.U8(at++);
-        entry.effect_op = rom.U8(at++);
-    }
-
-    return entry;
-}
-
 bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& info, std::string& error)
 {
     info = DriverInfo();
     error.clear();
 
-    // The library's version string, which names a signed build, and the player's code, which each build compiled the
+    // The library's version string that names a signed build, and the player's code. Each build compiled that code the
     // same in every game.
     for (const char* text : kVersionTexts)
     {
@@ -1015,6 +825,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
             break;
         }
     }
+
     if (!code)
     {
         if (info.version)
@@ -1022,6 +833,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
             error = "found Krawall, but not a build that " + overrides.program + " supports (" +
                     VersionText(rom, info.version) + ")";
         }
+
         return false;
     }
 
@@ -1074,6 +886,7 @@ int SongsInModule(const ModuleInfo& module)
         {
             songs++;
         }
+
         in_song = o < kOrderSkip;
     }
 

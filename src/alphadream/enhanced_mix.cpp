@@ -9,9 +9,10 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/wave/sinc.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/alphadream/game_driver.h"
-#include "ntdlib/wave/sinc.h"
 
 namespace agblib::alphadream
 {
@@ -44,6 +45,7 @@ void EnhancedMix::Frame(const std::vector<MixChannel>& channels, bool heard)
     {
         side.assign(n, 0.0f);
     }
+
     parts_ = {};
 
     // A frame that isn't heard mixes no samples. Each channel still leaves the state that a heard frame leaves.
@@ -96,6 +98,7 @@ void EnhancedMix::MixChannelInto(const MixChannel& channel, size_t n)
             {
                 return 0.0f;
             }
+
             at = loop + (at - end) % (end - loop);
         }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 // A frame-by-frame model of a player of Nintendo R&D1's MIDI-file sound driver: its tracks, its channels and their
-// LFOs, as the driver keeps them.
+// LFOs as the driver keeps them.
 
 #pragma once
 
@@ -41,7 +41,7 @@ struct ChannelRecord
     int BendRange() const;  // CC20: +0xF, in semitones
 };
 
-// A track's state, as the driver keeps it.
+// A track's state as the driver keeps it.
 struct TrackState
 {
     bool playing = false;      // +0 bit 0
@@ -72,6 +72,7 @@ struct SeqEvent
         kTempo,   // a new step in `value`: 256ths of a tick a frame
         kSetting, // a controller or a bend
     };
+
     Kind kind = Kind::kNoteOn;
     int channel = 0; // a note's channel, the track's number & 15, or the track's number for the other events
     int track = 0;   // the track that read the event
@@ -96,7 +97,7 @@ struct TrackRead
 class Sequencer
 {
 public:
-    // Starts `record` on its player, as the driver's start routine does.
+    // Starts `record` on its player as the driver's start routine does.
     Sequencer(const Rom& rom, const DriverInfo& info, const SongRecord& record);
 
     // Returns false if the song's MIDI file can't be read. Error() then says why.

@@ -43,6 +43,7 @@ void TestBlockOutput()
     {
         XSFLIB_CHECK(out[i] == 0);
     }
+
     for (size_t i = 2 * (first + 1); i < out.size(); i++)
     {
         XSFLIB_CHECK(out[i] == 48 * 4 * 64);
@@ -65,6 +66,7 @@ void TestRegisters()
         {
             bytes[address - 0x60] = uint8_t(value);
         }
+
         for (const auto& [address, value] : differences)
         {
             bytes[address - 0x60] = uint8_t(value);
@@ -94,6 +96,7 @@ void TestRegisters()
     {
         fifo_image.Put8(kWaves + i, uint8_t(0x10 + i));
     }
+
     const Rom fifo = fifo_image.ToRom();
     Output fifo_output(fifo, FifoInfo());
     fifo_output.Play(0);
@@ -103,6 +106,7 @@ void TestRegisters()
     {
         expected[0x30 + i] = uint8_t(0x10 + i);
     }
+
     XSFLIB_CHECK(fifo_output.SoundRegisters() == expected);
 }
 
@@ -165,6 +169,7 @@ void TestFifoRestart()
     {
         XSFLIB_CHECK(out[i] == 0);
     }
+
     XSFLIB_CHECK(out[2 * (first + 1)] == 13 * 4 * 64 && out[2 * (first + 1) + 1] == 13 * 4 * 64);
 }
 
@@ -186,6 +191,7 @@ void TestFifoTimers()
         const std::vector<int8_t> block = Block({value});
         bytes.insert(bytes.end(), block.begin(), block.end());
     }
+
     FifoSample(m, 5, 4, 0x4000, bytes);
     const Rom rom = m.ToRom();
 
@@ -221,10 +227,10 @@ void TestFifoTimers()
 void TestFifoTimerChange()
 {
     // A note on a running timer gives the timer a new period, and the FIFO doesn't start again. The timer's reload
-    // takes effect at the next overflow, and that overflow stays where the old period put it. Overflows of 0x400
-    // cycles come from the first frame's stores on. A frame holds 274 of them and 0x140 cycles, so the second frame's
-    // stores come 0x2C0 cycles before the next one. A sample comes each 512 cycles, and the bytes alternate, so each
-    // overflow moves the output.
+    // takes effect at the next overflow, and that overflow stays where the old period put it. Overflows of 0x400 cycles
+    // come from the first frame's stores on. A frame holds 274 of them and 0x140 cycles. The second frame's stores
+    // therefore come 0x2C0 cycles before the next one. A sample comes each 512 cycles, and the bytes alternate. Each
+    // overflow therefore moves the output.
     Image m;
     m.OneTrack(4, {0x00, 0xBC, 0x01, 0x01, 0x9C, 0x01, 0x3C, 0xFD}, Revision::kDungeonDiceMonsters);
     m.PutBytes(kMap, {0x00, 0x05});
@@ -235,6 +241,7 @@ void TestFifoTimerChange()
     {
         bytes.push_back(int8_t(i % 2 == 0 ? 64 : -64));
     }
+
     FifoSample(m, 5, 64, 0x4000, bytes);
     const Rom rom = m.ToRom();
 
@@ -259,6 +266,7 @@ void TestFifoTimerChange()
     {
         XSFLIB_CHECK(out[2 * (i - 1)] == out[2 * i]);
     }
+
     XSFLIB_CHECK(out[2 * (first + 3)] != out[2 * (first + 4)]);
 }
 
@@ -286,6 +294,7 @@ void TestBusy()
         player.RunFrame();
         frames++;
     }
+
     XSFLIB_CHECK(!player.Busy());
     const std::vector<int16_t> out = Frames(player, 2);
     XSFLIB_CHECK(std::all_of(out.begin(), out.end(), [](int16_t s) { return s == 0; }));
@@ -313,6 +322,7 @@ void TestBusyOnRing()
         player.RunFrame(out);
         frames++;
     }
+
     XSFLIB_CHECK(!player.Busy());
     XSFLIB_CHECK(std::any_of(out.begin(), out.end(), [](int16_t s) { return s == 32 * 4 * 64; }));
     XSFLIB_CHECK(out.back() == 0);
@@ -535,6 +545,7 @@ void TestMutesOnPsg()
         m.Put8(kVolumes + volume * 16 + 15, 5);
         m.Put8(kVolumes + volume * 16 + 8, 3);
     }
+
     const Rom rom = m.ToRom();
 
     const auto peaks = [&](int muted, int soloed)
@@ -546,6 +557,7 @@ void TestMutesOnPsg()
         {
             player.MuteTrack(muted, true);
         }
+
         if (soloed >= 0)
         {
             player.SoloTrack(soloed, true);
@@ -621,6 +633,7 @@ void TestWaveChannel()
             peaks[0] = std::max(peaks[0], player.TrackPeaks(2)[0]);
             peaks[1] = std::max(peaks[1], player.TrackPeaks(2)[1]);
         }
+
         XSFLIB_CHECK(peaks[0] == 15 * 16 * 64 && peaks[1] == 15 * 16 * 64);
     }
 }

@@ -5,7 +5,7 @@
 // The comments give the rule.
 //
 // The hardware's output at 10 bits is the bias of 0x200 plus each FIFO's byte times 4, rounded down to the resolution's
-// steps. A step of the 10 bits gives 64 in a 16-bit sample, so a FIFO's byte b gives b * 256.
+// steps. A step of the 10 bits gives 64 in a 16-bit sample. A FIFO's byte b therefore gives b * 256.
 
 #include <algorithm>
 #include <array>
@@ -26,6 +26,7 @@
 #include "xsflib/player/archive_source.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/brownie/archive_player.h"
@@ -38,6 +39,7 @@ namespace
 {
 
 using namespace agblib::testing::brownie_cart;
+using seqlib::testing::Throws;
 
 using agblib::agb::kEnhancedFrameSamples;
 using agblib::agb::kEnhancedRate;
@@ -121,7 +123,7 @@ void TestMixer()
     const Case cases[] = {
         {0x40, 0x20, 96},   // (64 * 255 + 32 * 255 + 128) >> 8
         {0xC0, 0xC0, -128}, // -((64 * 255 + 64 * 255 + 128) >> 8)
-        {0x60, 0x60, -65},  // (96 * 255 * 2 + 128) >> 8 = 191, which wraps
+        {0x60, 0x60, -65},  // (96 * 255 * 2 + 128) >> 8 = 191: it wraps
         {0xC0, 0x40, 0},    // (-64 * 255 + 64 * 255 + 128) >> 8
         {0xFF, 0xFF, -2},   // -((1 * 255 + 1 * 255 + 128) >> 8)
     };
@@ -158,6 +160,7 @@ void TestFiveVoices()
         }
         channels.push_back({c, data, {}});
     }
+
     cart.Sound(1, channels);
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
@@ -189,6 +192,7 @@ void TestLead()
     {
         sounding++;
     }
+
     SEQLIB_CHECK_EQ(sounding, first);
     SEQLIB_CHECK_EQ(out[2 * first], 64 * 256);
     SEQLIB_CHECK_EQ(out[2 * first + 1], 64 * 256);
@@ -382,19 +386,13 @@ void TestSnapshots()
         {
             quick.RunFrame();
         }
+
         SEQLIB_CHECK(Run(quick, 20) == after);
 
         ArchivePlayer other(rom, info);
         other.Start(1);
-        bool refused = false;
-        try
-        {
-            other.Restore(snapshot);
-        }
-        catch (const std::invalid_argument&)
-        {
-            refused = true;
-        }
+        const bool refused = Throws<std::invalid_argument>([&] { other.Restore(snapshot); });
+
         SEQLIB_CHECK(refused);
     }
 }
@@ -417,6 +415,7 @@ void TestEnd()
         player.RunFrame(out);
         frames++;
     }
+
     SEQLIB_CHECK(!player.Busy());
 
     // A length of 4 frames: the note in frame 1, the end in frame 5, and 2 frames of the tail.
@@ -441,40 +440,26 @@ void TestRefusals()
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
 
-    const auto throws_logic = [](const std::function<void()>& call)
-    {
-        try
-        {
-            call();
-        }
-        catch (const std::logic_error&)
-        {
-            return true;
-        }
-
-        return false;
-    };
-
     ArchivePlayer player(rom, info);
     std::vector<int16_t> samples;
     std::vector<float> floats;
-    SEQLIB_CHECK(throws_logic([&] { player.RunFrame(samples); }));
-    SEQLIB_CHECK(throws_logic([&] { player.Driver(); }));
-    SEQLIB_CHECK(throws_logic([&] { player.Save(); }));
-    SEQLIB_CHECK(throws_logic([&] { player.Start(info.song_count); }));
+    SEQLIB_CHECK(Throws<std::logic_error>([&] { player.RunFrame(samples); }));
+    SEQLIB_CHECK(Throws<std::logic_error>([&] { player.Driver(); }));
+    SEQLIB_CHECK(Throws<std::logic_error>([&] { player.Save(); }));
+    SEQLIB_CHECK(Throws<std::logic_error>([&] { player.Start(info.song_count); }));
 
     ArchivePlayerOptions late;
     late.store_cycle = kFrameCycles;
-    SEQLIB_CHECK(throws_logic([&] { player.Start(1, late); }));
+    SEQLIB_CHECK(Throws<std::logic_error>([&] { player.Start(1, late); }));
 
-    SEQLIB_CHECK(throws_logic([&] { player.MuteTrack(kChannelCount, true); }));
+    SEQLIB_CHECK(Throws<std::logic_error>([&] { player.MuteTrack(kChannelCount, true); }));
 
     player.Start(1);
-    SEQLIB_CHECK(throws_logic([&] { player.RunFrame(floats); }));
+    SEQLIB_CHECK(Throws<std::logic_error>([&] { player.RunFrame(floats); }));
     ArchivePlayerOptions enhanced;
     enhanced.enhanced = true;
     player.Start(1, enhanced);
-    SEQLIB_CHECK(throws_logic([&] { player.RunFrame(samples); }));
+    SEQLIB_CHECK(Throws<std::logic_error>([&] { player.RunFrame(samples); }));
 }
 
 // Returns an enhanced player's samples of `frames` frames.
@@ -546,11 +531,13 @@ void TestEnhancedLevels()
     {
         SEQLIB_CHECK(std::fabs(ended[i]) < 1e-5f);
     }
+
     bool sounded = false;
     for (size_t i = 0; i < 2 * 4 * kEnhancedFrameSamples; i++)
     {
         sounded = sounded || std::fabs(ended[i]) > 0.3f;
     }
+
     SEQLIB_CHECK(sounded);
 }
 
@@ -583,11 +570,12 @@ void TestEnhancedRates()
     {
         largest = std::max(largest, std::fabs(at_rate[i]));
     }
+
     SEQLIB_CHECK(std::fabs(largest - 100.0f / 128.0f * 255.0f / 256.0f) < 5e-3f);
 }
 
 // A muted track leaves the enhanced mode's mix, and a solo leaves out every other track. Each revision's samples then
-// are those of the sound without the other track. A voice moves on while its track is muted, so that a mute's end
+// are those of the sound without the other track. A voice moves on while its track is muted. A mute's end therefore
 // gives the whole sound's samples again.
 void TestEnhancedMutes()
 {
@@ -690,8 +678,8 @@ void TestEnhancedSides()
     SEQLIB_CHECK(std::fabs(out[last + 1] - 0.5f * 255.0f / 256.0f) < 2e-3f);
 }
 
-// A level moves in a line across each frame in the enhanced mode. The envelope takes 8 from the level at each frame.
-// A constant of 0.5 then moves by 8 / 256 * 0.5 a frame, and no two neighbouring samples lie far apart.
+// A level moves in a line across each frame in the enhanced mode. The envelope takes 8 from the level at each frame. A
+// constant of 0.5 then moves by 8 / 256 * 0.5 a frame, and no two neighbouring samples are far apart.
 void TestEnhancedRamp()
 {
     Cart cart;
@@ -806,17 +794,7 @@ void TestVacationRate()
     SEQLIB_CHECK(std::fabs(FrequencyOf(out, 8 * kEnhancedFrameSamples) - 256.0) < 0.5);
 }
 
-// A set for archive mode: a ROM's bytes under the name of its file.
-struct RomSet
-{
-    std::vector<uint8_t>* File(const std::string& path)
-    {
-        return files.contains(path) ? &files[path] : nullptr;
-    }
-
-    std::map<std::string, std::vector<uint8_t>> files;
-    int song = 0;
-};
+using agblib::testing::agb_tests::RomSet;
 
 struct RomProgram
 {
@@ -866,6 +844,7 @@ void TestArchiveSource()
     {
         source.RunFrame(out);
     }
+
     SEQLIB_CHECK_EQ(out.back(), 64 * 256);
     source.Restore(*snapshot);
     std::vector<int16_t> again;
@@ -873,6 +852,7 @@ void TestArchiveSource()
     {
         source.RunFrame(again);
     }
+
     SEQLIB_CHECK(std::equal(again.begin(), again.end(), out.begin() + std::ptrdiff_t(saved), out.end()));
 
     RomSet missing = SetOf(rom, 7);
@@ -884,15 +864,8 @@ void TestArchiveSource()
 
     Cart no_code(false);
     RomSet blank = SetOf(no_code.ToRom(), 1);
-    bool threw = false;
-    try
-    {
-        source.Start(blank, out);
-    }
-    catch (const xsflib::FormatError&)
-    {
-        threw = true;
-    }
+    const bool threw = Throws<xsflib::FormatError>([&] { source.Start(blank, out); });
+
     SEQLIB_CHECK(threw);
 }
 

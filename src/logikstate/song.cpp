@@ -64,11 +64,13 @@ std::string CellText(const Cell& cell, Format format)
         std::snprintf(text, sizeof text, " pitch %d", cell.pitch);
         out += text;
     }
+
     if (cell.sample != 0)
     {
         std::snprintf(text, sizeof text, " sample %d", cell.sample);
         out += text;
     }
+
     if (cell.effect != 0 || cell.operand != 0)
     {
         const char* name = EffectName(cell.effect, format);
@@ -120,16 +122,19 @@ std::string Mod30CellText(const Mod30Cell& cell)
         std::snprintf(text, sizeof text, " note %d", cell.note);
         out += text;
     }
+
     if (cell.sample != 0)
     {
         std::snprintf(text, sizeof text, " sample %d", cell.sample);
         out += text;
     }
+
     if (cell.volume != 0)
     {
         std::snprintf(text, sizeof text, " volume %d", cell.volume - 1);
         out += text;
     }
+
     if (cell.effect != 0 || cell.operand != 0)
     {
         const char* name = cell.effect < kEffectNames.size() ? kEffectNames[cell.effect] : nullptr;
@@ -172,6 +177,7 @@ bool DumpMod30(const Rom& rom, const DriverInfo& info, int song, const std::stri
     {
         out += " " + std::to_string(module.orders[i]);
     }
+
     out += "\n";
 
     // Each pattern's cells, and the samples that they name.
@@ -191,6 +197,7 @@ bool DumpMod30(const Rom& rom, const DriverInfo& info, int song, const std::stri
             patterns.push_back(text);
             continue;
         }
+
         for (uint32_t row = 0; row < module.rows; row++)
         {
             std::string cells_text;
@@ -201,6 +208,7 @@ bool DumpMod30(const Rom& rom, const DriverInfo& info, int song, const std::stri
                 {
                     used[cell.sample - 1u] = true;
                 }
+
                 const std::string cell_text = Mod30CellText(cell);
                 if (!cell_text.empty())
                 {
@@ -213,6 +221,7 @@ bool DumpMod30(const Rom& rom, const DriverInfo& info, int song, const std::stri
                 text += line + cells_text + "\n";
             }
         }
+
         patterns.push_back(text);
     }
 
@@ -232,6 +241,7 @@ bool DumpMod30(const Rom& rom, const DriverInfo& info, int song, const std::stri
             unsigned(s.volume), unsigned(s.loop_start), unsigned(s.loop_length));
         out += line;
     }
+
     for (const std::string& text : patterns)
     {
         out += text;
@@ -277,6 +287,7 @@ bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::strin
     {
         std::snprintf(line, sizeof line, "Starts at order %d, with the samples after its patterns\n", entry.order);
     }
+
     out += line;
 
     out += "Orders:";
@@ -284,6 +295,7 @@ bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::strin
     {
         out += " " + std::to_string(module.orders[i]);
     }
+
     out += "\n";
 
     // The samples that have points or a volume, with the address of each one's points.

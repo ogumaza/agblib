@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-// Unit tests for MP2K's reader and its sequencer: detection, timing, notes, channels, envelopes, pitch and the songs'
-// settings. mp2k_loops_test.cpp tests the loops and the ends. They build small synthetic cartridges in memory. No game
-// ROM is needed.
+// Unit tests for MP2K's sequencer: timing, notes, channels, envelopes, pitch and the songs' settings.
+// mp2k_detection_test.cpp tests the decoding and the detection, and mp2k_loops_test.cpp the loops and the ends. They
+// build small synthetic cartridges in memory. No game ROM is needed.
 
 #include <algorithm>
 #include <array>
@@ -16,362 +16,11 @@ namespace agblib::sequence_export::mp2k
 namespace
 {
 
-void TestDecoding()
-{
-    Cart cart;
-    Track t;
-    const size_t start = t.Here();
-    t.Cmd(kCmdKeySh, 0)
-        .Cmd(kCmdVoice, 5)
-        .Raw({0x30})
-        .Note(8, 60, 100, 2)
-        .Raw({0x3E})
-        .Wait(24)
-        .Tie(64, 127)
-        .Eot(64)
-        .Raw({kCmdXcmd, kXcmdEchoVol, 16})
-        .Raw({kCmdXcmd, kXcmdWave, 0x56, 0x34, 0x12, 0x08})
-        .Raw({kCmdXcmd, kXcmdOffset, 0x40, 0x01, 0x00, 0x00})
-        .Patt(start)
-        .Rept(2, start)
-        .Raw({kCmdMemAcc, 6, 1, 2, 0, 0, 0, 0})
-        .Goto(start)
-        .Fine();
-    const uint32_t at = cart.Place(t.Bytes(kData), 1);
-    const Rom rom = cart.ToRom();
-
-    uint32_t a = at;
-    uint8_t running = 0;
-    Event e;
-    auto next = [&]()
-    {
-        const bool ok = DecodeEvent(rom, a, running, e);
-        running = RunningStatus(e, running);
-        a += e.size;
-
-        return ok;
-    };
-
-    SEQLIB_CHECK(next() && e.command == kCmdKeySh && e.size == 2 && DescribeEvent(e) == "KEYSH 0");
-    SEQLIB_CHECK(next() && e.command == kCmdVoice && e.arg[0] == 5);
-    SEQLIB_CHECK(next() && e.command == kCmdVoice && e.size == 1 && e.arg[0] == 0x30);
-    SEQLIB_CHECK(next() && e.size == 4 && DescribeEvent(e) == "N08 key 60 vel 100 gate+2");
-    SEQLIB_CHECK(next() && e.size == 1 && DescribeEvent(e) == "N08 key 62");
-    SEQLIB_CHECK(next() && DescribeEvent(e) == "W24");
-    SEQLIB_CHECK(next() && DescribeEvent(e) == "TIE key 64 vel 127");
-    SEQLIB_CHECK(next() && DescribeEvent(e) == "EOT key 64");
-    SEQLIB_CHECK(next() && e.size == 3 && DescribeEvent(e) == "XCMD xIECV 16");
-    SEQLIB_CHECK(next() && e.size == 6 && e.target == 0x08123456 && DescribeEvent(e) == "XCMD xWAVE 0x08123456");
-    SEQLIB_CHECK(next() && e.size == 6 && e.target == 320 && DescribeEvent(e) == "XCMD x0D 320");
-    SEQLIB_CHECK(next() && e.command == kCmdPatt && e.target == at);
-    SEQLIB_CHECK(next() && e.command == kCmdRept && e.size == 6 && e.arg[0] == 2 && e.target == at);
-    SEQLIB_CHECK(next() && e.command == kCmdMemAcc && e.size == 8 && e.target == 0);
-    SEQLIB_CHECK(next() && e.command == kCmdGoto && e.target == at);
-    SEQLIB_CHECK(next() && e.command == kCmdFine);
-
-    // A byte below 0x80 without a running status, and an extended command the driver doesn't have.
-    const uint32_t bad = cart.Place({0x40, kCmdXcmd, 0x20}, 1);
-    const Rom bad_rom = cart.ToRom();
-
-    SEQLIB_CHECK(!DecodeEvent(bad_rom, bad, 0, e));
-    SEQLIB_CHECK(!DecodeEvent(bad_rom, bad + 1, 0, e));
-}
-
-// The address that a new cart gives its first voice group, of one saw. Carts without a voice group of their own use it
-// for their songs.
-uint32_t SawVoices()
-{
-    Cart cart;
-    return cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw()))}});
-}
-
-void TestDetection()
-{
-    // The routine that starts a song gives the tables, and the init gives the mixer's settings. The song table ends
-    // before the first entry that isn't a song.
-    Cart cart;
-    const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw()))}});
-    cart.Song({Track().Fine()}, voices);
-    cart.Song({Track().Fine(), Track().Fine()}, voices, 1);
-    const Rom rom = cart.ToRom();
-
-    const DriverInfo info = Detect(rom);
-
-    SEQLIB_CHECK_EQ(info.song_start, kSongStart);
-    SEQLIB_CHECK_EQ(info.song_table, kSongTable);
-    SEQLIB_CHECK_EQ(info.player_table, kPlayerTable);
-    SEQLIB_CHECK_EQ(info.song_count, 2);
-    SEQLIB_REQUIRE_EQ(info.players.size(), 2);
-    SEQLIB_CHECK(info.players[1].track_count == 3);
-    SEQLIB_CHECK_EQ(info.sound_mode, kMode);
-    SEQLIB_CHECK(info.game_modes.empty());
-    SEQLIB_CHECK_EQ(info.max_channels, 5);
-    SEQLIB_CHECK_EQ(info.master_volume, 12);
-    SEQLIB_CHECK_EQ(info.mix_rate, 13379);
-    SEQLIB_CHECK_EQ(info.samples_per_frame, 224);
-    SEQLIB_CHECK_EQ(info.step_scale, 627);
-    SEQLIB_CHECK(info.special_samples);
-    SEQLIB_CHECK(!info.mono);
-    SEQLIB_CHECK(info.warnings.empty());
-
-    // Overrides take the place of what detection finds.
-    DriverOverrides overrides;
-    overrides.song_count = 1;
-    DriverInfo one;
-    std::string error;
-
-    SEQLIB_CHECK(DetectDriver(rom, overrides, one, error));
-    SEQLIB_CHECK_EQ(one.song_count, 1);
-
-    // An all-zero entry, as a GSF rip can leave for a song it doesn't hold, is empty and doesn't end the song table,
-    // but those after the last song don't count. A table without a song fails, with a hint.
-    Cart gaps;
-    for (int s = 0; s < 4; s++)
-    {
-        gaps.Song({Track().Fine()}, voices);
-    }
-    for (const uint32_t entry : {kSongTable + 8, kSongTable + 24})
-    {
-        gaps.Put32(entry, 0);
-        gaps.Put32(entry + 4, 0);
-    }
-    const Rom gaps_rom = gaps.ToRom();
-    const Rom empty_rom = Cart().ToRom();
-    DriverInfo empty;
-
-    const DriverInfo gaps_info = Detect(gaps_rom);
-    const bool found_empty = DetectDriver(empty_rom, DriverOverrides(), empty, error);
-
-    SEQLIB_CHECK_EQ(gaps_info.song_count, 3);
-    SEQLIB_CHECK_EQ(SongAddress(gaps_rom, gaps_info, 1), 0);
-    SEQLIB_CHECK(SongAddress(gaps_rom, gaps_info, 0) != 0 && SongAddress(gaps_rom, gaps_info, 2) != 0);
-    SEQLIB_CHECK(!Sequencer(gaps_rom, gaps_info, 1).Valid() && Sequencer(gaps_rom, gaps_info, 2).Valid());
-    SEQLIB_CHECK(!found_empty);
-    SEQLIB_CHECK(error.find("--song-count") != std::string::npos);
-
-    // Another mode, an older mixer, and no mode at all: then the driver's defaults stand.
-    Cart slow(0x0093F800, {4}, true, false);
-    slow.Song({Track().Fine()}, voices);
-    Cart unset(0x00000500);
-    unset.Song({Track().Fine()}, voices);
-
-    const DriverInfo slow_info = Detect(slow.ToRom());
-    const DriverInfo unset_info = Detect(unset.ToRom());
-
-    SEQLIB_CHECK_EQ(slow_info.mix_rate, 10512);
-    SEQLIB_CHECK_EQ(slow_info.max_channels, 8);
-    SEQLIB_CHECK(!slow_info.special_samples);
-    SEQLIB_CHECK_EQ(unset_info.sound_mode, 0);
-    SEQLIB_CHECK_EQ(unset_info.max_channels, 8);
-    SEQLIB_CHECK_EQ(unset_info.mix_rate, 13379);
-    SEQLIB_CHECK(!unset_info.warnings.empty());
-}
-
-// The sound modes that a game's code sets: Metroid Fusion's mode kept in r8, a mode set again after the init, the
-// rows of games that work their modes out while they run, and modes shifted into place before each call.
-void TestSoundModes()
-{
-    const uint32_t voices = SawVoices();
-
-    // Metroid Fusion's init keeps its mode in r8 for a later call, and the mode's top byte of 1 asks for stereo.
-    // Without the move, nothing marks the load as the mode's.
-    Cart fusion(0x0193F600, {4});
-    fusion.Put16(kInit + 2, 0x4680);
-    fusion.Put16(kInit + 4, 0);
-    fusion.Song({Track().Fine()}, voices);
-    Cart loose(0x0193F600, {4});
-    loose.Put16(kInit + 2, 0);
-    loose.Put16(kInit + 4, 0);
-    loose.Song({Track().Fine()}, voices);
-
-    const DriverInfo fusion_info = Detect(fusion.ToRom());
-    const DriverInfo loose_info = Detect(loose.ToRom());
-
-    SEQLIB_CHECK_EQ(fusion_info.sound_mode, 0x0193F600);
-    SEQLIB_CHECK_EQ(fusion_info.mix_rate, 10512);
-    SEQLIB_CHECK_EQ(fusion_info.max_channels, 6);
-    SEQLIB_CHECK_EQ(fusion_info.master_volume, 15);
-    SEQLIB_CHECK_EQ(loose_info.sound_mode, 0);
-
-    // A game's code can set the mode again straight after the init: bl m4aSoundInit; ldr r0, =mode; bl m4aSoundMode.
-    // Each field of that mode that isn't 0 replaces the init's. A mode that the code sets elsewhere doesn't count.
-    Cart again;
-    again.GameSoundMode(0x00960680, true);
-    again.Song({Track().Fine()}, voices);
-    const DriverInfo again_info = Detect(again.ToRom());
-    SEQLIB_CHECK_EQ(again_info.sound_mode, kMode);
-    SEQLIB_CHECK(again_info.game_modes == std::vector<uint32_t>{0x00960680});
-    SEQLIB_CHECK_EQ(again_info.max_channels, 6);
-    SEQLIB_CHECK_EQ(again_info.master_volume, 12);
-    SEQLIB_CHECK_EQ(again_info.mix_rate, 18157);
-    Cart elsewhere;
-    elsewhere.GameSoundMode(0x00960680, false);
-    elsewhere.Song({Track().Fine()}, voices);
-    const DriverInfo elsewhere_info = Detect(elsewhere.ToRom());
-    SEQLIB_CHECK_EQ(elsewhere_info.max_channels, 5);
-    SEQLIB_CHECK(elsewhere_info.game_modes.empty());
-
-    // A row gives the mode of a game that works it out while it runs.
-    Cart spyro;
-    spyro.GameCode("ASYE");
-    spyro.Song({Track().Fine()}, voices);
-    const DriverInfo spyro_info = Detect(spyro.ToRom());
-    SEQLIB_CHECK(spyro_info.game_modes == std::vector<uint32_t>{0x00D4A880});
-    SEQLIB_CHECK_EQ(spyro_info.max_channels, 8);
-    SEQLIB_CHECK_EQ(spyro_info.master_volume, 10);
-    SEQLIB_CHECK_EQ(spyro_info.mix_rate, 13379);
-
-    // A game's code can also set the mode straight after the init with movs r0, #imm; lsls r0, r0, #n before each call
-    // of m4aSoundMode, after calls of up to two other routines. The calls apply in order. The cart's init sets 5
-    // channels and a master volume of 12.
-    struct ShiftedCase
-    {
-        std::vector<Cart::ShiftedMode> modes;
-        int other_calls;
-        int channels;
-        int master_volume;
-    };
-    const ShiftedCase kShiftedCases[] = {
-        {{{0xC0, 3}}, 0, 6, 12},            // The Proud Family: 6 channels
-        {{{0xC0, 4}, {0xC0, 7}}, 1, 12, 6}, // Sugar Sugar Rune: 12 channels, then a master volume of 6
-        {{{0x80, 4}, {0x80, 8}}, 2, 8, 8},
-        {{{0xC0, 3}}, 3, 5, 12}, // past the calls that count
-    };
-    for (const ShiftedCase& c : kShiftedCases)
-    {
-        Cart game;
-        game.GameShiftedSoundModes(c.modes, c.other_calls);
-        game.Song({Track().Fine()}, voices);
-
-        const DriverInfo game_info = Detect(game.ToRom());
-
-        SEQLIB_CHECK_EQ(game_info.max_channels, c.channels);
-        SEQLIB_CHECK_EQ(game_info.master_volume, c.master_volume);
-        SEQLIB_CHECK_EQ(game_info.game_modes.size(), c.other_calls < 3 ? c.modes.size() : 0);
-    }
-
-    // A row gives the mode that Strawberry Shortcake: Sweet Dreams sets each time it starts a song.
-    Cart sweet_dreams;
-    sweet_dreams.GameCode("B4TE");
-    sweet_dreams.Song({Track().Fine()}, voices);
-
-    const DriverInfo sweet_dreams_info = Detect(sweet_dreams.ToRom());
-
-    SEQLIB_CHECK_EQ(sweet_dreams_info.max_channels, 6);
-    SEQLIB_CHECK_EQ(sweet_dreams_info.master_volume, 12);
-}
-
-// The channels that games set for each song, a compiler's swapped registers, a cartridge without the driver, and a
-// player table with an entry of zeros.
-void TestDetectionVariants()
-{
-    const uint32_t voices = SawVoices();
-
-    // Fire Emblem and Kuru Kuru Kururin set the DirectSound channels for the song they start.
-    Cart emblem;
-    emblem.GameCode("AE7E");
-    emblem.PutHalfwords(0x08003FC0,
-                        {0xB580, 0xB081, 0x466F, 0x6038, 0x6838, 0x285A, 0xD010, 0x285A, 0xDC04, 0x282A, 0xDC18,
-                         0x2829, 0xDB16, 0xE009, 0x285F, 0xD007, 0x285F, 0xDC02, 0x285C, 0xD003, 0xE00E, 0x2874,
-                         0xD000, 0xE00B, 0x4804, 0x2108, 0x5641, 0x2908, 0xD002, 0x2008, 0xF7FF, 0xFFC6});
-    emblem.Song({Track().Fine()}, voices);
-    const Rom emblem_rom = emblem.ToRom();
-    const DriverInfo emblem_info = Detect(emblem_rom);
-    SEQLIB_CHECK_EQ(SongChannels(emblem_rom, emblem_info, 41), 8);
-    SEQLIB_CHECK_EQ(SongChannels(emblem_rom, emblem_info, 40), emblem_info.max_channels);
-    Cart kururin;
-    kururin.GameCode("AKRP");
-    kururin.Put32(0x0801EF6C + 4, 2);
-    kururin.Song({Track().Fine()}, voices);
-    const Rom kururin_rom = kururin.ToRom();
-    const DriverInfo kururin_info = Detect(kururin_rom);
-    SEQLIB_CHECK_EQ(SongChannels(kururin_rom, kururin_info, 1), 2);
-    SEQLIB_CHECK_EQ(SongChannels(kururin_rom, kururin_info, 24), kururin_info.max_channels);
-    SEQLIB_CHECK_EQ(Sequencer(kururin_rom, kururin_info, 1).DirectChannels(), 2);
-
-    // Some games' compiler swaps r2 and r3 in the routine that starts a song. The mono mixer's volume code marks a
-    // mixer that plays every channel on both sides.
-    Cart swapped;
-    swapped.Song({Track().Fine()}, voices);
-    const uint16_t kSwapped[] = {0x4B08, 0x4909, 0x0B40, 0x1840, 0x8882, 0x0051, 0x1889, 0x0089, 0x18C9};
-    for (uint32_t i = 0; i < 9; i++)
-    {
-        swapped.Put16(kSongStart + 4 + 2 * i, kSwapped[i]);
-    }
-    const uint8_t kMono[] = {0xA0, 0x78, 0xE1, 0x78, 0x40, 0x18, 0x68, 0x43, 0x40, 0x0A, 0xA0, 0x72};
-    for (uint32_t i = 0; i < 12; i++)
-    {
-        swapped.Put8(kMonoVolume + i, kMono[i]);
-    }
-
-    const DriverInfo swapped_info = Detect(swapped.ToRom());
-
-    SEQLIB_CHECK_EQ(swapped_info.song_start, kSongStart);
-    SEQLIB_CHECK_EQ(swapped_info.song_table, kSongTable);
-    SEQLIB_CHECK_EQ(swapped_info.player_table, kPlayerTable);
-    SEQLIB_CHECK(swapped_info.mono);
-
-    // A cartridge without the driver's code fails, unless the song table is given.
-    Cart bare(kMode, {10}, false);
-    bare.Song({Track().Fine()}, voices);
-    const Rom bare_rom = bare.ToRom();
-    DriverOverrides table;
-    table.song_table = kSongTable;
-    DriverInfo none;
-    // The failure clears an earlier message.
-    std::string error = "an earlier message";
-
-    SEQLIB_CHECK(!DetectDriver(bare_rom, DriverOverrides(), none, error) && error.empty());
-    SEQLIB_CHECK(DetectDriver(bare_rom, table, none, error));
-    SEQLIB_CHECK_EQ(none.song_count, 1);
-    SEQLIB_CHECK_EQ(SongPlayer(bare_rom, none, 0).track_count, 16);
-    // An entry of zeros in the player table is a player with no tracks. The players after it still count. A song plays
-    // no more tracks than its player has. Song 82 of Advance Wars is such a song.
-    Cart gap(kMode, {10, 1});
-    for (uint32_t i = 0; i < 12; i += 4)
-    {
-        gap.Put32(kPlayerTable + i, 0);
-    }
-    gap.Song({Track().Fine(), Track().Fine()}, voices, 1);
-    const Rom gap_rom = gap.ToRom();
-
-    const DriverInfo gap_info = Detect(gap_rom);
-
-    SEQLIB_REQUIRE_EQ(gap_info.players.size(), 2);
-    SEQLIB_CHECK_EQ(gap_info.players[0].track_count, 0);
-    SEQLIB_CHECK_EQ(SongPlayer(gap_rom, gap_info, 0).track_count, 1);
-}
-
-void TestUnusedPlayers()
-{
-    // The music player table's entry 1 is zeros: an unused player. Detection reads on past it. A song on player 2 plays
-    // as many of its tracks as player 2 has room for. A song on the unused player plays nothing.
-    Cart cart(kMode, {10, 3, 2});
-    for (uint32_t i = 0; i < 12; i += 4)
-    {
-        cart.Put32(kPlayerTable + 12 + i, 0);
-    }
-    const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
-    const Track track = Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 127).Note(24, 60, 127).Wait(24).Fine();
-    cart.Song({track, track, track}, voices, 2);
-    cart.Song({track}, voices, 1);
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("unused_player");
-
-    SEQLIB_REQUIRE_EQ(info.players.size(), 3);
-    SEQLIB_CHECK(info.players[1].track_count == 0 && info.players[2].track_count == 2);
-    SEQLIB_CHECK_EQ(info.song_count, 2);
-    SEQLIB_CHECK(Sequencer(rom, info, 0).Valid() && Sequencer(rom, info, 0).TrackCount() == 2);
-    SEQLIB_CHECK(!Sequencer(rom, info, 1).Valid());
-    SEQLIB_CHECK(!ConvertSong(rom, info, 1, opt, nullptr).ok);
-}
-
 void TestTiming()
 {
     // The driver adds the tempo to a counter each frame, and plays a tick for each 150 in it. At the start, before a
     // tempo command, it adds 150. A tempo command of 75 sets a tempo of 150 (150 quarter notes a minute at 60 frames a
-    // second), so a tick is a frame. One of 60 sets 120, so a tick takes 1.25 frames, and tick 24 is on frame 30.
+    // second): a tick is then a frame. One of 60 sets 120. A tick then takes 1.25 frames, and tick 24 is on frame 30.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
     cart.Song({Track().Cmd(kCmdTempo, 75).Cmd(kCmdVoice, 0).Cmd(kCmdVol, 100).Wait(24).Note(24, 60, 100).Fine()},
@@ -423,6 +72,7 @@ void TestNotes()
             {
                 ons.push_back(a);
             }
+
             if (a.kind == Action::kRelease)
             {
                 releases.push_back(a);
@@ -437,10 +87,11 @@ void TestNotes()
     SEQLIB_CHECK(ons[0].key == 60 && ons[0].velocity == 100 && ons[0].program == 0 && ons[0].channel == 0);
 }
 
-void TestChannels()
+// The cart of the channel tests: two DirectSound channels and four tracks. Track 0, of priority 10, plays keys 60 and
+// 62 and releases 60. Track 1, of priority 0, plays 64 and then 65 on the saw. Tracks 2 and 3 play 70 and 72 on square
+// 1.
+Rom ChannelsRom()
 {
-    // Two DirectSound channels. Track 0, of priority 10, holds both. A note of track 1, of priority 0, finds none it
-    // can take. Once track 0 releases a note, track 1 takes its channel, released notes first.
     Cart cart(0x00940200);
     const uint32_t kSquare = 0;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0), 60, {255, 0, 255, 250})},
@@ -460,7 +111,15 @@ void TestChannels()
                Track().Cmd(kCmdVoice, 1).Cmd(kCmdVol, 127).Tie(70, 100).Wait(12).Fine(),
                Track().Cmd(kCmdVoice, 1).Cmd(kCmdVol, 127).Wait(1).Tie(72, 100).Wait(12).Fine()},
               voices);
-    const Rom rom = cart.ToRom();
+
+    return cart.ToRom();
+}
+
+void TestChannels()
+{
+    // Two DirectSound channels. Track 0, of priority 10, plays on both. A note of track 1, of priority 0, finds none it
+    // can take. Once track 0 releases a note, track 1 takes its channel, released notes first.
+    const Rom rom = ChannelsRom();
     const DriverInfo info = Detect(rom);
 
     Sequencer seq(rom, info, 0);
@@ -480,6 +139,7 @@ void TestChannels()
         {
             ons.push_back({a.key, a.channel});
         }
+
         if (a.kind == Action::kNoteDropped)
         {
             dropped.push_back({a.key, int(a.tick)});
@@ -496,30 +156,12 @@ void TestChannels()
 
 // The song of TestChannels with the channels grown: the notes that the driver left out take grown channels after the
 // console's 16. Track 1's key 64 takes DirectSound channel 16, and track 3's 72 a square 1 in PSG unit 1. Key 65 takes
-// channel 0, as on the console: key 60 there is in its release. The grown square writes the unit's registers as the
-// driver writes the console's: its duty and length, its pitch and its envelope, and its outputs in the unit's NR51.
+// channel 0. The console does the same: key 60 there is in its release. The grown square writes the unit's registers
+// the way the driver writes the console's: its duty and length, its pitch and its envelope, and its outputs in the
+// unit's NR51.
 void TestGrownChannels()
 {
-    Cart cart(0x00940200);
-    const uint32_t kSquare = 0;
-    const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0), 60, {255, 0, 255, 250})},
-                                             {1, Cart::Voice(1, kSquare, 60, {0, 0, 15, 0})}});
-    cart.Song({Track()
-                   .Cmd(kCmdTempo, 75)
-                   .Cmd(kCmdPrio, 10)
-                   .Cmd(kCmdVoice, 0)
-                   .Cmd(kCmdVol, 127)
-                   .Tie(60, 100)
-                   .Tie(62, 100)
-                   .Wait(2)
-                   .Eot(60)
-                   .Wait(10)
-                   .Fine(),
-               Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 127).Wait(1).Tie(64, 100).Wait(2).Tie(65, 100).Wait(10).Fine(),
-               Track().Cmd(kCmdVoice, 1).Cmd(kCmdVol, 127).Tie(70, 100).Wait(12).Fine(),
-               Track().Cmd(kCmdVoice, 1).Cmd(kCmdVol, 127).Wait(1).Tie(72, 100).Wait(12).Fine()},
-              voices);
-    const Rom rom = cart.ToRom();
+    const Rom rom = ChannelsRom();
     const DriverInfo info = Detect(rom);
 
     Sequencer seq(rom, info, 0);
@@ -532,6 +174,7 @@ void TestGrownChannels()
         {
             actions.push_back(a);
         }
+
         for (const agblib::agb::RegisterWrite& write : seq.SoundWrites())
         {
             if (write.address >= agblib::agb::kGrownPsgRegisters)
@@ -551,6 +194,7 @@ void TestGrownChannels()
         }
         dropped += a.kind == Action::kNoteDropped;
     }
+
     const std::vector<std::pair<int, int>> kOns = {
         {60, 0}, {62, 1}, {70, kFirstPsgChannel}, {64, kChannelCount}, {72, kChannelCount + 1}, {65, 0}};
     SEQLIB_CHECK(ons == kOns);
@@ -584,13 +228,14 @@ void TestGrownChannels()
             console_dropped += a.kind == Action::kNoteDropped;
         }
     }
+
     SEQLIB_CHECK(console_dropped == 2 && console.ChannelCount() == kChannelCount);
 }
 
 void TestEnvelope()
 {
     // An attack of 100 a frame, a decay of 128/256 a frame to a sustain level of 64, and a release of 128/256 a frame
-    // after the note's 96 ticks. With an echo volume of 16 and an echo length of 3, the release holds at 16 for 3
+    // after the note's 96 ticks. With an echo volume of 16 and an echo length of 3, the release stays at 16 for 3
     // frames and then stops.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0), 60, {100, 128, 64, 128})}});
@@ -636,7 +281,7 @@ void TestEnvelope()
 void TestEnvelopeHold()
 {
     // The frame in which a sample note's attack reaches 255 plays at 255, and the decay starts on the next frame. The
-    // SoundFont holds the full level for that frame where the decay changes the level: below a sustain of 255. A PSG
+    // SoundFont keeps the full level for that frame where the decay changes the level: below a sustain of 255. A PSG
     // voice's envelope steps on the hardware's counter instead.
     const DriverInfo info;
     Voice sample;
@@ -663,7 +308,7 @@ void TestEnvelopeHold()
 void TestPsgEnvelopeBytes()
 {
     // The driver counts a PSG voice's whole attack, decay and release bytes. An attack of 10 takes 10 counts a step, 16
-    // counts every 15 frames. A sustain above 15 never falls below the full level. The zone holds it.
+    // counts every 15 frames. A sustain above 15 never falls below the full level. The zone keeps it.
     const DriverInfo info;
     Voice slow;
     slow.type = 2;
@@ -763,9 +408,9 @@ void TestLevelReports()
 
 void TestDroppedNotes()
 {
-    // With one DirectSound channel, the second of two notes at once is left out of the MIDI file, as in the game. After
-    // a tempo command of 150, a frame plays two ticks, so a note of one tick that starts on a frame's first tick is
-    // released before the mixer has started it. It never sounds, and it's left out too.
+    // With one DirectSound channel, the second of two notes at once is left out of the MIDI file. The game leaves it
+    // out too. After a tempo command of 150, a frame plays two ticks. A note of one tick that starts on a frame's first
+    // tick is therefore released before the mixer has started it. It never sounds, and it's left out too.
     Cart cart(0x00940100);
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
     cart.Song({Track()
@@ -810,7 +455,8 @@ void TestSongChannels()
                        Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 127).Note(24, 62, 100).Wait(24).Fine()},
                       voices);
         }
-        cart.GameCode("BE8E");
+
+        cart.SetGameCode("BE8E");
         cart.PutHalfwords(0x080028FC, kRoutine);
         cart.Put16(0x080028FC, first);
 
@@ -851,7 +497,8 @@ void TestSongSettings()
             cart.Song({Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 100).Note(24, 60, 100).Wait(24).Fine()}, voices, 0, 0,
                       s == 2 ? reverb : 0);
         }
-        cart.GameCode(code);
+
+        cart.SetGameCode(code);
 
         return cart.ToRom();
     };
@@ -900,7 +547,7 @@ void TestSongSettings()
 
 void TestDoubledNote()
 {
-    // Two notes of one key that a track starts on one tick make one MIDI note, which goes on as long as either of them
+    // Two notes of one key that a track starts on one tick make one MIDI note. It goes on as long as either of them
     // sounds. After a tempo command of 150, the note of one tick is released before the mixer has started it, but the
     // note of 24 ticks still plays.
     Cart cart;
@@ -942,8 +589,8 @@ uint32_t Micros(double frames)
 void TestTempoChange()
 {
     // At a tempo of 200, a frame adds 200 to the tick counter. Tick 2 runs in frame 2 with 100 of the counter left
-    // over, so a change to a tempo of 50 there makes tick 3 come a frame later, in frame 3, rather than 3 frames later.
-    // The MIDI file's tick 2 takes the 100 at the old tempo and the other 50 at the new one: 1.5 frames.
+    // over. A change to a tempo of 50 there therefore makes tick 3 come a frame later, in frame 3, rather than 3 frames
+    // later. The MIDI file's tick 2 takes the 100 at the old tempo and the other 50 at the new one: 1.5 frames.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
     cart.Song({Track()
@@ -976,9 +623,9 @@ void TestTempoChange()
 
 void TestPsgPitch()
 {
-    // A noise note bent up 3 semitones plays the noise setting 3 keys up, 1.6 times as fast, so the MIDI file bends it
-    // by 8.14 semitones, with a range of 9. A square note at key 38 bent down 4 semitones plays at key 36, the lowest,
-    // so the MIDI file bends it by 2.
+    // A noise note bent up 3 semitones plays the noise setting 3 keys up, 1.6 times as fast. The MIDI file therefore
+    // bends it by 8.14 semitones, with a range of 9. A square note at key 38 bent down 4 semitones plays at key 36, the
+    // lowest. The MIDI file bends it by 2.
     Cart cart;
     const uint32_t voices =
         cart.VoiceGroup({{0, Cart::Voice(4, 0, 60, {0, 0, 15, 0})}, {1, Cart::Voice(1, 2, 60, {0, 0, 15, 0})}});
@@ -1034,8 +681,8 @@ void TestPsgPitch()
 
 void TestPsgRelease()
 {
-    // A noise note bent up 3 semitones plays the noise setting 3 keys up, which the MIDI file bends up 8.14 semitones,
-    // with a range of 9. Its release goes on at that pitch after the note ends on tick 6, so the bend stays there until
+    // A noise note bent up 3 semitones plays the noise setting 3 keys up. The MIDI file bends that up 8.14 semitones,
+    // with a range of 9. Its release goes on at that pitch after the note ends on tick 6. The bend stays there until
     // the track's next note, a sample on tick 24, which plays with the track's bend of 3 semitones.
     Cart cart;
     const uint32_t voices =
@@ -1074,7 +721,7 @@ void TestPsgRelease()
 void TestQuietPsg()
 {
     // A PSG note's level is its two volumes added up and divided by 16. At a velocity of 32 and a track volume of 31,
-    // that rounds to 0, so the note never sounds and the MIDI file leaves it out. At a velocity of 96 it sounds.
+    // that rounds to 0. The note then never sounds and the MIDI file leaves it out. At a velocity of 96 it sounds.
     Cart cart;
     const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(1, 2, 60, {0, 0, 15, 0})}});
     cart.Song({Track()
@@ -1096,6 +743,85 @@ void TestQuietPsg()
 
     const auto ons = ReadMidi(r.midi_path).Find(0x90);
     SEQLIB_CHECK(ons.size() == 1 && ons[0].tick == 12 * kMidiTicks && ons[0].bytes[1] == 62);
+}
+
+void TestSilentSongs()
+{
+    // A song makes no sound when each of its notes plays at a level of 0, and nothing is written for it. The test
+    // cartridges' master volume of 12 plays a sample at full envelope at 207/256 of its two volumes. A sample note's
+    // volumes at a track volume of 127 are about its velocity. The wave channel's level is its two volumes added up and
+    // divided by 16. NR32 mutes a level of 1.
+    //  - Song 0: a track volume of 0. Silent.
+    //  - Song 1: a velocity of 2 at a track volume of 127 gives volumes of 1. The mixer plays them at 0. Silent.
+    //  - Song 2: a velocity of 4 gives volumes of 3. The mixer plays them at 2, and the song sounds.
+    //  - Song 3: a note starts at a track volume of 0 and sounds once VOL raises the volume.
+    //  - Song 4: the wave channel at velocity 16 has volumes of 15 and a level of 1. Silent.
+    //  - Song 5: at velocity 17, the volumes are 16 and the level is 2. NR32 plays level 2 at 25%, and the song sounds.
+    //  - Song 6: track 0 at a track volume of 0 and track 1 at 127. Silent on track 0 alone.
+    //  - Song 7: a sample panned hard right, at a volume of 0 on the left. It sounds.
+    //  - Song 8: a sample panned hard left, at a volume of 0 on the right. It sounds.
+    Cart cart;
+    const uint32_t wave = cart.Place(std::vector<uint8_t>(16, 0x0F));
+    const uint32_t voices = cart.VoiceGroup(
+        {{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}, {1, Cart::Voice(3, wave, 60, {0, 0, 15, 0})}});
+
+    const auto one_note = [](uint8_t voice, int volume, int velocity)
+    {
+        return Track().Cmd(kCmdVoice, voice).Cmd(kCmdVol, volume).Note(12, 60, velocity).Wait(12).Fine();
+    };
+
+    cart.Song({one_note(0, 0, 4)}, voices);
+    cart.Song({one_note(0, 127, 2)}, voices);
+    cart.Song({one_note(0, 127, 4)}, voices);
+    cart.Song({Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 0).Note(48, 60, 100).Wait(24).Cmd(kCmdVol, 100).Wait(24).Fine()},
+              voices);
+    cart.Song({one_note(1, 127, 16)}, voices);
+    cart.Song({one_note(1, 127, 17)}, voices);
+    cart.Song({one_note(0, 0, 100), one_note(0, 127, 100)}, voices);
+    cart.Song({Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 100).Cmd(kCmdPan, 0x7F).Note(12, 60, 100).Wait(12).Fine()},
+              voices);
+    cart.Song({Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 100).Cmd(kCmdPan, 0x00).Note(12, 60, 100).Wait(12).Fine()},
+              voices);
+    const Rom rom = cart.ToRom();
+    const DriverInfo info = Detect(rom);
+    ConvertSettings first_track = TempSettings("silent_track");
+    first_track.track_mask = 1;
+
+    std::vector<SongReport> reports;
+    for (int s = 0; s < 9; s++)
+    {
+        reports.push_back(ConvertSong(rom, info, s, TempSettings("silent_" + std::to_string(s)), nullptr));
+    }
+
+    const SongReport track = ConvertSong(rom, info, 6, first_track, nullptr);
+
+    constexpr std::array<bool, 9> kSilent = {true, true, false, false, true, false, false, false, false};
+    for (size_t s = 0; s < kSilent.size(); s++)
+    {
+        SEQLIB_CHECK(reports[s].ok && reports[s].silent == kSilent[s] && reports[s].midi_path.empty() == kSilent[s]);
+    }
+
+    SEQLIB_CHECK(track.ok && track.silent && track.midi_path.empty());
+}
+
+void TestSilentMonoSongs()
+{
+    // The mono mixer plays a sample on both sides at the average of its two volumes. A song with one sample track
+    // sounds at a track volume of 100 and makes no sound at 0.
+    Cart cart;
+    PutMonoMixer(cart);
+    const uint32_t voices = cart.VoiceGroup({{0, Cart::Voice(0, cart.Wave(Saw(), 13379, 0))}});
+    cart.Song({Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 100).Note(12, 60, 100).Wait(12).Fine()}, voices);
+    cart.Song({Track().Cmd(kCmdVoice, 0).Cmd(kCmdVol, 0).Note(12, 60, 100).Wait(12).Fine()}, voices);
+    const Rom rom = cart.ToRom();
+    const DriverInfo info = Detect(rom);
+
+    const SongReport sounds = ConvertSong(rom, info, 0, TempSettings("mono_sounds"), nullptr);
+    const SongReport silent = ConvertSong(rom, info, 1, TempSettings("mono_silent"), nullptr);
+
+    SEQLIB_REQUIRE(info.mono);
+    SEQLIB_CHECK(sounds.ok && !sounds.silent && !sounds.midi_path.empty());
+    SEQLIB_CHECK(silent.ok && silent.silent && silent.midi_path.empty());
 }
 
 void TestPsgLevels()
@@ -1146,6 +872,7 @@ void TestPsgLevels()
             velocities[on.bytes[1]] = on.bytes[2];
         }
     }
+
     SEQLIB_CHECK(r.ok);
     SEQLIB_CHECK(velocities == (std::map<int, int>{{60, 87}, {62, 66}, {64, 109}, {65, 127}}));
 }
@@ -1222,17 +949,8 @@ void TestVoiceBytes()
     SEQLIB_CHECK(std::equal(split_bytes.begin(), split_bytes.end(), split.begin(), split.end()));
 }
 
-// Camelot's version of the driver has an unused copy of the routine that starts a song, whose literal pool is zeroed,
-// before the one the game uses. Its note start and mixer have changes of their own, which detection finds by their
-// code.
-
 int RunTests()
 {
-    TestDecoding();
-    TestDetection();
-    TestSoundModes();
-    TestDetectionVariants();
-    TestUnusedPlayers();
     TestTiming();
     TestNotes();
     TestChannels();
@@ -1250,6 +968,8 @@ int RunTests()
     TestPsgPitch();
     TestPsgRelease();
     TestQuietPsg();
+    TestSilentSongs();
+    TestSilentMonoSongs();
     TestPsgLevels();
     TestDump();
     TestVoiceBytes();

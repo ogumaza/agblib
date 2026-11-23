@@ -20,6 +20,7 @@
 
 #include "seqlib/testing/check.h"
 #include "seqlib/wav.h"
+#include "xsflib/testing/near.h"
 
 #include "agblib/sequence_export/agb/beat_grid.h"
 #include "agblib/sequence_export/agb/settings.h"
@@ -41,9 +42,12 @@ using agblib::testing::agb_files::ReadAll;
 using agblib::testing::agb_files::ReadSf2;
 using agblib::testing::agb_files::Sf2Records;
 using agblib::testing::agb_files::TempPath;
+using xsflib::testing::Near;
 
 namespace
 {
+
+using seqlib::testing::Throws;
 
 void TestFileNames()
 {
@@ -73,6 +77,7 @@ void TestSf2Writer()
     {
         s.data.push_back(int16_t(i * 100));
     }
+
     s.sample_rate = 16000;
     s.loop_start = 10;
     s.loop_end = 90;
@@ -166,6 +171,7 @@ Sf2File SfzSoundFont()
     {
         square.data.push_back(int16_t(i % 8 < 4 ? 8192 : -8192));
     }
+
     square.loop_start = 8;
     square.loop_end = 16;
     sf2::Sample sample;
@@ -240,27 +246,13 @@ void TestTrackSfzRefusals()
 
     // A preset past the SoundFont's, and a zone that contains an envelope, are refused.
     const std::vector<SfzTrack> past = {{"Square 1", 2, {1}}};
-    bool refused = false;
-    try
-    {
-        TrackSfz(sf, past, "Song 01", "test");
-    }
-    catch (const std::invalid_argument&)
-    {
-        refused = true;
-    }
+    bool refused = Throws<std::invalid_argument>([&] { TrackSfz(sf, past, "Song 01", "test"); });
+
     SEQLIB_CHECK(refused);
 
     AddVolumeEnvelope(sf.instruments[0].zones[1], {.release = 0});
-    refused = false;
-    try
-    {
-        TrackSfz(sf, tracks, "Song 01", "test");
-    }
-    catch (const std::invalid_argument&)
-    {
-        refused = true;
-    }
+    refused = Throws<std::invalid_argument>([&] { TrackSfz(sf, tracks, "Song 01", "test"); });
+
     SEQLIB_CHECK(refused);
 }
 
@@ -301,6 +293,7 @@ void TestSongBanks()
         SEQLIB_CHECK(song2[127].bank == 2 && song2[127].program == 127);
         SEQLIB_CHECK(song2[128].bank == 0 && song2[128].program == 3 && song2[129].program == 4);
     }
+
     SEQLIB_CHECK(song1.size() == 2 && song1[0].bank == 1 && song1[0].program == 0);
 
     // A SoundFont of one song's goes on from bank 0 into bank 1.
@@ -325,12 +318,6 @@ void TestSongBanks()
     SEQLIB_CHECK(fits.size() == 128 && fits[0].bank == 0 && fits[0].program == 127);
 }
 
-// Returns true if `a` and `b` are within `tolerance` of each other.
-bool Near(double a, double b, double tolerance = 1e-6)
-{
-    return std::fabs(a - b) <= tolerance;
-}
-
 // A steady beat of 16th notes that should last 6.5 frames, written as 6 and 7: the notes go onto the beat, a quarter
 // note lasts 26 frames, and channels playing quarter notes, an echo 11 frames behind and chords played as quick
 // arpeggios keep in step with them. The echo keeps its delay, and the arpeggios' quick notes keep theirs.
@@ -342,6 +329,7 @@ void TestBeatGridSteady()
         channels[0].push_back(1 + k * 13 / 2);
         channels[2].push_back(12 + k * 13 / 2);
     }
+
     channels[2].insert(channels[2].begin(), 1);
 
     for (uint32_t k = 0; k <= 16; k++)
@@ -361,13 +349,13 @@ void TestBeatGridSteady()
 
     SEQLIB_CHECK_EQ(grid.Tempos().size(), size_t(1));
     SEQLIB_CHECK(Near(grid.Tempos()[0].frames, 26, 0.02));
-    SEQLIB_CHECK(Near(grid.Quarters(0, 1), 0));
-    SEQLIB_CHECK(Near(grid.Quarters(0, 7), 0.25));
-    SEQLIB_CHECK(Near(grid.Quarters(0, 14), 0.5));
-    SEQLIB_CHECK(Near(grid.Quarters(0, 20), 0.75));
-    SEQLIB_CHECK(Near(grid.Quarters(1, 27), 1));
+    SEQLIB_CHECK(Near(grid.Quarters(0, 1), 0, 1e-6));
+    SEQLIB_CHECK(Near(grid.Quarters(0, 7), 0.25, 1e-6));
+    SEQLIB_CHECK(Near(grid.Quarters(0, 14), 0.5, 1e-6));
+    SEQLIB_CHECK(Near(grid.Quarters(0, 20), 0.75, 1e-6));
+    SEQLIB_CHECK(Near(grid.Quarters(1, 27), 1, 1e-6));
     SEQLIB_CHECK(Near(grid.Quarters(2, 18) - grid.Quarters(0, 7), 11.0 / 26, 0.002));
-    SEQLIB_CHECK(Near(grid.Quarters(3, 14), 0.5));
+    SEQLIB_CHECK(Near(grid.Quarters(3, 14), 0.5, 1e-6));
     SEQLIB_CHECK(Near(grid.Quarters(3, 15) - grid.Quarters(3, 14), 1.0 / 26, 0.002));
 }
 
@@ -393,14 +381,15 @@ void TestBeatGridRitardando()
     {
         notes.push_back(frame);
     }
+
     notes.push_back(frame);
 
     const BeatGrid grid({notes, notes}, {});
 
-    SEQLIB_CHECK(Near(grid.Quarters(0, 1 + 23 * 15), 15));
-    SEQLIB_CHECK(Near(grid.Quarters(0, again), 22));
-    SEQLIB_CHECK(Near(grid.Quarters(0, again + 23), 23));
-    SEQLIB_CHECK(Near(grid.Quarters(again + 46), 24));
+    SEQLIB_CHECK(Near(grid.Quarters(0, 1 + 23 * 15), 15, 1e-6));
+    SEQLIB_CHECK(Near(grid.Quarters(0, again), 22, 1e-6));
+    SEQLIB_CHECK(Near(grid.Quarters(0, again + 23), 23, 1e-6));
+    SEQLIB_CHECK(Near(grid.Quarters(again + 46), 24, 1e-6));
     SEQLIB_CHECK(grid.Tempos().size() >= 4);
     SEQLIB_CHECK(Near(grid.Tempos().back().frames, 23, 0.01));
 }
@@ -424,9 +413,9 @@ void TestBeatGridRubato()
 
     const BeatGrid grid({notes, notes, echo}, {});
 
-    SEQLIB_CHECK(Near(grid.Quarters(0, notes[1]), 0.5));
-    SEQLIB_CHECK(Near(grid.Quarters(1, notes[10]), 5));
-    SEQLIB_CHECK(Near(grid.Quarters(0, notes[19]), 9.5));
+    SEQLIB_CHECK(Near(grid.Quarters(0, notes[1]), 0.5, 1e-6));
+    SEQLIB_CHECK(Near(grid.Quarters(1, notes[10]), 5, 1e-6));
+    SEQLIB_CHECK(Near(grid.Quarters(0, notes[19]), 9.5, 1e-6));
     SEQLIB_CHECK(grid.Quarters(2, echo[11]) > 5 && grid.Quarters(2, echo[11]) < 5.5);
     SEQLIB_CHECK(Near(grid.Tempos()[0].frames, 40, 0.01));
 }
@@ -443,6 +432,7 @@ void TestBeatGridRubatoLoop()
         {
             hints.insert(hints.end(), {notes.back(), notes.back()});
         }
+
         for (const uint32_t length : {20u, 20u, 20u, 19u, 19u, 18u, 17u, 17u, 16u, 15u, 15u,
                                       15u, 15u, 16u, 18u, 19u, 20u, 22u, 22u, 24u, 26u, 32u})
         {
@@ -455,7 +445,7 @@ void TestBeatGridRubatoLoop()
     const double first = grid.Quarters(0, hints[0]);
     for (size_t i = 2; i < hints.size(); i += 2)
     {
-        SEQLIB_CHECK(Near(grid.Quarters(0, hints[i]) - grid.Quarters(0, hints[i - 2]), first));
+        SEQLIB_CHECK(Near(grid.Quarters(0, hints[i]) - grid.Quarters(0, hints[i - 2]), first, 1e-6));
     }
 }
 
@@ -475,6 +465,7 @@ void TestBeatGridRubatoAfterRubato()
                 notes.push_back(notes.back() + length);
             }
         }
+
         hints.insert(hints.end(), {notes.back(), notes.back()});
     };
 
@@ -487,7 +478,7 @@ void TestBeatGridRubatoAfterRubato()
 
     const BeatGrid grid({notes, notes}, hints);
 
-    SEQLIB_CHECK(Near(grid.Quarters(0, rubato + 16) - grid.Quarters(0, rubato), 0.5));
+    SEQLIB_CHECK(Near(grid.Quarters(0, rubato + 16) - grid.Quarters(0, rubato), 0.5, 1e-6));
 }
 
 // The tempo changes where a hint says it may: from 16th notes of 6.5 frames to 7.5, or from 26 frames a quarter note to
@@ -510,9 +501,9 @@ void TestBeatGridTempoChange()
 
     SEQLIB_CHECK_EQ(grid.Tempos().size(), size_t(2));
     SEQLIB_CHECK(Near(grid.Tempos()[0].frames, 26, 0.01));
-    SEQLIB_CHECK(Near(grid.Tempos()[1].quarter, 12));
+    SEQLIB_CHECK(Near(grid.Tempos()[1].quarter, 12, 1e-6));
     SEQLIB_CHECK(Near(grid.Tempos()[1].frames, 30, 0.01));
-    SEQLIB_CHECK(Near(grid.Quarters(0, kChange + 15), 12.5));
+    SEQLIB_CHECK(Near(grid.Quarters(0, kChange + 15), 12.5, 1e-6));
 }
 
 // A run of 32nd notes of 4, 4, 4, 3 and 4 frames before 32nd notes of 10/3 frames: the run sets the tempo note by note,
@@ -536,7 +527,7 @@ void TestBeatGridWholeUnits()
     for (size_t i = 5; i < 69; i++)
     {
         const double thirty_seconds = grid.Quarters(0, run[i]) * 8;
-        SEQLIB_CHECK(Near(thirty_seconds, std::round(thirty_seconds)));
+        SEQLIB_CHECK(Near(thirty_seconds, std::round(thirty_seconds), 1e-6));
     }
 }
 
@@ -562,11 +553,11 @@ void TestBeatGridMarker()
 
     const BeatGrid grid(channels, {});
 
-    SEQLIB_CHECK(Near(grid.Quarters(1, 89), 3 + 1.0 / 3));
+    SEQLIB_CHECK(Near(grid.Quarters(1, 89), 3 + 1.0 / 3, 1e-6));
     SEQLIB_CHECK(grid.Snap(89) > grid.Quarters(1, 89) + 0.001);
-    SEQLIB_CHECK(Near(grid.Marker(89), grid.Quarters(1, 89)));
-    SEQLIB_CHECK(Near(grid.Marker(80), 3));
-    SEQLIB_CHECK(Near(grid.Marker(93), 3.5));
+    SEQLIB_CHECK(Near(grid.Marker(89), grid.Quarters(1, 89), 1e-6));
+    SEQLIB_CHECK(Near(grid.Marker(80), 3, 1e-6));
+    SEQLIB_CHECK(Near(grid.Marker(93), 3.5, 1e-6));
 }
 
 // Runs every test. Returns the exit code.

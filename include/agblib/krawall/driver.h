@@ -23,7 +23,7 @@ using agblib::agb::Rom;
 // User-supplied overrides for driver detection.
 struct DriverOverrides
 {
-    uint32_t module_table = 0; // a table of the game's modules, a word each, which takes the place of the scan
+    uint32_t module_table = 0; // a table of the game's modules, a word each, in place of the scan
     int module_count = 0;
     std::string program = "ntdlib"; // the name that the messages of what can't be read give
 };
@@ -43,7 +43,7 @@ struct ModuleInfo
     uint8_t tempo = 0;        // BPM
     bool instruments = false; // XM instruments, rather than S3M samples
     bool linear = false;      // XM's linear frequencies, rather than Amiga periods
-    bool fast_slides = false; // S3M's fast volume slides, which slide on a row's first tick too
+    bool fast_slides = false; // S3M's fast volume slides: they slide on a row's first tick too
     uint8_t volume_opt = 0;   // a flag that the player doesn't read
     uint8_t amiga_limits = 0; // a flag that the player doesn't read
     std::vector<uint32_t> patterns;
@@ -151,12 +151,12 @@ struct ModuleSong
     int music_volume = -1; // krapSetMusicVol()'s volume that the game sets after krapPlay(), or -1 for none
 };
 
-// Krawall's tables, which the player reads, and the settings that the game gives the mixer.
+// Krawall's tables that the player reads, and the settings that the game gives the mixer.
 struct DriverInfo
 {
     Build build = Build::k2003_09_01;
     uint32_t version = 0;     // the library's version string, or 0 if the game doesn't have it
-    uint32_t play = 0;        // krapPlay(), which starts a module (Thumb)
+    uint32_t play = 0;        // krapPlay(): starts a module (Thumb)
     uint32_t samples = 0;     // the game's table of samples: a word for each sample's header
     uint32_t instruments = 0; // the game's table of instruments: a word for each instrument
     uint32_t sine = 0;        // 64 signed halfwords each: the vibrato's sine, ramp, square and random waves
@@ -173,9 +173,9 @@ struct DriverInfo
     uint32_t master_volume = 0x80; // the game's kramSetMasterVol(): the output's level, and above, the mix's shift
     uint32_t music_volume = 128;   // the game's krapSetMusicVol() before it plays music: the music's level
     uint32_t music_fade_in = 0;    // the game raises the music volume by this a frame from 0 after each start, or 0
-    uint32_t module_table = 0;     // the game's table of modules, a word each, which the scan found, or 0
+    uint32_t module_table = 0;     // the game's table of modules that the scan found, a word each, or 0
     uint32_t play_table = 0;       // the game's table of what it plays, 8 bytes an entry, or 0
-    int table_count = 0;           // its entries, which come first in `modules`
+    int table_count = 0;           // its entries: the first ones of `modules`
     std::vector<uint32_t> modules;
     std::vector<ModuleSong> songs; // the pieces that the conversion numbers, in the modules' order
 
@@ -185,7 +185,7 @@ struct DriverInfo
     std::shared_ptr<const Rom> unpacked;
     std::vector<uint32_t> files;
 
-    std::vector<std::string> log;      // detection results, as text
+    std::vector<std::string> log;      // detection results as text
     std::vector<std::string> warnings; // assumptions detection had to make
 };
 
@@ -202,7 +202,7 @@ uint32_t SampleEnd(const Rom& rom, Build build, uint32_t sample);
 // Returns the offset of a module's table of patterns in the build's header.
 uint32_t ModulePatterns(Build build);
 
-// Return the row count of the pattern at `pattern` and the address of its first row's data, as the build lays them out.
+// Return the row count of the pattern at `pattern` and the address of its first row's data as the build lays them out.
 uint32_t PatternRows(const Rom& rom, Build build, uint32_t pattern);
 uint32_t PatternData(Build build, uint32_t pattern);
 

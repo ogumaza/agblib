@@ -14,8 +14,8 @@ namespace agblib::sequence_export::agb
 namespace
 {
 
-// Target tempo range in BPM, with the upper bound excluded. Doubling the rows per beat halves the tempo, so exactly one
-// power-of-two choice falls within a twofold range.
+// Target tempo range in BPM, with the upper bound excluded. Doubling the rows per beat halves the tempo. Exactly one
+// power-of-two choice therefore falls within a twofold range.
 constexpr double kSlowestBeat = 105;
 constexpr double kFastestBeat = 210;
 
@@ -36,6 +36,7 @@ void BarSignature(MidiTrack& conductor, uint32_t tick, size_t ticks, const Meter
         note /= 2;
         pow2++;
     }
+
     conductor.TimeSignature(tick, int(ticks / note), pow2);
 }
 
@@ -59,10 +60,13 @@ std::vector<OrderRun> OrderRuns(const std::vector<ModuleStep>& steps)
             {
                 runs.back().steps = i - runs.back().start;
             }
+
             runs.push_back({i, 0, s.order, s.pattern_row});
         }
+
         last_row = s.pattern_row;
     }
+
     if (!runs.empty())
     {
         runs.back().steps = steps.size() - runs.back().start;
@@ -95,6 +99,7 @@ Meter ChooseMeter(const std::vector<uint32_t>& ticks, const std::vector<OrderRun
     {
         eighth_rows *= 2;
     }
+
     const Meter simple = {quarter_rows * row_ticks, false};
     const Meter compound = {2 * eighth_rows * row_ticks, true};
 
@@ -145,6 +150,7 @@ std::vector<uint32_t> BarStarts(const std::vector<ModuleStep>& steps, const std:
             {
                 starts.push_back(ticks[i]);
             }
+
             at += ticks[i + 1] - ticks[i];
         }
     }
@@ -164,6 +170,7 @@ void WriteBarSignatures(MidiTrack& conductor, const std::vector<uint32_t>& bars,
             bar_ticks = ticks;
         }
     }
+
     if (bar_ticks == 0)
     {
         BarSignature(conductor, 0, BarTicks(meter), meter);

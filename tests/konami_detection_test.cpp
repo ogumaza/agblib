@@ -35,6 +35,7 @@ void TestDetectionScan()
     {
         scanned += line.find("(from data scan)") != std::string::npos;
     }
+
     SEQLIB_CHECK_EQ(scanned, 2);
 
     // Data that parses but isn't laid out like the driver's isn't taken for a song table: here, one byte between the
@@ -42,7 +43,7 @@ void TestDetectionScan()
     SEQLIB_CHECK(!DetectDriver(ScanRom(1), DriverOverrides(), info, err));
     SEQLIB_CHECK(err.empty());
 
-    // A table whose first song doesn't parse isn't taken, and neither is the rest of it after that song, which looks
+    // A table whose first song doesn't parse isn't taken, and neither is the rest of it after that song. The rest looks
     // like a table of its own. Song 0 uses F4 and runs up to song 1, and songs 1 and 2 are like ScanRom's.
     Image partial(0x400);
     constexpr uint32_t kTable = kRomBase + 0x100;
@@ -66,7 +67,7 @@ void TestDetectionScan()
     later.Song(kTable, 2, kRomBase + 0x182, 0, {});
     later.PutBytes(kRomBase + 0x182, {0x00, 0xF4, 0x00, 0xFD});
 
-    DriverOverrides rate_only; // so that the mixer rate, which it has no code for, isn't a warning
+    DriverOverrides rate_only; // the mixer rate: the cartridge has no code for it, and it gives no warning
     rate_only.mix_rate = 16000;
 
     const bool found = DetectDriver(later.ToRom(), rate_only, info, err);
@@ -101,7 +102,7 @@ void TestDetectionScan()
     SEQLIB_CHECK(
         logged("the sample table that the note-start code loads isn't in the ROM, scanning data for the sample table"));
 
-    // A sample table whose entries aren't in order is only a guess, which is a warning.
+    // A sample table whose entries aren't in order is only a guess. The guess gives a warning.
     Image swapped = ScanImage();
     swapped.Put32(kScanSampleTable, kScanSampleTable + 52);
     swapped.Put32(kScanSampleTable + 4, kScanSampleTable + 8);
@@ -136,7 +137,7 @@ void TestSongTableFromOtherCode()
 
     const bool found = DetectDriver(m.ToRom(), DriverOverrides(), info, err);
 
-    // The table is laid out like the driver's song data, so it's taken.
+    // The table is laid out like the driver's song data. It's taken.
     SEQLIB_CHECK(found);
     SEQLIB_CHECK_EQ(info.song_table, kScanSongTable);
     SEQLIB_CHECK(std::count(info.log.begin(), info.log.end(), "song table 0x08000100 (from play-song code)") == 1);
@@ -280,10 +281,10 @@ void TestRevisionDetection()
     const Result older = detect(0x2DFE, 0x2DF8);
     const Result none = detect(0, 0);
 
-    // A reader that compares FF and then FE is from an older revision than the Ultimate Masters revision's, which
-    // compares FD. Of those, the WCT 2004 revision goes on with EF and FA, the Rave Master revision with EF and F5, the
-    // Eternal Duelist revision with EF and F3, and the Dungeon Dice Monsters revision with EF and FC. The synthetic
-    // image has none of the tables that the Dungeon Dice Monsters revision's notes read.
+    // A reader that compares FF and then FE is from an older revision than the Ultimate Masters revision. That
+    // revision's reader compares FD. Of those, the WCT 2004 revision goes on with EF and FA, the Rave Master revision
+    // with EF and F5, the Eternal Duelist revision with EF and F3, and the Dungeon Dice Monsters revision with EF and
+    // FC. The synthetic image has none of the tables that the Dungeon Dice Monsters revision's notes read.
     SEQLIB_CHECK(wct2004.found && wct2004.info.revision == Revision::kWct2004);
     SEQLIB_CHECK(wct2004.info.log[0] == "WCT 2004 revision of the driver (from the command reader at 0x08000800)");
     SEQLIB_CHECK(rave_master.found && rave_master.info.revision == Revision::kRaveMaster);
@@ -327,7 +328,7 @@ void TestRevisionDetection()
                  "command reader not recognised, assuming the Ultimate Masters revision of the driver");
 
     // Without its tables given, a cartridge that holds only the command reader has no song table to find. The reader
-    // still shows that the game has the driver, so detection fails with an error that names it, where a cartridge
+    // still shows that the game has the driver. Detection therefore fails with an error that names it. A cartridge
     // without the reader shows no sign of the driver.
     Image reader_only(0x1000);
     reader_only.PutHalfwords(kCode, CommandReader(0x2DFE, 0x2DFA));
@@ -376,7 +377,7 @@ void TestDetectionFromCode()
         m.Put32(header + 8, 0xFFFFFFFF);
     }
 
-    DriverOverrides rate_only; // so that the mixer rate, which it has no code for, isn't a warning
+    DriverOverrides rate_only; // the mixer rate: the cartridge has no code for it, and it gives no warning
     rate_only.mix_rate = 16000;
     rate_only.program = "mytool"; // the name that the messages give
     DriverInfo info;
@@ -465,14 +466,9 @@ void TestSampleTableChoice()
         }
     }
 
-    DriverOverrides ov;
-    ov.song_table = kTable;
-    ov.song_count = 1;
-    ov.mix_rate = 16000;
     DriverInfo info;
-    std::string err;
 
-    const bool found = DetectDriver(m.ToRom(), ov, info, err);
+    const bool found = DetectGiven(m.ToRom(), kTable, 1, info, 0);
 
     // The table in which every sample reads is taken, rather than the first one found.
     SEQLIB_CHECK(found);
@@ -480,11 +476,11 @@ void TestSampleTableChoice()
     SEQLIB_CHECK(info.warnings.empty());
 
     // Without the second copy of the code, and with a song that only plays samples 0 and 1, half of the samples in the
-    // first table read, which is enough.
+    // first table read. That's enough.
     m.PutHalfwords(kRomBase + 0x840, std::vector<uint16_t>(kNoteStartCode.size(), 0));
     m.PutBytes(kRomBase + 0x200, {0x00, 0xA7, 0x00, 0x01, 0xA7, 0x01, 0x01, 0xFE});
 
-    const bool found_half = DetectDriver(m.ToRom(), ov, info, err);
+    const bool found_half = DetectGiven(m.ToRom(), kTable, 1, info, 0);
 
     SEQLIB_CHECK(found_half);
     SEQLIB_CHECK_EQ(info.sample_table, kRomBase + 0x400);
@@ -503,14 +499,9 @@ void TestWaveLoaderForms()
     CodeWithLiterals(m, kLoader, {0xB510, 0x1C04, 0x4B00, 0x2A00, 0xD01E, 0x2080, 0x4008, 0x2800, 0xD002, 0x4B00},
                      {{2, kRomBase + 0x600}, {9, kRomBase + 0x700}});
 
-    DriverOverrides ov;
-    ov.song_table = kTable;
-    ov.song_count = 1;
-    ov.mix_rate = 16000;
     DriverInfo info;
-    std::string err;
 
-    const bool found = DetectDriver(m.ToRom(), ov, info, err);
+    const bool found = DetectGiven(m.ToRom(), kTable, 1, info, 0);
 
     SEQLIB_CHECK(found);
     SEQLIB_CHECK_EQ(info.wave_table, kRomBase + 0x600);
@@ -521,7 +512,7 @@ void TestWaveLoaderForms()
     CodeWithLiterals(m, kLoader, {0xB510, 0x1C04, 0x4B00, 0x2080, 0x4008, 0x2800, 0xD002, 0x4B00},
                      {{2, kRomBase + 0x680}, {7, kRomBase + 0x780}});
 
-    const bool found_without_check = DetectDriver(m.ToRom(), ov, info, err);
+    const bool found_without_check = DetectGiven(m.ToRom(), kTable, 1, info, 0);
 
     SEQLIB_CHECK(found_without_check);
     SEQLIB_CHECK_EQ(info.wave_table, kRomBase + 0x680);

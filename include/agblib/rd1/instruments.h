@@ -28,7 +28,26 @@ enum class InstrumentKind
     kNone,     // no record
 };
 
-// An instrument record. The records of the kinds that play hold an envelope; the sizes of the records differ.
+// The bytes of an instrument record of kind `kind`: 32 for a sample or a sample at a fixed pitch, 36 for a PSG channel,
+// 8 for a drum kit and 12 for a key split. kNone has none.
+uint32_t RecordBytes(InstrumentKind kind);
+
+// The bytes of a sample's header, six words: the length of its points at +0, its rate at +4, its root key at +8, the
+// start of its loop at +0xC, the end of its loop at +0x10 and the address of its points at +0x14.
+constexpr uint32_t kSampleHeaderBytes = 24;
+
+// The points of a sample that the driver can read: their address, and their count up to the later of the sample's
+// length and the end of its loop, one byte a point, at most kMaxSamplePoints.
+struct SamplePoints
+{
+    uint32_t address = 0;
+    uint32_t count = 0;
+};
+
+// Returns the points of the sample whose header is at `header`.
+SamplePoints PointsOfSample(const Rom& rom, uint32_t header);
+
+// An instrument record. The records of the kinds that play contain an envelope; the sizes of the records differ.
 struct InstrumentRecord
 {
     uint32_t address = 0;
@@ -53,7 +72,7 @@ struct InstrumentRecord
 // Returns the driver's pitch of key `key` in Hz: the pitch table's whole number.
 int KeyPitch(const Rom& rom, const DriverInfo& info, int key);
 
-// Returns the square or wave channel's frequency setting for a pitch of `hz`, as the driver works it out
+// Returns the square or wave channel's frequency setting for a pitch of `hz` as the driver works it out
 // (0x080F28C4).
 int PsgSetting(int hz);
 

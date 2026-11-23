@@ -101,11 +101,11 @@ constexpr TablePattern kWaveVolumes = {"2904 D900 2104 0609 0E09 4Axx 48xx 1809 
 // The instrument lookup, for instruments with a sample for each key.
 constexpr TablePattern kKeyEnvelope = {"8869 1859 4Axx 0070 1840 8800 8050 6022 48xx 6060", 8};
 
-// The lookup of the music's entry in Super Mario Advance 3's play-music routine. The game's table holds a halfword for
-// each music number, with the sequence in its low byte. The code is ldr r1, =table; lsls r0, r4, #1; adds r0, r0, r1;
-// ldrh r1, [r0]; ldrb r5, [r0]; movs r0, #0x80; lsls r0, r0, #3; ands r0, r1; cmp r0, #0; beq. The movs, lsls and ands
-// pick bit 10 of the entry. With the bit set, movs r0, #voices and a bl follow. The bl calls the routine that requests
-// that many sample voices.
+// The lookup of the music's entry in Super Mario Advance 3's play-music routine. The game's table contains a halfword
+// for each music number, with the sequence in its low byte. The code is ldr r1, =table; lsls r0, r4, #1; adds r0, r0,
+// r1; ldrh r1, [r0]; ldrb r5, [r0]; movs r0, #0x80; lsls r0, r0, #3; ands r0, r1; cmp r0, #0; beq. The movs, lsls and
+// ands pick bit 10 of the entry. With the bit set, movs r0, #voices and a bl follow. The bl calls the routine that
+// requests that many sample voices.
 constexpr const char* kPlayMusicPattern = "49xx 0060 1840 8801 7805 2080 00C0 4008 2800 D0xx 20xx Fxxx Fxxx";
 
 // The lookup of the music's sequence in Super Mario Advance 2's play-music routine, and the request that follows it.
@@ -118,8 +118,8 @@ constexpr const char* kMutingPlayMusicPattern =
     "48xx 0069 1809 780C 20xx 1C21 Fxxx Fxxx 1C28 Fxxx Fxxx 2Cxx D1xx 21xx 0xx9 2Dxx D1xx 21xx 0xx9 20xx 2201 Fxxx "
     "Fxxx";
 
-// The driver's routine that makes request 0x0100. That request sets the mute of a player's tracks: r0 = the player,
-// r1 = a mask of its tracks and r2 = the mute. The request holds its type, then (player << 16) | mute, then the mask.
+// The driver's routine that makes request 0x0100. That request sets the mute of a player's tracks: r0 = the player, r1
+// = a mask of its tracks and r2 = the mute. The request contains its type, then (player << 16) | mute, then the mask.
 constexpr const char* kMuteRequestPattern = "B510 0612 0E12 4Bxx 681C 2380 005B 8023 0400 4310 6060 60A1";
 
 // Super Mario Advance 2's routine that mutes tracks of the music by the game's state: push {r4, lr}; lsls r0, r0, #24;
@@ -154,7 +154,7 @@ constexpr RevisionTraits kSuperMarioAdvance2Traits = {
 constexpr RevisionTraits kSuperMarioAdvance3Traits = {.volume_scale = 1, .volume_shift = 8};
 
 // The part of the ROM that detection searches for the driver's code: from the driver's init up to the next copy's init.
-// A cartridge can hold a second copy of the driver in the multiboot image that the game sends to other GBAs. The two
+// A cartridge can contain a second copy of the driver in the multiboot image that the game sends to other GBAs. The two
 // copies can be different revisions. In Super Mario Advance 3, the image of Mario Bros. has the Super Mario Advance 2
 // revision, and the game has a later one.
 struct DriverCopy
@@ -246,10 +246,10 @@ bool PlausibleSequence(const Rom& rom, uint32_t at)
 
 // What the code of the game's play-music routine gives: its table of music and the requests that it makes along with
 // the request for the sequence. Super Mario Advance 3's form picks the sample voices by a bit of the entry, `bit`:
-// `with_bit` voices with it and `without_bit` without. `volumes` holds each music number that sets the player's second
-// volume, and the volume it sets. Super Mario Advance 2's form mutes tracks of one sequence, `muted_sequence`. Every
-// music number that plays it mutes the tracks in `mask`, except `music`. That one mutes those in `music_mask`. The
-// requests go to `player`, through the driver's routine at `mute_request` (kMuteRequestPattern). Unless the player
+// `with_bit` voices with it and `without_bit` without. `volumes` contains each music number that sets the player's
+// second volume, and the volume it sets. Super Mario Advance 2's form mutes tracks of one sequence, `muted_sequence`.
+// Every music number that plays it mutes the tracks in `mask`, except `music`. That one mutes those in `music_mask`.
+// The requests go to `player`, through the driver's routine at `mute_request` (kMuteRequestPattern). Unless the player
 // rides Yoshi, that game also mutes the tracks in `yoshi_mask` of each music whose entry has `yoshi_bit` set
 // (kYoshiMutePattern).
 struct PlayMusicRoutine
@@ -323,7 +323,7 @@ std::optional<uint32_t> ShiftedValue(const Rom& rom, uint32_t at)
 }
 
 // Reads Super Mario Advance 2's play-music routine where kMutingPlayMusicPattern matches it, at `at`. The form requires
-// both requests to go to the same player and the masks to hold only the player's tracks. The last bl has to call the
+// both requests to go to the same player and the masks to contain only the player's tracks. The last bl has to call the
 // request that mutes tracks (kMuteRequestPattern). Returns nothing if the code doesn't take that form.
 std::optional<PlayMusicRoutine> ParseMutingPlayMusic(const Rom& rom, uint32_t at)
 {
@@ -351,7 +351,7 @@ std::optional<PlayMusicRoutine> ParseMutingPlayMusic(const Rom& rom, uint32_t at
 
 // Reads into `routine` Super Mario Advance 2's routine that mutes tracks unless the player rides Yoshi.
 // kYoshiMutePattern matches the routine at `at`. The routine has to read the play-music routine's table and request the
-// mute on its player. The mask has to hold only the player's tracks. The last bl has to call the routine that the
+// mute on its player. The mask has to contain only the player's tracks. The last bl has to call the routine that the
 // play-music routine calls for the mute. Leaves `routine` as it is if the code doesn't take that form.
 void ParseYoshiMute(const Rom& rom, uint32_t at, PlayMusicRoutine& routine)
 {
@@ -381,6 +381,7 @@ MusicSettings SettingsOf(const PlayMusicRoutine& routine, uint32_t music, uint16
             s.volume2 = volume;
         }
     }
+
     if ((entry & 0xFF) == routine.muted_sequence)
     {
         s.muted_tracks = music == routine.music ? routine.music_mask : routine.mask;
@@ -426,6 +427,7 @@ void ApplyMusicTable(const Rom& rom, const PlayMusicRoutine& routine, uint32_t g
             {
                 return v.muted_tracks == m.muted_tracks;
             };
+
             if (versions.front().music < 0)
             {
                 versions.front() = m;
@@ -481,6 +483,7 @@ std::string MusicSettingsLine(const PlayMusicRoutine& routine, const DriverInfo&
         {
             voices += (voices.empty() ? "" : ", ") + std::to_string(sequence);
         }
+
         if (s.volume2 != MusicSettings().volume2)
         {
             volume2 += (volume2.empty() ? "" : ", ") + std::to_string(sequence) + " (" +
@@ -499,6 +502,7 @@ std::string MusicSettingsLine(const PlayMusicRoutine& routine, const DriverInfo&
                 muted.push_back(TrackList(mask) + " as music " + std::to_string(v.music));
             }
         }
+
         if (!muted.empty())
         {
             mutes.push_back("in sequence " + std::to_string(sequence) + ", " + ListOf(muted));
@@ -525,6 +529,7 @@ std::string MusicSettingsLine(const PlayMusicRoutine& routine, const DriverInfo&
         {
             list += (list.empty() ? "" : "; ") + m;
         }
+
         line += "; muted tracks: " + (list.empty() ? "none" : list);
     }
 
@@ -686,6 +691,7 @@ void ReadEffects(const Rom& rom, DriverInfo& info)
                 end = std::min(end, offset);
             }
         }
+
         for (uint32_t t = 0;
              2 * t < end && rom.Contains(sequence + 2 * t, 2) && info.sound_effects.size() < kMaxEffects; t++)
         {
@@ -705,7 +711,7 @@ void ReadEffects(const Rom& rom, DriverInfo& info)
 // 0x03000144 runs voice 1, voice 0, then voices 2 to 6. The other games start from the init's order.
 void SetFreeVoices(const Rom& rom, DriverInfo& info)
 {
-    if (rom.GameCode() == "AX4E" && rom.U8(agblib::agb::kRomBase + 0xBC) == 1)
+    if (rom.GameCode() == "AX4E" && rom.Version() == 1)
     {
         info.free_voices = {1, 0, 2, 3, 4, 5, 6};
     }
@@ -734,6 +740,7 @@ void LogDetection(const Rom& rom, const std::string& music, DriverInfo& info)
                            "-" + std::to_string(first + info.sound_effects.size() - 1) +
                            "), bank lists: " + Hex(info.effect_bank_lists));
     }
+
     info.log.push_back("pitch table: " + Hex(info.pitch_table) + ", frequency table: " + Hex(info.frequency_table) +
                        ", noise table: " + Hex(info.noise_table) + ", LFO table: " + Hex(info.lfo_table));
     if (!music.empty())

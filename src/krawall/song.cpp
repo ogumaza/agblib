@@ -20,7 +20,7 @@ using agblib::agb::WriteTextFile;
 namespace
 {
 
-// The effects' names, as the player's table of effects lists them.
+// The effects' names as the player's table of effects lists them.
 constexpr const char* kEffectNames[] = {
     "no effect",
     "speed",
@@ -105,10 +105,12 @@ std::string EntryText(const RowEntry& entry, uint8_t flags)
     {
         text += " " + NoteName(entry.note);
     }
+
     if (entry.instrument)
     {
         text += " i" + std::to_string(entry.instrument);
     }
+
     if (flags & kEntryVolume)
     {
         if (entry.volume <= 0x60)
@@ -122,6 +124,7 @@ std::string EntryText(const RowEntry& entry, uint8_t flags)
             text += line;
         }
     }
+
     if (flags & kEntryEffect)
     {
         const uint8_t effect = entry.effect;
@@ -150,6 +153,7 @@ std::string PatternText(const Rom& rom, Build build, int number, uint32_t patter
         {
             text += EntryText(ReadEntry(rom, build, flags, at), flags);
         }
+
         out += text + "\n";
     }
 
@@ -168,8 +172,8 @@ bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::strin
         return false;
     }
 
-    // A song of a module that holds several lists the whole module. The first line names the module by its place in the
-    // list.
+    // A song of a module that contains several lists the whole module. The first line names the module by its place in
+    // the list.
     std::string out;
     char line[256];
     const int place = int(std::find(info.modules.begin(), info.modules.end(), module.address) - info.modules.begin());
@@ -178,6 +182,7 @@ bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::strin
         std::snprintf(line, sizeof line, "Song %d of ", info.songs[size_t(song)].song);
         out += line;
     }
+
     std::snprintf(line, sizeof line,
                   "%s %d at 0x%08X: %d channels, %d orders, restart at order %d, speed %d, tempo %d, global volume "
                   "%d, %s, %s periods%s\n",
@@ -194,11 +199,13 @@ bool DumpSong(const Rom& rom, const DriverInfo& info, int song, const std::strin
         const uint8_t o = module.orders[size_t(i)];
         out += o == kOrderSkip ? " +++" : o == kOrderEnd ? " ---" : " " + std::to_string(o);
     }
+
     out += "\nPans:";
     for (int c = 0; c < module.channels; c++)
     {
         out += " " + std::to_string(module.channel_pan[size_t(c)]);
     }
+
     out += "\n";
 
     // Each pattern's rows.

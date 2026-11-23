@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 
-// The patterns of Krawall's modules in the common form of `ntdlib::commands`. A sequence holds a module's patterns: the
-// bytes from its first pattern to the end of the pattern that starts last. In the games, the module's header follows.
-// The patterns lie back to back, in the order of the module's table of patterns, each padded with bytes of 0 to a
-// multiple of 4 bytes from the sequence's start. A pattern starts with an index of every 4th row's data and its row
-// count (kPatternIndexEntries, kPatternRows). Its rows follow. A row lists the channels that it has data for, and a 0
-// ends it.
+// The patterns of Krawall's modules in the common form of `ntdlib::commands`. A sequence contains a module's patterns:
+// the bytes from its first pattern to the end of the pattern that starts last. In the games, the module's header
+// follows. The patterns are back to back, in the order of the module's table of patterns, each padded with bytes of 0
+// to a multiple of 4 bytes from the sequence's start. A pattern starts with an index of every 4th row's data and its
+// row count (kPatternIndexEntries, kPatternRows). Its rows follow. A row lists the channels that it has data for, and a
+// 0 ends it.
 //
 // The items of a pattern:
 //   kOther         the pattern's start, with kPatternOpcode in `encoding.opcode`. The encoder works the index and the
 //                  row count out from the rows. In a pattern of fewer than 64 rows, the index's entries past the rows
-//                  are spare. `bytes` holds them where they aren't 0, as the pattern holds them
+//                  are spare. `bytes` contains them where they aren't 0, as the pattern contains them
 //   kNote          a note, with the note's number from 1 for C-0 in `key` and its instrument in `sample`, from 1, or 0
 //                  for none. A note has no velocity
 //   kProgram       an instrument without a note, in `value`
@@ -32,11 +32,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+
 #include "agblib/agb/encoded.h"
 #include "agblib/agb/rom.h"
 #include "agblib/krawall/driver.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace agblib::krawall
 {
@@ -78,10 +79,11 @@ struct Decoded
 // std::invalid_argument for empty bytes or a start outside them.
 Decoded DecodeSequence(std::span<const uint8_t> data, std::span<const uint32_t> starts, const Traits& traits);
 
-// The sequences that a ROM's Krawall holds: one for each module of DriverInfo::modules.
+// The sequences that a ROM's Krawall contains: one for each module of DriverInfo::modules.
 int SequenceCount(const DriverInfo& info);
 
-// The sequence that holds piece `song`: its module's. Throws std::out_of_range for a piece that the game lacks.
+// The sequence that contains piece `song`: its module's. Throws std::out_of_range for a piece that the game doesn't
+// have.
 int SequenceOfSong(const DriverInfo& info, int song);
 
 // The address of sequence `sequence`'s first byte: its module's first pattern, or 0 where the module's header can't be
@@ -100,7 +102,7 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence);
 using Encoded = agb::Encoded;
 
 // Encodes `sequence`, with its patterns at the items `entries`. Throws std::invalid_argument for an entry that isn't a
-// pattern's start, a value that the build's bytes can't hold, an item that a pattern can't hold, items before the
+// pattern's start, a value that the build's bytes can't contain, an item that a pattern can't contain, items before the
 // first pattern, a row without its end, and an index entry past 65535 bytes.
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, std::span<const uint32_t> entries,
                        const Traits& traits);

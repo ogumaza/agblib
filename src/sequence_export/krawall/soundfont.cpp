@@ -46,7 +46,7 @@ Sf2File InstrumentSet::Build(const Rom& rom, const DriverInfo& info) const
         std::snprintf(name, sizeof name, "Sample %03d", inst.index);
 
         // The game's sample: 8-bit points, unsigned, from its header's end. A loop back and forth plays its points
-        // backwards after them, so the SoundFont's sample loops over both.
+        // backwards after them. The SoundFont's sample therefore loops over both.
         auto it = samples.find(header);
         if (it == samples.end())
         {
@@ -75,6 +75,7 @@ Sf2File InstrumentSet::Build(const Rom& rom, const DriverInfo& info) const
                         s.data.push_back(s.data[length - 1 - i]);
                     }
                 }
+
                 s.loop_end = uint32_t(s.data.size());
                 LengthenLoop(s);
                 AddLoopGuard(s);
@@ -100,8 +101,10 @@ Sf2File InstrumentSet::Build(const Rom& rom, const DriverInfo& info) const
             {
                 z.generators.push_back(sf2::Generator::Value(sf2::kStartAddrsCoarseOffset, int(offset / 32768)));
             }
+
             std::snprintf(name, sizeof name, "Sample %03d +%u", inst.index, unsigned(offset));
         }
+
         z.generators.push_back(sf2::Generator::Value(sf2::kSampleModes, Looped(sample) ? 1 : 0));
         z.generators.push_back(sf2::Generator::Value(sf2::kSampleId, it->second));
 

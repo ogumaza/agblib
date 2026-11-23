@@ -20,7 +20,7 @@ namespace agblib::krawall
 namespace
 {
 
-// The stand-in for getDmaAddress(&left, &right): it stores the buffers' addresses and returns the frame's samples, as
+// The stand-in for getDmaAddress(&left, &right): it stores the buffers' addresses and returns the frame's samples as
 // a movs and an lsls by 1 or more.
 std::array<uint16_t, 12> DmaStandIn(uint32_t left, uint32_t right, int samples)
 {
@@ -66,6 +66,7 @@ GameDriver::GameDriver(const agb::Rom& rom, const GameRoutines& routines) : rout
             system_.Store(copy.destination + i, 1, system_.Load(copy.source + i, 1));
         }
     }
+
     for (const GameRoutines::Store& store : routines_.stores)
     {
         system_.Store(store.address, store.size, store.value);
@@ -77,6 +78,7 @@ GameDriver::GameDriver(const agb::Rom& rom, const GameRoutines& routines) : rout
         {
             throw std::invalid_argument("getDmaAddress() isn't 4-byte aligned");
         }
+
         const auto stand_in = DmaStandIn(routines_.out_left, routines_.out_right, routines_.frame_samples);
         for (size_t i = 0; i < stand_in.size(); i++)
         {
@@ -110,6 +112,7 @@ uint32_t GameDriver::Play(const DriverInfo& info, const ModuleSong& song)
                 throw std::invalid_argument("the game's table of modules doesn't list the module");
             }
         }
+
         Call({routines_.play_entry, {n}});
         return song.module;
     }
@@ -121,10 +124,12 @@ uint32_t GameDriver::Play(const DriverInfo& info, const ModuleSong& song)
         {
             system_.Store(store.address, store.size, store.value);
         }
+
         if (song.music_volume >= 0 && routines_.set_music_vol)
         {
             Call({routines_.set_music_vol, {uint32_t(song.music_volume), 0}});
         }
+
         return song.module;
     }
 
@@ -133,6 +138,7 @@ uint32_t GameDriver::Play(const DriverInfo& info, const ModuleSong& song)
     {
         throw std::invalid_argument("the module has no music file");
     }
+
     const uint32_t file = info.files[size_t(at - info.modules.begin())];
     Call({routines_.play_file, {file, mode & kModeJingle ? 0u : 1u}});
     const uint32_t module = system_.Load(routines_.player + 8, 4);
@@ -161,10 +167,12 @@ void GameDriver::Frame()
     {
         Call({routines_.frame_routine, {}});
     }
+
     for (const GameRoutines::Store& store : routines_.worker_state)
     {
         system_.Store(store.address, store.size, store.value);
     }
+
     Call({routines_.worker, {}, true});
 }
 

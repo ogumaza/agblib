@@ -106,7 +106,7 @@ class GameDriver
 {
 public:
     // Loads the cartridge, runs the driver's init and sets the echo as the game does. Throws std::runtime_error when a
-    // routine fails, and std::invalid_argument when `routines.voices_call` holds no call.
+    // routine fails, and std::invalid_argument when `routines.voices_call` contains no call.
     GameDriver(const agb::Rom& rom, const GameRoutines& routines);
     GameDriver(const GameDriver&) = delete;
     GameDriver& operator=(const GameDriver&) = delete;
@@ -135,8 +135,8 @@ public:
     const std::vector<int8_t>& FifoA() const;
     const std::vector<int8_t>& FifoB() const;
 
-    // The bytes that lie in each ring between its read place and its write place: what the FIFOs play before the bytes
-    // of the next frame.
+    // The bytes in each ring between its read place and its write place: what the FIFOs play before the bytes of the
+    // next frame.
     std::vector<int8_t> PendingA();
     std::vector<int8_t> PendingB();
 

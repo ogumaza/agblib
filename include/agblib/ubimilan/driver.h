@@ -57,8 +57,8 @@ enum ResourceType : uint8_t
 constexpr int kFullVolume = 64;
 
 // The MIDI key of the first sample that plays as music. The kit's keys end below it. Each sample has a key, and a
-// shared SoundFont can then hold them all. A sample whose loop doesn't start with its first point has a second key this
-// far above the first. The second key plays from the loop's start.
+// shared SoundFont can then contain them all. A sample whose loop doesn't start with its first point has a second key
+// this far above the first. The second key plays from the loop's start.
 constexpr int kFirstSampleKey = 81;
 constexpr int kLoopKeyOffset = 20;
 
@@ -114,7 +114,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
 
 // Returns true if channel 9's kit plays in version `version` of song `song`. The game starts the songs in
 // DriverInfo::kit_off_songs with the kit switched off. The first version of such a song leaves the kit out. The second
-// plays it, as the game does once it switches the kit on.
+// plays it as the game does once it switches the kit on.
 bool KitPlays(const DriverInfo& info, int song, int version);
 
 // Returns the address of resource `id`, or 0 if the bank has no such resource or it isn't in the ROM.
@@ -144,7 +144,7 @@ struct MusicPiece
     uint32_t address = 0;
     int flags = 0;              // the bits that Loops() and KeepsKitVoice() read
     std::vector<int> sequences; // the sequences' resource numbers
-    int sample = -1;            // the resource of a piece that is a sample, or -1. Its flags hold 1 if the sample loops
+    int sample = -1; // the resource of a piece that is a sample, or -1. Its flags contain 1 if the sample loops
 };
 
 // Reads song `song`, a piece of music or a sample that the game plays as music. Returns false if it isn't in the ROM or

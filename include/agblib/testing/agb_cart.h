@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-// Helpers for the GBA's tests: small synthetic cartridges built in memory, so no game ROM is needed, and a temporary
-// folder for the files that a test writes.
+// Helpers for the GBA's tests: small synthetic cartridges built in memory, and a temporary folder for the files that a
+// test writes. No game ROM is needed.
 
 #pragma once
 
@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "xsflib/bytes.h"
@@ -82,6 +83,9 @@ public:
     // Writes the Thumb bl at address `a` that calls `target`.
     void PutBl(uint32_t a, uint32_t target);
 
+    // Writes `code` as the game code in the cartridge's header (0xAC), which detection reads to tell games apart.
+    void SetGameCode(std::string_view code);
+
     // Grows or shrinks the image to `size` bytes. New bytes are 0.
     void Resize(size_t size);
 
@@ -103,7 +107,7 @@ inline std::filesystem::path TempPath(const std::string& name)
 
 inline std::FILE* OpenTempFile(const std::string& name)
 {
-    // MSVC warns that std::fopen is unsafe, so it gets fopen_s, which does the same here.
+    // MSVC warns that std::fopen is unsafe. It therefore gets fopen_s, which does the same here.
     const std::string path = TempPath(name).string();
     std::FILE* f = nullptr;
 #ifdef _MSC_VER
@@ -157,6 +161,11 @@ inline void CartImage::PutBl(uint32_t a, uint32_t target)
     const uint32_t offset = target - (a + 4);
     Put16(a, uint16_t(0xF000 | ((offset >> 12) & 0x7FF)));
     Put16(a + 2, uint16_t(0xF800 | ((offset >> 1) & 0x7FF)));
+}
+
+inline void CartImage::SetGameCode(std::string_view code)
+{
+    PutBytes(kRomBase + 0xAC, std::vector<uint8_t>(code.begin(), code.end()));
 }
 
 inline void CartImage::Resize(size_t size)

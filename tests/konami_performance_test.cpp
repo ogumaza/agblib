@@ -65,6 +65,7 @@ CartImage Cart(Revision revision, const std::map<int, std::vector<uint8_t>>& tra
             at = uint16_t(at + track->second.size());
         }
     }
+
     cart.PutBytes(kBase + kRest, {0x00, 0xFD});
 
     cart.Put32(kSamples + 4 * 5, kHeader);
@@ -150,6 +151,7 @@ void CheckAgainstMidi(const Rom& rom, const konami::DriverInfo& info, const Perf
             in_performance.push_back({perf.midi_places[note.id - 1].on, note.key});
         }
     }
+
     Check(in_performance == in_file, "the performance holds the MIDI file's notes");
 }
 
@@ -272,6 +274,7 @@ void TestOtherCauses()
                       perf.note_starts[notes[1].id - 1] == driver_export::NoteStart{0, NoteCause::kOther},
                   "the volume's note leads to the volume");
         }
+
         const std::vector<MixChange> mix = {{0, Mix::kVolume, 3}, {4, Mix::kVolume, 5}};
         Check(perf.mix[0] == mix, "the volume's mix");
         CheckAgainstMidi(rom, info, perf, {});
@@ -322,6 +325,7 @@ void TestOtherCauses()
                   "a step of an attack belongs to its note");
             Check(perf.note_commands[note.id - 1].offset == 4, "each step leads to the note command");
         }
+
         Check(earlier, "the attack's steps start notes");
         CheckAgainstMidi(rom, info, perf, {});
     }
@@ -353,6 +357,7 @@ void TestDungeonDice()
         Check(here[0].on == 0 && perf.note_commands[here[0].id - 1].offset == 5,
               "the track's note leads to its command");
     }
+
     const std::vector<Note> next = NotesOf(perf.tracks[5]);
     if (Check(!next.empty(), "a note on the next track"))
     {
@@ -360,6 +365,7 @@ void TestDungeonDice()
                   perf.note_starts[next[0].id - 1] == driver_export::NoteStart{4, NoteCause::kNote},
               "the next track's note leads to the track before it");
     }
+
     if (Check(!perf.mix[5].empty(), "the next track's mix"))
     {
         Check(perf.mix[5][0] == MixChange{4, Mix::kVolume, 7}, "the next track's volume");

@@ -36,6 +36,7 @@ void Player::Advance(MixChannel& m, uint32_t samples)
         {
             m.status = 0;
         }
+
         return;
     }
 
@@ -54,6 +55,7 @@ void Player::Mix(uint32_t amount)
         sums_.assign(amount, 0);
         volume_sums_ = {};
     }
+
     if (mix_enhanced_)
     {
         // The enhanced samples whose times fall in the amount.
@@ -84,6 +86,7 @@ void Player::Mix(uint32_t amount)
                 volume_sums_[0] += m.left;
                 volume_sums_[1] += m.right;
             }
+
             MixPlaying(m, amount);
         }
     }
@@ -92,6 +95,7 @@ void Player::Mix(uint32_t amount)
     {
         Convert(amount);
     }
+
     elapsed_ += amount;
 }
 
@@ -135,6 +139,7 @@ void Player::SkipSilent(MixChannel& m, uint32_t amount) const
             {
                 m.pos -= m.loop_length;
             }
+
             if (turns & 1)
             {
                 m.pos = m.end - (m.pos - m.loop_from);
@@ -147,6 +152,7 @@ void Player::SkipSilent(MixChannel& m, uint32_t amount) const
             {
                 m.pos += m.loop_length;
             }
+
             if (turns & 1)
             {
                 m.pos = m.loop_from + (m.end - m.pos);
@@ -185,6 +191,7 @@ void Player::MixPlaying(MixChannel& m, uint32_t todo)
             num = int32_t(((m.pos - m.loop_from) << 14) + (uint32_t(m.frac) >> 2));
             den = int32_t(0u - uint32_t(m.inc)) >> 2;
         }
+
         if (fits)
         {
             MixPoints(m, at, todo);
@@ -200,10 +207,12 @@ void Player::MixPlaying(MixChannel& m, uint32_t todo)
             Advance(m, todo);
             break;
         }
+
         if (fit & 3)
         {
             fit = (fit & ~3) + 4;
         }
+
         if (fit >= int32_t(todo))
         {
             MixPoints(m, at, uint32_t(fit));
@@ -230,12 +239,14 @@ void Player::MixPlaying(MixChannel& m, uint32_t todo)
             todo -= uint32_t(fit);
             at += uint32_t(fit);
         }
+
         if (m.loop == 0)
         {
             m.status = 0;
             FillSilence(m, at, todo);
             break;
         }
+
         if (m.loop == 2)
         {
             m.inc = -m.inc;
@@ -244,6 +255,7 @@ void Player::MixPlaying(MixChannel& m, uint32_t todo)
         {
             m.pos -= m.loop_length;
         }
+
         if (todo == 0)
         {
             break;
@@ -256,8 +268,8 @@ void Player::MixOutput(bool on)
     // kramSetMasterVol() builds the output table: entry i of 0 to 0x3FF is i times the master volume's level, shifted
     // down 7 bits, up to 127. Entry -i of -1 to -0x400 is the same down to -128. The mixer shifts its sums down by the
     // master volume's shift before the table, or by 5 for a shift of 0. The builds before 1.4 take the whole master
-    // volume as the level, and always shift by 5. They store entry -0x400 through an address with the top 4 bits set,
-    // which the GBA ignores.
+    // volume as the level, and always shift by 5. They store entry -0x400 through an address with the top 4 bits set.
+    // The GBA ignores those bits.
     mix_output_ = on;
     const bool old = info_.build < Build::kV1_4;
     const uint32_t level = old ? info_.master_volume : info_.master_volume & 0xFF;
@@ -269,11 +281,13 @@ void Player::MixOutput(bool on)
         {
             table_[0x400 + i] = int8_t(std::min(entry, 127));
         }
+
         if (i > 0)
         {
             table_[0x400 - i] = int8_t(-std::min(entry, 128));
         }
     }
+
     output_[0].clear();
     output_[1].clear();
 }
@@ -304,6 +318,7 @@ void Player::Meter(const MixChannel& m, int side, uint32_t volume, int32_t low, 
     {
         return std::abs(int64_t((uint32_t(std::clamp(point, 0, 255)) * volume) >> 3) - int64_t((volume << 7) >> 3));
     };
+
     const bool old = info_.build < Build::kV1_4;
     const int64_t level = old ? int64_t(info_.master_volume) : int64_t(info_.master_volume & 0xFF);
     const int64_t peak = (std::max(part(low), part(high)) * level * 2) >> shift_;
@@ -325,9 +340,9 @@ void Player::MixEnhanced(bool on)
 
 double Player::EnhancedPoint(const MixChannel& m, int64_t at) const
 {
-    // A forward loop goes on from its start after its last point, and a loop back and forth turns at each end. The
-    // loop turns at its start only while it plays backwards. Before that, the points before the loop are the attack.
-    // Past a sample's end without a loop lies silence.
+    // A forward loop goes on from its start after its last point, and a loop back and forth turns at each end. The loop
+    // turns at its start only while it plays backwards. Before that, the points before the loop are the attack. A
+    // sample without a loop is silent past its end.
     const int64_t end = m.end;
     const int64_t length = m.loop_length;
     if (m.loop == 1 && length > 0 && at >= end)
@@ -377,6 +392,7 @@ void Player::MixEnhancedPoints(const MixChannel& m, uint32_t at, uint32_t sample
             {
                 continue;
             }
+
             value = (double(int16_t(m.loop_from)) + double(int16_t(m.loop_from >> 16)) * offset) / 16.0;
         }
         else
@@ -393,6 +409,7 @@ void Player::MixEnhancedPoints(const MixChannel& m, uint32_t at, uint32_t sample
         {
             enhanced_[0][i] += float((value - 128.0) * left_volume);
         }
+
         if (right)
         {
             enhanced_[1][i] += float((value - 128.0) * right_volume);
@@ -407,14 +424,17 @@ void Player::MixPoints(const MixChannel& m, uint32_t at, uint32_t samples)
     {
         return;
     }
+
     if (mix_enhanced_)
     {
         MixEnhancedPoints(m, at, samples);
     }
+
     if (!mix_output_)
     {
         return;
     }
+
     if (m.mix == 7)
     {
         MixRamp(m, at, samples);
@@ -425,7 +445,7 @@ void Player::MixPoints(const MixChannel& m, uint32_t at, uint32_t samples)
     // volume. It clears the 3 bits that the second point's product would shift into the first's, and adds the word
     // shifted down 3 bits to the side's sum of the two samples. An interpolating routine takes the point before the
     // position and the one after, and adds their difference times the fraction, shifted down 16 bits. The shift is
-    // logical, so a falling difference adds 0x10000 to the point.
+    // logical. A falling difference therefore adds 0x10000 to the point.
     //
     // Routine 1 adds the left side alone, and routine 3 the right side alone. Routine 4, for the centre, adds the left
     // side's volume to both sides. Routines 0 and 2 add each side at its volume.
@@ -444,6 +464,7 @@ void Player::MixPoints(const MixChannel& m, uint32_t at, uint32_t samples)
             const int32_t difference = int32_t(rom_.U8(at_point + 1)) - int32_t(p);
             p += uint32_t(int32_t(uint32_t(position) & 0xFFFF) * difference) >> 16;
         }
+
         position = int32_t(uint32_t(position) + uint32_t(m.inc));
         return p;
     };
@@ -457,6 +478,7 @@ void Player::MixPoints(const MixChannel& m, uint32_t at, uint32_t samples)
         high = std::max(high, value);
         return p;
     };
+
     for (uint32_t i = 0; i + 4 <= samples; i += 4)
     {
         uint32_t* const sums = &sums_[at + i];
@@ -468,6 +490,7 @@ void Player::MixPoints(const MixChannel& m, uint32_t at, uint32_t samples)
             {
                 sums[pair] += ((word * left_volume) & ~0x70000u) >> 3;
             }
+
             if (right)
             {
                 sums[2 + pair] += ((word * right_volume) & ~0x70000u) >> 3;
@@ -481,6 +504,7 @@ void Player::MixPoints(const MixChannel& m, uint32_t at, uint32_t samples)
         {
             Meter(m, 0, left_volume, low, high);
         }
+
         if (right)
         {
             Meter(m, 1, right_volume, low, high);
@@ -497,7 +521,7 @@ void Player::MixRamp(const MixChannel& m, uint32_t at, uint32_t samples)
 
     // The ramp adds its level, from the point where the note stopped to the middle, times each side's volume to the
     // halfword of each sample's sum, without a carry into the next. A side's volume times the level of 0 to 255 is
-    // shifted down 3 bits, as the mixing routines shift a point's.
+    // shifted down 3 bits as the mixing routines shift a point's.
     const uint32_t ramp = std::min<uint32_t>(m.sfx, samples);
     uint16_t level = uint16_t(m.loop_from);
     const uint16_t step = uint16_t(m.loop_from >> 16);
@@ -512,6 +536,7 @@ void Player::MixRamp(const MixChannel& m, uint32_t at, uint32_t samples)
             const uint16_t half = uint16_t((word >> shift) + uint32_t(part));
             word = (word & ~(0xFFFFu << shift)) | uint32_t(half) << shift;
         };
+
         add(left, (value * int32_t(m.left)) >> 3);
         add(right, (value * int32_t(m.right)) >> 3);
         if (metered_)
@@ -519,6 +544,7 @@ void Player::MixRamp(const MixChannel& m, uint32_t at, uint32_t samples)
             Meter(m, 0, m.left, value, value);
             Meter(m, 1, m.right, value, value);
         }
+
         level = uint16_t(level + step);
     }
 
@@ -527,7 +553,7 @@ void Player::MixRamp(const MixChannel& m, uint32_t at, uint32_t samples)
 
 void Player::FillSilence(const MixChannel& m, uint32_t at, uint32_t samples)
 {
-    // The mixer adds each side's volume times the middle of 128, shifted down 3 bits, to each sample's sum, as the
+    // The mixer adds each side's volume times the middle of 128, shifted down 3 bits, to each sample's sum as the
     // channel's points would at silence.
     samples = InAmount(at, samples);
     if (!mix_output_ || Muted(m))

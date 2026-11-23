@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// Plays a song of a GBA ROM with Konami's driver on ntdlib's models: the driver's sequencer, output stage and mixer
+// Plays a song of a GBA ROM with Konami's driver on the agblib models: the driver's sequencer, output stage and mixer
 // (konami::Output) on the GBA's sound hardware (agb::Apu), frame by frame. The driver's stores go to the PSG's
 // registers, and its bytes to the FIFOs.
 //
@@ -60,7 +60,7 @@ namespace agblib::konami
 // What the driver and the hardware start from, beyond the song.
 struct ArchivePlayerOptions
 {
-    // The cycle of each frame at which the driver's routine makes its stores. It lies below agb::kFrameCycles.
+    // The cycle of each frame at which the driver's routine makes its stores. It is below agb::kFrameCycles.
     uint32_t store_cycle = agb::kFrameCycles / 6;
 
     // The frame sequencer's phase at the song's start: see agb::Apu::SetSequencer.
@@ -86,7 +86,7 @@ public:
     ArchivePlayer(const Rom& rom, const DriverInfo& info);
 
     // Starts song `song` from the state that the game's init leaves. Throws std::invalid_argument when the song can't
-    // be played or an option lies out of range, and std::runtime_error when the ROM holds no mixer that the revision's
+    // be played or an option is out of range, and std::runtime_error when the ROM contains no mixer that the revision's
     // code would use.
     void Start(int song, const ArchivePlayerOptions& options = {});
 
@@ -131,8 +131,8 @@ public:
         return info_;
     }
 
-    // The model of the driver. Throws std::logic_error before a start. Driver().Records() holds what the tracks asked
-    // of their channels in the last frame.
+    // The model of the driver. Throws std::logic_error before a start. Driver().Records() contains what the tracks
+    // asked of their channels in the last frame.
     const Output& Driver() const;
 
     const agb::Apu& Hardware() const
@@ -156,7 +156,7 @@ public:
     }
 
     // While any track is soloed, leaves every track that isn't out of the output, in the same way as a mute. A mute
-    // still holds on a soloed track.
+    // still applies on a soloed track.
     void SoloTrack(int track, bool solo);
     bool IsTrackSoloed(int track) const
     {
@@ -182,8 +182,8 @@ public:
         return output_peaks_;
     }
 
-    // What Restore() takes to go back to a place in the song. A snapshot holds the driver's whole state, its echo lines
-    // and the hardware's FIFOs: tens of kilobytes, or a few hundred with the enhanced mode's lines.
+    // What Restore() takes to go back to a place in the song. A snapshot contains the driver's whole state, its echo
+    // lines and the hardware's FIFOs: tens of kilobytes, or a few hundred with the enhanced mode's lines.
     class Snapshot
     {
         friend class ArchivePlayer;
@@ -200,7 +200,7 @@ public:
         uint64_t mixed_cycles_ = 0;
     };
 
-    // Takes a snapshot. `previous` is there for the interface that ntdlib's archive players share: a snapshot stands
+    // Takes a snapshot. `previous` is there for the interface that the agblib archive players share: a snapshot stands
     // alone. Throws std::logic_error before a start.
     Snapshot Save(const Snapshot* previous = nullptr) const;
 

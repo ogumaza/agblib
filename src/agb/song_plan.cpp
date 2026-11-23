@@ -105,6 +105,7 @@ bool PassComparison::Alike(double tolerance) const
     {
         return std::tie(a.at, a.channel, a.key) < std::tie(b.at, b.channel, b.key);
     };
+
     std::array<std::vector<Start>, 2> sorted = passes_;
     for (std::vector<Start>& pass : sorted)
     {

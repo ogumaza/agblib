@@ -9,7 +9,7 @@
 //     <delay> { <command> <delay> }*
 //
 // where <delay> is a frame count (see ReadDelay) and <command> is one of the opcodes in the Op enum below. The
-// revisions of the driver read different commands and delays. See docs/konami.md for the full description.
+// revisions of the driver read different commands and delays. The Op enum and Revision below give the differences.
 
 #pragma once
 
@@ -32,7 +32,7 @@ inline bool IsPsgTrack(int t)
     return t < kPsgTracks;
 }
 
-// The revisions of the driver that ntdlib reads. They differ in their commands and delays, and in how they play them.
+// The revisions of the driver that agblib reads. They differ in their commands and delays, and in how they play them.
 enum class Revision
 {
     kUltimateMasters,     // Yu-Gi-Oh! Ultimate Masters Edition, and the games whose driver reads its commands
@@ -98,7 +98,7 @@ bool Wct2004Layout(Revision r);
 bool RecordHasPan(Revision r);
 
 // The first note that the Dungeon Dice Monsters revision plays one entry of its PSG frequency table after the note
-// before it, where the table holds the noise channel's settings. The notes below it are 16 entries apart.
+// before it, where the table contains the noise channel's settings. The notes below it are 16 entries apart.
 constexpr int kDungeonDiceNoiseNote = 72;
 
 // The frequency of a square channel's note 0, C2, in Hz: 440 Hz × 2^(-33/12).
@@ -118,7 +118,7 @@ enum class Op
     kNote,         // A0-BF  DirectSound note: [vol] sample [semitone]
     kVolume,       // C0-CF  a volume change (DS: a live volume change, PSG: a retrigger)
     kPsgNote,      // D0-DF  PSG note: [vol] note
-    kRest,         // E0-EF  a rest, which silences the track
+    kRest,         // E0-EF  a rest: the track falls silent
     kPan,          // F0 xx
     kVibrato,      // F1 xx  vibrato depth (Eternal Duelist: F4-FC xx as well)
     kPitchBend,    // F2 xx or F2 8x xx  bend in 1/32 semitones (see DecodeCommand)

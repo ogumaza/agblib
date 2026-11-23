@@ -68,6 +68,7 @@ double Yin(const std::vector<float>& x, double rate)
             break;
         }
     }
+
     if (best < 0)
     {
         best = tau_min;
@@ -78,6 +79,7 @@ double Yin(const std::vector<float>& x, double rate)
                 best = tau;
             }
         }
+
         if (cmnd[size_t(best)] > kMaxDip)
         {
             return 0;
@@ -139,6 +141,7 @@ double EstimateSamplePitch(const Rom& rom, const SampleInfo& sample, double rate
     {
         mean += v;
     }
+
     mean /= double(buf.size());
 
     double energy = 0;

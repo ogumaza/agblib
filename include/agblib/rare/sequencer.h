@@ -32,7 +32,7 @@ constexpr uint8_t kPhaseAttackStart = 0;  // sets up the attack
 constexpr uint8_t kPhaseAttack = 1;       // rises to the full level
 constexpr uint8_t kPhaseDecayStart = 2;   // sets up the decay
 constexpr uint8_t kPhaseDecay = 3;        // falls to the sustain level
-constexpr uint8_t kPhaseSustain = 4;      // holds the sustain level
+constexpr uint8_t kPhaseSustain = 4;      // contains the sustain level
 constexpr uint8_t kPhaseReleaseStart = 5; // sets up the release
 constexpr uint8_t kPhaseRelease = 6;      // falls to 0
 
@@ -56,7 +56,7 @@ uint32_t AttackSteps(uint32_t attack, uint8_t setting);
 // worked out in 8.8 fixed point with the driver's 16-bit division.
 uint32_t SustainLevel(uint32_t sustain, uint8_t setting);
 
-// The song time that the driver counts for each frame, in 1/256 microseconds: 1/60 s, as it works it out.
+// The song time that the driver counts for each frame, in 1/256 microseconds: 1/60 s as it works it out.
 constexpr int64_t kFrameTime = 4266666;
 
 // One semitone in the model's pitch offsets. They count semitones in 32.32 fixed point.
@@ -71,7 +71,7 @@ enum class MixResult : uint8_t
     kIdle,    // the slot had no voice
     kMixed,   // the mixer took the voice
     kSkipped, // the mixer left the voice out, after taking as many voices as its limit allows
-    kSilent,  // the mixer left the voice out, as its level was 0
+    kSilent,  // the mixer left the voice out: its level was 0
 };
 
 // A note slot. Each channel has the same number, and a note plays in one until its envelope or its sample ends.
@@ -79,7 +79,7 @@ struct Slot
 {
     uint8_t state = kSlotFree;
     uint8_t loop_mode = 0;
-    uint8_t key = 0;       // the key that started it, which a note off matches
+    uint8_t key = 0;       // the key that started it, for a note off to match
     uint8_t velocity = 0;  // the note's velocity + 1
     uint8_t phase = 0;     // the envelope's phase, such as kPhaseAttack
     uint8_t pitch_key = 0; // the key it plays at: the key, or a drum kit instrument's root key
@@ -133,7 +133,7 @@ struct Action
     uint32_t frame = 0;        // the frame it happened on
     uint32_t address = 0;      // the address of the track's command
     int slot = -1;             // kNoteOn, kEnvelope: the slot the note plays in; kNoteOff: the slot it released, or -1
-    bool playable = true;      // kNoteOn: false if its instrument has no sample for the key, so it makes no sound
+    bool playable = true;      // kNoteOn: false if its instrument has no sample for the key: no sound
     int program = -1;          // kNoteOn: the channel's program
     uint32_t instrument = 0;   // kNoteOn, kProgram: the channel's instrument
     EnvelopeSettings envelope; // kEnvelope: the settings the phase took, and 0xFF for the others
@@ -150,11 +150,11 @@ struct TrackStretch
     bool loop = false;  // it began at the loop's start, after the loop's end
 };
 
-// Plays a tune one frame at a time, as the driver's per-frame routine does.
+// Plays a tune one frame at a time as the driver's per-frame routine does.
 class Sequencer
 {
 public:
-    // Sets up `tune` as the driver does when it starts a tune after its init. The game then holds the channels in
+    // Sets up `tune` as the driver does when it starts a tune after its init. The game then contains the channels in
     // `silenced` at a level of 0 (see SilencedChannels()). `rom` and `info` have to outlive the sequencer.
     Sequencer(const Rom& rom, const DriverInfo& info, int tune, uint16_t silenced = 0);
 
@@ -167,7 +167,7 @@ public:
     // Runs one frame of the driver's per-frame routine. Returns the frame's actions, in order.
     const std::vector<Action>& Step();
 
-    // Returns true once every track has reached its end in the same frame, so that the driver stopped the tune.
+    // Returns true once every track has reached its end in the same frame: the driver stopped the tune.
     bool Ended() const
     {
         return ended_;
@@ -184,7 +184,7 @@ public:
         return int(tracks_.size());
     }
 
-    // Returns track `t`'s tick count, which counts every pass through a loop.
+    // Returns track `t`'s tick count, with every pass through a loop.
     uint64_t TrackTick(int t) const
     {
         return tracks_[size_t(t)].tick;
@@ -216,12 +216,12 @@ public:
     int64_t PitchOffset(int channel) const;
 
     // For an audition: leaves the tracks idle from the next frame on, and plays `key` at `velocity` (0 to 127) with
-    // program `program` of the tune on channel 0, as a track's program change and note on would. The note counts as
+    // program `program` of the tune on channel 0 as a track's program change and note on would. The note counts as
     // track 0's. Its envelope and the mixer run as in the tune. Throws std::logic_error for a tune whose header wasn't
     // read.
     void Audition(uint8_t program, uint8_t key, uint8_t velocity);
 
-    // Releases the audition's note, as a track's note off would.
+    // Releases the audition's note as a track's note off would.
     void ReleaseAudition();
 
     // From the next frame on, records the stretches of the tracks' commands in Stretches() when `on`.
@@ -299,7 +299,7 @@ private:
     // Returns an action of kind `kind` for event `e` of track `t`, at the track's tick.
     Action TrackAction(Action::Kind kind, int t, const Event& e) const;
 
-    // Converts a delay of `ticks` to song time, as the driver does.
+    // Converts a delay of `ticks` to song time as the driver does.
     int64_t DelayTime(uint32_t command, uint32_t ticks) const;
 
     void NoteOn(int t, const Event& e);
@@ -310,7 +310,7 @@ private:
     void UpdateVibrato();
     void UpdateEnvelope(int index);
 
-    // Sets up the release of slot `index`, which plays `inst`, and takes its first frame's step.
+    // Sets up the release of slot `index`. The slot plays `inst`. Takes the release's first frame step.
     void StartRelease(int index, const Instrument& inst);
 
     // Adds a kEnvelope action for the phase that slot `index` starts, unless every setting in `used` leaves the
@@ -320,8 +320,8 @@ private:
     void Mix();
     void MixVoice(Slot& slot, bool first);
 
-    // Adds the frame's samples of the voice of `slot`, which plays `inst`, to the mix, as the driver's mixer does. The
-    // first voice of a frame writes its samples in place of adding them.
+    // Adds the frame's samples of the voice of `slot` to the mix as the driver's mixer does. The slot plays `inst`.
+    // The first voice of a frame writes its samples in place of adding them.
     void RenderVoice(const Slot& slot, const Instrument& inst, bool first);
 
     // Adds the frame's samples of the voice of `slot` to the floating-point mix.
@@ -331,7 +331,7 @@ private:
     // Returns a voice's sample step: its pitch as the driver works it out, in 1/2^23 bytes per output sample.
     uint32_t PitchStep(const Slot& slot) const;
 
-    // Whether the game holds channel `channel` at a level of 0 in this frame.
+    // Whether the game contains channel `channel` at a level of 0 in this frame.
     bool Silenced(int channel) const;
 
     void Warn(const std::string& message);
@@ -357,7 +357,7 @@ private:
     std::vector<std::string> warnings_;
     bool render_ = false;
     uint32_t muted_ = 0;
-    std::vector<int16_t> mix_;    // the mixer's buffer of 16-bit values, which the driver keeps from frame to frame
+    std::vector<int16_t> mix_;    // the mixer's buffer of 16-bit values, kept from frame to frame
     std::vector<int8_t> samples_; // the mix, clipped to 8 bits
     std::vector<int32_t> peaks_;  // each track's largest part
     bool enhance_ = false;

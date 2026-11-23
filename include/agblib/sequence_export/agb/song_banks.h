@@ -20,10 +20,10 @@ struct BankProgram
 };
 
 // Gives each song's presets their banks and programs. A song's presets go in the bank numbered after the song, from
-// program 0. Each bank then holds the presets of one song. MIDI selects banks 0 to 127. So the presets of a song
-// numbered 128 or more, and a song's presets past the 128th, take the first free programs of the other banks. A bank
-// that a song has but that hasn't been given out yet stays free for that song. A SoundFont for one song numbers its
-// presets from bank 0.
+// program 0. Each bank then contains the presets of one song. MIDI selects banks 0 to 127. The presets of a song
+// numbered 128 or more, and a song's presets past the 128th, therefore take the first free programs of the other banks.
+// A bank that a song has but that hasn't been given out yet stays free for that song. A SoundFont for one song numbers
+// its presets from bank 0.
 class SongBanks
 {
 public:

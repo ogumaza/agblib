@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "xsflib/bytes.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/logikstate/driver.h"
 #include "player_parts.h"
@@ -17,8 +19,8 @@
 namespace agblib::logikstate
 {
 
-using parts::Put;
 using parts::RecordBytes;
+using parts::TakeSlideTarget;
 using parts::VibratoWave;
 
 namespace
@@ -118,6 +120,7 @@ void Player::Frame()
                 on_step_(true);
             }
         }
+
         if (tick_left_ == 0)
         {
             if (row_left_ != row_samples_)
@@ -128,8 +131,10 @@ void Player::Frame()
                     on_step_(false);
                 }
             }
+
             tick_left_ = tick_samples_;
         }
+
         if (row_left_ == 0 || tick_left_ == 0)
         {
             Warn("a row or a tick has no length, which the driver can't play");
@@ -145,6 +150,7 @@ void Player::Frame()
                 Advance(channels_[size_t(c)], run);
             }
         }
+
         done += run;
         left -= int32_t(run);
         row_left_ -= run;
@@ -243,19 +249,19 @@ bool Player::Playing() const
 std::vector<uint8_t> Player::Globals() const
 {
     std::vector<uint8_t> out;
-    Put(out, order_, 2);
-    Put(out, place_, 2);
-    Put(out, speed_, 4);
-    Put(out, tempo_, 4);
-    Put(out, tick_rate_, 4);
-    Put(out, row_samples_, 4);
-    Put(out, row_left_, 4);
-    Put(out, tick_samples_, 4);
-    Put(out, tick_left_, 4);
-    Put(out, tick_, 2);
-    Put(out, arpeggio_tick_, 2);
-    Put(out, broke_, 1);
-    Put(out, loop_row_, 2);
+    xsflib::AppendLe16(out, uint16_t(order_));
+    xsflib::AppendLe16(out, place_);
+    xsflib::AppendLe32(out, speed_);
+    xsflib::AppendLe32(out, tempo_);
+    xsflib::AppendLe32(out, tick_rate_);
+    xsflib::AppendLe32(out, row_samples_);
+    xsflib::AppendLe32(out, row_left_);
+    xsflib::AppendLe32(out, tick_samples_);
+    xsflib::AppendLe32(out, uint32_t(tick_left_));
+    xsflib::AppendLe16(out, tick_);
+    xsflib::AppendLe16(out, arpeggio_tick_);
+    out.push_back(uint8_t(broke_));
+    xsflib::AppendLe16(out, loop_row_);
 
     return out;
 }
@@ -266,8 +272,8 @@ std::vector<uint8_t> Player::ChannelRecord(int channel) const
     std::vector<uint8_t> out = RecordBytes(ch);
     if (build_ == Build::kLongRecords)
     {
-        Put(out, ch.loop_row, 2);
-        Put(out, ch.loop_count, 2);
+        xsflib::AppendLe16(out, ch.loop_row);
+        xsflib::AppendLe16(out, ch.loop_count);
     }
 
     return out;
@@ -311,6 +317,7 @@ void Player::Row()
         {
             order_ = 0;
         }
+
         place_ = 0;
     }
 }
@@ -322,16 +329,7 @@ void Player::ReadRowCell(Channel& ch, uint32_t address, bool empty)
     // A slide to a note keeps the note as the slide's target, and uses the volume of the cell's sample.
     if ((cell.effect & 0xF) == kSlideToNote)
     {
-        if (cell.pitch != kNoPitch)
-        {
-            ch.slide_target = int16_t(cell.pitch);
-        }
-        cell.pitch = kNoPitch;
-        if (cell.sample != 0)
-        {
-            ch.volume = module_.samples[cell.sample - 1u].volume;
-        }
-        cell.sample = 0;
+        TakeSlideTarget(ch, cell, module_);
     }
 
     ch.effect = -1;
@@ -345,6 +343,7 @@ void Player::ReadRowCell(Channel& ch, uint32_t address, bool empty)
             ch.sample = uint16_t(cell.sample - 1);
             ch.volume = module_.samples[ch.sample].volume;
         }
+
         SetSample(ch, ch.sample, true);
         ch.pitch = cell.pitch;
         ch.position = 0;
@@ -394,6 +393,7 @@ void Player::RowEffect(Channel& ch, uint16_t effect, uint8_t operand)
         {
             ch.slide_speed = operand;
         }
+
         if (ch.slide_target == int16_t(ch.pitch))
         {
             ch.slide_step = 0;
@@ -441,6 +441,7 @@ void Player::RowEffect(Channel& ch, uint16_t effect, uint8_t operand)
             {
                 order_ = 0;
             }
+
             broke_ = 1;
         }
         break;
@@ -582,6 +583,7 @@ void Player::Arpeggio(Channel& ch)
     {
         arpeggio_tick_ = 1;
     }
+
     const int phase = arpeggio_tick_ & 3;
     const uint32_t interval = phase == 0 ? 0 : phase == 1 ? ch.arpeggio_1 : ch.arpeggio_2;
     ch.step = PeriodStep(uint32_t(ch.fine_tune) + ch.pitch + interval, ch.vibrato);

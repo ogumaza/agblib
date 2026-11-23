@@ -55,7 +55,7 @@ namespace
 // The level of a PSG channel at volume 15 against a full-scale sample at the full volume. The driver sets SOUNDCNT_L's
 // master volumes to 7 and the PSG's share to 100%. A square at volume 15 then swings 120 either side of its middle, out
 // of the mix's -512 to 512. The mixer writes a full-scale sample at volume 127 and the envelope's full level as 63 of
-// the FIFO's 128, which the FIFO's share of 100% makes 251.
+// the FIFO's 128. The FIFO's share of 100% makes that 251.
 constexpr double kPsgLevel = 120.0 / 251;
 
 // The envelope's full level.
@@ -92,6 +92,7 @@ public:
         {
             s.data.push_back(int16_t((rom_.U8(h.data + i) - 128) * 256));
         }
+
         if (h.loops)
         {
             s.loop_start = h.loop_start;
@@ -123,7 +124,7 @@ public:
 
     // Returns the index of wave pattern `number`: 32 points of 4 bits, high half first. The driver plays the wave
     // through the squares' pitch table, and it sets the 32-step mode (0x0819A9DC). The hardware then plays the pattern
-    // an octave below a square at the same setting, so key 72 plays it at middle C.
+    // an octave below a square at the same setting. Key 72 therefore plays it at middle C.
     int Wave(int number)
     {
         const auto cached = waves_.find(number);
@@ -150,6 +151,7 @@ public:
             const int point = i % 2 ? byte & 0xF : byte >> 4;
             cycle.push_back(int16_t(std::lround((point - 7.5) * 32767 / 7.5 * kPsgLevel)));
         }
+
         Cycle(s, cycle);
         s.original_key = 72;
 
@@ -254,6 +256,7 @@ std::vector<std::string> InstrumentSet::Build(const Rom& rom, const DriverInfo& 
                 {
                     sf2::AddGenerator(z, sf2::kScaleTuning, 0);
                 }
+
                 AddVolumeEnvelope(z, SampleEnvelope(r));
                 si.zones.push_back(z);
             }
@@ -284,6 +287,7 @@ std::vector<std::string> InstrumentSet::Build(const Rom& rom, const DriverInfo& 
                 si.zones.push_back(SampleZone(sample, true, r.lo, r.hi));
             }
         }
+
         if (si.zones.size() < 2)
         {
             warnings.push_back(std::string(name) + " has nothing to play");

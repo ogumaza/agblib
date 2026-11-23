@@ -10,9 +10,9 @@ include(CMakeFindDependencyMacro)
 
 set(AGBLIB_SEQUENCE_EXPORT @AGBLIB_SEQUENCE_EXPORT@)
 
-find_dependency(ntdlib 4.0)
+find_dependency(ntdlib 7.0)
 if (AGBLIB_SEQUENCE_EXPORT)
-    find_dependency(seqlib 1.4)
+    find_dependency(seqlib 1.5)
 endif()
 
 include(${CMAKE_CURRENT_LIST_DIR}/agblibTargets.cmake)

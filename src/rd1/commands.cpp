@@ -37,7 +37,7 @@ constexpr uint32_t kHeaderId = 0x4D546864;
 // The microseconds of a minute, from which the driver works out the beats a minute.
 constexpr uint32_t kMicrosPerMinute = 60000000;
 
-// The most microseconds a quarter note that a tempo's 3 bytes hold.
+// The most microseconds a quarter note that a tempo's 3 bytes contain.
 constexpr uint32_t kLargestMicros = 0xFFFFFF;
 
 // The meta events that the driver reads.
@@ -155,7 +155,7 @@ Variable ReadVariable(std::span<const uint8_t> data, size_t at, size_t end)
     return v;
 }
 
-// The fewest bytes that hold `value` as a variable-length number.
+// The fewest bytes that contain `value` as a variable-length number.
 uint32_t VariableBytes(uint32_t value)
 {
     uint32_t bytes = 1;
@@ -167,7 +167,7 @@ uint32_t VariableBytes(uint32_t value)
     return bytes;
 }
 
-// Adds `value` as a variable-length number of `value_bytes` bytes, or of the fewest that hold it.
+// Adds `value` as a variable-length number of `value_bytes` bytes, or of the fewest that contain it.
 void AddVariable(std::vector<uint8_t>& bytes, uint32_t value, uint8_t value_bytes)
 {
     const uint32_t count = std::max<uint32_t>(VariableBytes(value), value_bytes);
@@ -195,7 +195,7 @@ struct FileShape
 {
     uint32_t header_end = 0;
     std::vector<std::pair<uint32_t, uint32_t>> chunks; // each track chunk's start and end
-    uint32_t end = 0;                                  // the end of the last chunk that is whole in the bytes
+    uint32_t end = 0; // where the file ends in the bytes: its last whole chunk, or its header's fields if later
 };
 
 // Finds a file's chunks the way the driver's start routine does, up to the end of `data`. Returns the reason
@@ -208,27 +208,43 @@ std::string ShapeOf(std::span<const uint8_t> data, FileShape& shape)
         return "the bytes don't start with a header chunk";
     }
 
+    // The start routine reads the header chunk's length, the track count and the division at bytes 4 to 7 and 10 to
+    // 13, whatever the length, and the first track chunk at the header chunk's end. A header chunk that runs past the
+    // bytes leaves only its fields in them.
     const uint32_t length = BigEndian32(data, 4);
-    if (length < kHeaderBytes - kChunkHeaderBytes || length > data.size() - kChunkHeaderBytes)
+    if (length > data.size() - kChunkHeaderBytes)
     {
-        shape.end = uint32_t(data.size());
-        return length < kHeaderBytes - kChunkHeaderBytes ? "the header chunk is shorter than the fields it holds"
-                                                         : "the header chunk runs past the bytes";
+        shape.end = kHeaderBytes;
+        return "the header chunk runs past the bytes";
     }
 
+    const bool short_header = length < kHeaderBytes - kChunkHeaderBytes;
     shape.header_end = kChunkHeaderBytes + length;
     shape.end = shape.header_end;
+    std::string reason;
     const uint16_t tracks = BigEndian16(data, 10);
     for (int t = 0; t < (tracks & kMaxTracks); t++)
     {
         const uint32_t at = shape.end;
         if (data.size() - at < kChunkHeaderBytes || BigEndian32(data, at + 4) > data.size() - at - kChunkHeaderBytes)
         {
-            return "a track chunk runs past the bytes";
+            reason = "a track chunk runs past the bytes";
+            break;
         }
 
         shape.end = at + kChunkHeaderBytes + BigEndian32(data, at + 4);
         shape.chunks.emplace_back(at, shape.end);
+    }
+
+    if (short_header)
+    {
+        shape.end = std::max(shape.end, kHeaderBytes);
+        return "the header chunk is shorter than the fields it holds";
+    }
+
+    if (!reason.empty())
+    {
+        return reason;
     }
 
     if (tracks > kMaxTracks)
@@ -300,6 +316,7 @@ std::optional<Event> ReadEvent(std::span<const uint8_t> data, size_t at, size_t 
         {
             item.encoding.value_bytes = uint8_t(std::min<uint32_t>(length.bytes, 0xFF));
         }
+
         item.bytes.assign(data.begin() + std::ptrdiff_t(at), data.begin() + std::ptrdiff_t(at + length.value));
         event.next = at + length.value;
         if (status != 0xFF)
@@ -328,6 +345,7 @@ std::optional<Event> ReadEvent(std::span<const uint8_t> data, size_t at, size_t 
             item.kind = Kind::kOther;
             item.encoding.opcode = uint16_t(kMetaEvent | type);
         }
+
         reason.clear();
 
         return event;
@@ -412,6 +430,7 @@ std::string ReadTrack(std::span<const uint8_t> data, size_t start, size_t end, s
         {
             wait.encoding.value_bytes = uint8_t(std::min<uint32_t>(delta.bytes, 0xFF));
         }
+
         items.push_back(std::move(wait));
         at += delta.bytes;
 
@@ -485,7 +504,7 @@ std::array<uint8_t, 3> TempoBytes(const Command& item)
 }
 
 // The bytes of an event. A new channel event plays on `channel`. Throws std::invalid_argument for a command that the
-// bytes can't hold.
+// bytes can't contain.
 EventBytes BytesOf(const Command& item, uint8_t channel)
 {
     const int64_t value = FromUnit(item.value.value, ScaleOf(item.kind));
@@ -515,6 +534,7 @@ EventBytes BytesOf(const Command& item, uint8_t channel)
             {
                 out.status = uint8_t(0x80 | (channel_event ? opcode & 0xF : channel));
             }
+
             out.rest = {data_byte(item.key), data_byte(velocity)};
             break;
         }
@@ -579,6 +599,7 @@ EventBytes BytesOf(const Command& item, uint8_t channel)
                     throw std::invalid_argument("a channel event of kOther holds " + std::to_string(item.bytes.size()) +
                                                 " bytes in place of " + std::to_string(size));
                 }
+
                 out.status = uint8_t(opcode);
                 out.rest = item.bytes;
             }
@@ -597,6 +618,7 @@ EventBytes BytesOf(const Command& item, uint8_t channel)
                 throw std::invalid_argument("a " + std::string(ntdlib::commands::Name(item.kind)) +
                                             " command that a MIDI file can't hold");
             }
+
             out.status = ChannelStatus(item, 0xB0, channel);
             out.rest = {*controller, data_byte(value)};
             break;
@@ -660,6 +682,7 @@ std::vector<uint64_t> WaitRuns(const std::vector<Command>& items, std::vector<bo
             run = i;
             writes[i] = true;
         }
+
         waits[run] += ticks;
         if (waits[run] > 0xFFFFFFFF)
         {
@@ -683,13 +706,14 @@ void AddHeaderChunk(std::vector<uint8_t>& bytes, const Command& item)
     {
         bytes.insert(bytes.end(), item.bytes.begin(), item.bytes.end());
     }
+
     StoreBigEndian32(bytes, header + 4, uint32_t(bytes.size() - header - kChunkHeaderBytes));
     const int64_t division = FromUnit(item.value.value, ScaleOf(Kind::kTimebase));
     StoreBigEndian16(bytes, header + 12, uint16_t(Checked(division, 1, 0x7FFF, item.kind)));
 }
 
 // Lays `sequence` out. With `check`, throws std::invalid_argument for items that the driver wouldn't read as they say.
-// Throws std::invalid_argument for a command that the bytes can't hold.
+// Throws std::invalid_argument for a command that the bytes can't contain.
 Encoded Write(const ntdlib::commands::Sequence& sequence, bool check)
 {
     const std::vector<Command>& items = sequence.items;
@@ -731,6 +755,7 @@ Encoded Write(const ntdlib::commands::Sequence& sequence, bool check)
         {
             fail("a track without an end runs into the next chunk");
         }
+
         StoreBigEndian32(bytes, *chunk + 4, uint32_t(bytes.size() - *chunk - kChunkHeaderBytes));
     };
 
@@ -744,6 +769,7 @@ Encoded Write(const ntdlib::commands::Sequence& sequence, bool check)
             {
                 fail("a MIDI file's header comes after other items");
             }
+
             if (!item.bytes.empty() && item.bytes.size() < kHeaderBytes)
             {
                 throw std::invalid_argument("a header chunk's bytes are fewer than 14");
@@ -760,6 +786,7 @@ Encoded Write(const ntdlib::commands::Sequence& sequence, bool check)
             {
                 fail("a track chunk comes before the header");
             }
+
             if (!item.bytes.empty() && item.bytes.size() != kChunkHeaderBytes)
             {
                 throw std::invalid_argument("a track chunk's header takes 8 bytes");
@@ -775,6 +802,7 @@ Encoded Write(const ntdlib::commands::Sequence& sequence, bool check)
             {
                 bytes.insert(bytes.end(), item.bytes.begin(), item.bytes.end());
             }
+
             state = State::kNeedDelta;
             status = 0;
             channel = uint8_t(tracks & 0xF);
@@ -788,6 +816,7 @@ Encoded Write(const ntdlib::commands::Sequence& sequence, bool check)
             {
                 fail(state == State::kOutside ? "data before a MIDI file's first track" : "a track reaches data");
             }
+
             bytes.insert(bytes.end(), item.bytes.begin(), item.bytes.end());
             continue;
         }
@@ -796,12 +825,14 @@ Encoded Write(const ntdlib::commands::Sequence& sequence, bool check)
         {
             fail(state == State::kOutside ? "an event outside a track" : "an event after a track's end");
         }
+
         if (item.kind == Kind::kWait)
         {
             if (writes[i])
             {
                 AddVariable(bytes, uint32_t(waits[i]), item.encoding.value_bytes);
             }
+
             state = State::kNeedEvent;
             continue;
         }
@@ -828,12 +859,14 @@ Encoded Write(const ntdlib::commands::Sequence& sequence, bool check)
         {
             bytes.push_back(event.status);
         }
+
         bytes.insert(bytes.end(), event.rest.begin(), event.rest.end());
         status = event.status;
         if (status < 0xF0)
         {
             channel = status & 0xF;
         }
+
         state = item.kind == Kind::kEnd ? State::kEnded : State::kNeedDelta;
     }
 
@@ -846,10 +879,12 @@ Encoded Write(const ntdlib::commands::Sequence& sequence, bool check)
     {
         throw std::invalid_argument("a MIDI file with more tracks than the driver reads");
     }
+
     if (header)
     {
         StoreBigEndian16(bytes, *header + 10, uint16_t(tracks));
     }
+
     out.offsets.push_back(uint32_t(bytes.size()));
 
     return out;

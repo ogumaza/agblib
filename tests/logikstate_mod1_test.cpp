@@ -24,6 +24,7 @@
 #include "agblib/testing/agb_cart.h"
 #include "agblib/testing/agb_files.h"
 #include "agblib/testing/logikstate_cart.h"
+#include "logikstate_test_util.h"
 
 namespace agblib::sequence_export::logikstate
 {
@@ -59,24 +60,10 @@ constexpr uint16_t kRoot = 104;
 // empty rows.
 TestModule Mod1Module()
 {
-    TestModule module;
+    TestModule module = ThreeSampleModule();
     module.format = Format::kGbaMod1;
-    module.patterns = {std::vector<TestRow>(64)};
-    module.samples[0] = {100, 0, 64, 0, 0};
-    module.samples[1] = {400, 0, 64, 0, 0};
-    module.samples[2] = {3000, 0, 64, 0, 0};
 
     return module;
-}
-
-TestCell NoteCell(uint16_t pitch, uint16_t sample, uint8_t effect = 0, uint8_t operand = 0)
-{
-    return {pitch, sample, effect, operand};
-}
-
-TestCell EffectCell(uint8_t effect, uint8_t operand)
-{
-    return {kNoPitch, 0, effect, operand};
 }
 
 // A cartridge with the GBAMOD1 build's routines: the load routine with its signature, and the output's start with
@@ -96,15 +83,6 @@ Rom Mod1Rom(const TestModule& module)
     cart.AddModule(module);
 
     return cart.ToRom();
-}
-
-DriverInfo Detect(const Rom& rom)
-{
-    DriverInfo info;
-    std::string error;
-    DetectDriver(rom, info, error);
-
-    return info;
 }
 
 // A row or a tick that a player ran, with the channels after it.
@@ -307,6 +285,7 @@ void TestVibratoAndSilentEffects()
         SEQLIB_CHECK(s.channels[2].effect == -1 && s.channels[2].volume == 40);
         SEQLIB_CHECK(s.channels[3].effect == -1 && s.channels[3].volume == 40);
     }
+
     SEQLIB_CHECK(steps[12].channels[2].effect == -1 && steps[12].channels[2].volume == 40);
 }
 
@@ -486,6 +465,7 @@ void TestPieces()
     {
         module.patterns.push_back({{NoteCell(kRoot, 3)}, {EffectCell(0xB, p)}});
     }
+
     const std::vector<std::pair<uint32_t, uint8_t>> bytes = {{0x224, 0}, {0x228, 1}, {0x22C, 1}, {0x230, 1},
                                                              {0x240, 1}, {0x234, 2}, {0x238, 2}, {0x23C, 2},
                                                              {0x244, 2}, {0x248, 2}, {0x258, 6}};
@@ -516,6 +496,7 @@ void TestPieces()
         SEQLIB_CHECK(!unknown_info.songs[s].plays_once);
         SEQLIB_CHECK(info.songs[s].first_order == -1 && info.songs[s].last_order == -1);
     }
+
     SEQLIB_CHECK(music.ok && music.loop_end > 0);
     SEQLIB_CHECK(jingle.ok && jingle.loop_end < 0);
     const auto says = [](const DriverInfo& i, const std::string& text)

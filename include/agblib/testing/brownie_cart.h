@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// A small synthetic cartridge of Brownie Brown's driver for the tests, built in memory, so no game ROM is needed.
+// A small synthetic cartridge of Brownie Brown's driver for the tests, built in memory. No game ROM is needed.
 
 #pragma once
 
@@ -72,8 +72,7 @@ struct TestChannel
 };
 
 // A cartridge image being put together: a synthetic copy of the code patterns that detection reads, the driver's tables
-// and the sounds, for a revision of the driver. Sound 0 lists no channels, since the driver's queue takes 0 for no
-// request.
+// and the sounds, for a revision of the driver. Sound 0 lists no channels: the driver's queue takes 0 for no request.
 class Cart : public agblib::testing::agb_files::CartImage
 {
 public:
@@ -85,6 +84,7 @@ public:
         {
             WriteCode();
         }
+
         Sound(0, {});
     }
 
@@ -105,6 +105,7 @@ public:
             {
                 Put32(subroutines + 4 * uint32_t(i), data + c.targets[i]);
             }
+
             next_data_ = subroutines + 4 * uint32_t(c.targets.size()) + 4;
 
             Put32(next_list_, uint32_t(c.channel));
@@ -112,6 +113,7 @@ public:
             Put32(next_list_ + 8, subroutines);
             next_list_ += 12;
         }
+
         Put32(next_list_, 0xFF);
         next_list_ += 4;
     }
@@ -124,8 +126,8 @@ public:
     }
 
 private:
-    // Writes `insn`, an ldr from the pc with an offset of 0, at `at`, giving it the offset of `pool`, which holds
-    // `value`.
+    // Writes `insn`, an ldr from the pc with an offset of 0, at `at`, and sets its offset to that of `pool`. `pool`
+    // contains `value`.
     void Ldr(uint32_t at, uint32_t insn, uint32_t pool, uint32_t value)
     {
         Put32(at, insn | (pool - (at + 8)));
@@ -133,9 +135,9 @@ private:
     }
 
     // Writes the driver's tables: lengths, frequency settings tuned a third of a semitone below key 37 + n, the PSG's
-    // registers and pans, envelopes, a sample set of 12 samples, of which the even ones loop, which the Magical
-    // Vacation revision plays one by one, a wave, and that revision's timer reload values, 1024 Hz times 2 to the n /
-    // 144.
+    // registers and pans, envelopes, a sample set of 12 samples, a wave, and the Magical Vacation revision's timer
+    // reload values, 1024 Hz times 2 to the n / 144. The even samples of the set loop. The Magical Vacation revision
+    // plays the samples one by one.
     void WriteTables()
     {
         const uint8_t kLengths[16] = {4, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192};
@@ -143,6 +145,7 @@ private:
         {
             Put8(kLengthTable + i, kLengths[i]);
         }
+
         for (int n = 0; n < 84; n++)
         {
             const double hz = 440 * std::pow(2.0, (37 + n - 1.0 / 3 - 69) / 12.0);
@@ -156,6 +159,7 @@ private:
             Put32(kControlRegisters + 4 * c, kControls[c & 3]);
             Put32(kFrequencyRegisters + 4 * c, kFrequencies[c & 3]);
         }
+
         for (uint32_t c = 0; c < 12; c++)
         {
             Put8(kPanTable + c, uint8_t(0x11 << (c & 3)));
@@ -223,12 +227,14 @@ private:
             Put32(at, w);
             at += 4;
         }
+
         Ldr(kFrame + 8, 0xE59F1000, kFramePool, 0x03002ACC);
         for (uint32_t w : {0xE2811038u, 0xE2877001u, vacation_ ? 0xE337000Cu : 0xE337000Du})
         {
             Put32(at, w);
             at += 4;
         }
+
         if (vacation_)
         {
             Put32(kFrame, 0xE92D01F0);

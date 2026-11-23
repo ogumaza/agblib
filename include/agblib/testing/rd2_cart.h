@@ -95,6 +95,7 @@ public:
         {
             bytes_.push_back(uint8_t(0x80 | length >> 8));
         }
+
         bytes_.push_back(uint8_t(length));
         bytes_.push_back(velocity);
 
@@ -108,6 +109,7 @@ public:
         {
             bytes_.push_back(uint8_t(0x80 | ticks >> 8));
         }
+
         bytes_.push_back(uint8_t(ticks));
 
         return *this;
@@ -136,6 +138,7 @@ public:
         {
             WriteCode(revision);
         }
+
         WriteSettings();
         WriteSamples();
         WriteBank();
@@ -163,6 +166,7 @@ public:
             }
             at = (data + 3) & ~3u;
         }
+
         Put16(lists, 0);
         Put16(lists + 2, 0);
     }
@@ -192,6 +196,7 @@ public:
             }
             at = (data + 3) & ~3u;
         }
+
         Put16(lists, 0);
     }
 
@@ -209,6 +214,7 @@ public:
             code += " " + xsflib::Hex(0x2C00u | music, 4, false) + " D103 2013 " +
                     xsflib::Hex(0x2100u | volume, 4, false) + " 0000 0000";
         }
+
         code += " 4770";
         Code(kPlayMusic, code.c_str(), {{0, kMusicTable}});
         PutBl(kPlayMusic + 22, kSetVoices);
@@ -309,6 +315,7 @@ private:
             Put16(kFrequencyTable + 2 * uint32_t(i), uint16_t(std::lround(std::max(0.0, 2048 - 131072 / hz))));
             Put8(kNoiseTable + uint32_t(i), uint8_t(std::max(0, 0x77 - i)));
         }
+
         for (uint32_t i = 0; i < 256; i++)
         {
             Put8(kLfoTable + i, uint8_t(int8_t(std::lround(127 * std::sin(i * 6.283185307179586 / 256)))));
@@ -320,6 +327,7 @@ private:
             Put8(kWaveVolumes + i, kWaves[i]);
             Put8(kVoiceClasses + i, uint8_t(i));
         }
+
         Put32(kKeyEnvelope, 0x7FFF0001);
         Put32(kKeyEnvelope + 4, 0x0000FFFF);
     }
@@ -356,6 +364,7 @@ private:
             at = Code(at, "68A0 6883 2B00 D000 6860 2800 D100 4800 6A29 0849 1809 7809 4770", {{7, kLfoTable}});
             at = Code(at, "4900 7830 1840 7800 1C29 3152 7809 4770", {{0, kVoiceClasses}});
         }
+
         at = Code(at, "2904 D900 2104 0609 0E09 4A00 4800 1809 7808 7010 4770", {{6, kWaveVolumes}});
         Code(at, "8869 1859 4A00 0070 1840 8800 8050 6022 4800 6060 4770", {{8, kKeyEnvelope}});
     }
@@ -368,6 +377,7 @@ private:
         {
             Put32(kSettings + 4 * i, kTables[i]);
         }
+
         Put32(kSampleSets, kSamples - kSampleSets);
         Put32(kBanks, kBank - kBanks);
         Put16(kBankSampleSets, 0);
@@ -411,6 +421,7 @@ private:
             {
                 Put8(kBank + at++, b);
             }
+
             at = (at + 3) & ~3u;
 
             return uint16_t(here);
@@ -443,6 +454,7 @@ private:
             keys.push_back(uint8_t(k & 1));
             keys.push_back(0);
         }
+
         const uint16_t key_table = add(keys);
         Put16(kBank + 2 * kKeyed, add({0x11, 0, uint8_t(key_table), uint8_t(key_table >> 8), 0, 0, 0, 0}));
         const uint16_t looped = add(region(0, 0, 0, rise, 0x46, 60));

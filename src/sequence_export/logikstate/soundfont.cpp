@@ -3,9 +3,6 @@
 #include "agblib/sequence_export/logikstate/soundfont.h"
 
 #include <cstdint>
-#include <cstdio>
-#include <map>
-#include <utility>
 
 #include "agblib/agb/rom.h"
 #include "agblib/logikstate/driver.h"
@@ -20,9 +17,6 @@ using agblib::logikstate::kPeriodClock;
 using agblib::logikstate::kStoppedLength;
 using agblib::sequence_export::agb::AddLoopGuard;
 using agblib::sequence_export::agb::LengthenLoop;
-using agblib::sequence_export::agb::Looped;
-using agblib::sequence_export::agb::MakeInstrument;
-using agblib::sequence_export::agb::MakePreset;
 namespace sf2 = seqlib::sf2;
 
 namespace
@@ -45,6 +39,7 @@ sf2::Sample MakeSample(const Rom& rom, const PlayedSample& played, const char* n
             s.data.push_back(int16_t(rom.S8(played.points + from + i) * 256));
         }
     };
+
     add(0, played.length);
 
     if (played.loops)
@@ -54,10 +49,12 @@ sf2::Sample MakeSample(const Rom& rom, const PlayedSample& played, const char* n
         {
             add(played.loop_start, played.loop_length);
         }
+
         s.loop_end = uint32_t(s.data.size());
         LengthenLoop(s);
         AddLoopGuard(s);
     }
+
     if (s.data.empty())
     {
         s.data.push_back(0);
@@ -81,48 +78,17 @@ uint32_t LoopOffset(const PlayedSample& sample)
 
 int InstrumentSet::Program(const PlayedSample& sample, int number)
 {
-    return programs_.try_emplace(sample, Instrument{number, int(programs_.size())}).first->second.program;
+    return instruments_.Program(sample, number);
 }
 
 Sf2File InstrumentSet::Build(const Rom& rom) const
 {
-    Sf2File f;
-    std::map<PlayedSample, int> samples;
-    for (const auto& [played, inst] : programs_)
+    const auto make_sample = [&](const PlayedSample& played, const char* name)
     {
-        char name[32];
-        std::snprintf(name, sizeof name, "Sample %02d", inst.number);
+        return MakeSample(rom, played, name);
+    };
 
-        // The SoundFont's sample. The instruments of every start point share it.
-        PlayedSample whole = played;
-        whole.offset = 0;
-        auto it = samples.find(whole);
-        if (it == samples.end())
-        {
-            f.samples.push_back(MakeSample(rom, whole, name));
-            it = samples.emplace(whole, int(f.samples.size()) - 1).first;
-        }
-
-        // A note that starts within the sample starts its zone there.
-        sf2::Zone z;
-        z.generators.push_back(sf2::Generator::Range(sf2::kKeyRange, 0, 127));
-        if (played.offset)
-        {
-            z.generators.push_back(sf2::Generator::Value(sf2::kStartAddrsOffset, int(played.offset % 32768)));
-            if (played.offset >= 32768)
-            {
-                z.generators.push_back(sf2::Generator::Value(sf2::kStartAddrsCoarseOffset, int(played.offset / 32768)));
-            }
-            std::snprintf(name, sizeof name, "Sample %02d +%u", inst.number, unsigned(played.offset));
-        }
-        z.generators.push_back(sf2::Generator::Value(sf2::kSampleModes, Looped(f.samples[size_t(it->second)]) ? 1 : 0));
-        z.generators.push_back(sf2::Generator::Value(sf2::kSampleId, it->second));
-        f.instruments.push_back(MakeInstrument(name, {z}));
-        f.presets.push_back(MakePreset(name, uint16_t(inst.program / 128), uint16_t(inst.program % 128),
-                                       int(f.instruments.size()) - 1));
-    }
-
-    return f;
+    return instruments_.Build(make_sample);
 }
 
 uint32_t SampleRate(const Rom& rom, const Module& module, uint16_t fine_tune)

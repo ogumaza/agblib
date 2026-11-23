@@ -11,12 +11,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/testing/byte_writer.h"
 #include "xsflib/bytes.h"
 
 #include "agblib/agb/gba.h"
 #include "agblib/testing/agb_files.h"
 #include "agblib/ubimilan/driver.h"
-#include "ntdlib/testing/byte_writer.h"
 
 namespace agblib::testing::ubimilan_image
 {
@@ -48,6 +48,20 @@ inline constexpr uint32_t kFineTable = kRomBase + 0x40000;
 // The offset of a bank's kit table in a TestImage: room for 60 resources before it.
 inline constexpr uint32_t kKitTableOffset = 0x100;
 
+// The game's routine that calls the routine that takes the sound bank, the archive's lookup of the bank, and the call
+// of the two with file 2. Both builds of the driver have them.
+inline void WriteBankCalls(CartImage& cart)
+{
+    cart.Put16(kWrapper, 0xB500);
+    cart.PutBl(kWrapper + 2, kTakeBank);
+    cart.Put16(kWrapper + 6, 0xBD00);
+    cart.PutHalfwords(kFileLookup, {0x4801, 0x4770});
+    cart.Put32(kFileLookup + 8, kBank);
+    cart.Put16(kStart, 0x2002);
+    cart.PutBl(kStart + 2, kFileLookup);
+    cart.PutBl(kStart + 6, kWrapper);
+}
+
 // The driver's code that detection reads: the sequencer's step, the routine that takes the sound bank, the game's
 // routine that calls it, the archive's lookup of the bank, the call of the two with file 2, the PSG's
 // lookups of its tables, and the sound init with Timer 0's float, for a reload of 0xFBFF.
@@ -59,14 +73,7 @@ inline void WriteDriverCode(CartImage& cart)
     cart.PutHalfwords(kTakeBank, {0x4A07, 0x6110, 0x8801, 0x8011, 0x8841, 0x8051, 0x6841, 0x1841, 0x6051, 0x6881,
                                   0x1841, 0x6091, 0x68C1, 0x1840, 0x60D0, 0x4770});
     cart.Put32(kTakeBank + 0x20, 0x02003B00);
-    cart.Put16(kWrapper, 0xB500);
-    cart.PutBl(kWrapper + 2, kTakeBank);
-    cart.Put16(kWrapper + 6, 0xBD00);
-    cart.PutHalfwords(kFileLookup, {0x4801, 0x4770});
-    cart.Put32(kFileLookup + 8, kBank);
-    cart.Put16(kStart, 0x2002);
-    cart.PutBl(kStart + 2, kFileLookup);
-    cart.PutBl(kStart + 6, kWrapper);
+    WriteBankCalls(cart);
 
     cart.PutHalfwords(kInstrumentCode,
                       {0xB500, 0x0600, 0x0E00, 0x2901, 0xD00E, 0x2901, 0xDC02, 0x2900, 0xD003, 0xE015, 0x2902, 0xD00D,

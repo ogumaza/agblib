@@ -80,16 +80,18 @@ bool DecodeEvent(const Rom& rom, uint32_t address, Format format, Event& event)
     {
         event.command = first;
     }
+
     if (event.command >= kCommandCount)
     {
         return false;
     }
+
     if (format == Format::kChannelByte && HasChannel(event.command))
     {
         event.channel = rom.U8(at++) & 0x0F;
     }
 
-    // The whole command has to lie in the ROM. A command without arguments can be the ROM's last byte.
+    // The whole command has to be in the ROM. A command without arguments can be the ROM's last byte.
     const uint32_t args = kArgBytes[event.command];
     if (!rom.Contains(address, at + args - address))
     {
@@ -182,6 +184,7 @@ TrackLayout ScanTrack(const Rom& rom, uint32_t address, Format format)
             tick += e.value;
             continue;
         }
+
         if (e.command == kCmdEnd)
         {
             break;

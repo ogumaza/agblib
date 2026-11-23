@@ -4,8 +4,8 @@
 // game's start-up code does, and makes the calls of the game's start-up code: the game's sound init, or the library's
 // set-up routines. It starts a piece as the game does, and each frame runs the game's routine for the frame, if it has
 // one, and the mixer's worker. It reads what the library leaves in memory: the records of the player, its channels and
-// the mixer's channels, the mixer's variables and the frame's output. It's the reference for ntdlib's model of Krawall
-// (krawall::Player).
+// the mixer's channels, the mixer's variables and the frame's output. It's the reference for the agblib model of
+// Krawall (krawall::Player).
 //
 // The worker asks getDmaAddress() for the buffers to mix into and the samples to mix. The game's routine works that
 // out from the DMA's position in a double buffer. A stand-in for it hands the worker two buffers in EWRAM and a frame's
@@ -83,7 +83,7 @@ struct GameRoutines
     int frame_samples = 276;
     bool vram = false; // the start-up code copies code to the video memory: the game can't run
 
-    // The records: the player's, which its channels follow, and the mixer's channels. The mixer's variables: the
+    // The records: the player's record and then its channels, and the mixer's channels. The mixer's variables: the
     // master volumes of the music and the sound effects with hqMode and hqRamp, the timer's step and count, the music
     // volume and the count of plays.
     uint32_t player = 0;
@@ -103,18 +103,18 @@ public:
     GameDriver(const GameDriver&) = delete;
     GameDriver& operator=(const GameDriver&) = delete;
 
-    // Starts `song`, a piece of `info.songs`, as the game does. Returns the address of the module that plays: in a game
+    // Starts `song`, a piece of `info.songs` as the game does. Returns the address of the module that plays: in a game
     // that loads its modules from music files, the address of the module in the file's unpacked data.
     uint32_t Play(const DriverInfo& info, const ModuleSong& song);
 
     // Runs the game's routine for the frame and the worker.
     void Frame();
 
-    // Runs the game's routine for the frame alone, as in a frame in which getDmaAddress() hands the worker no buffer:
+    // Runs the game's routine for the frame alone as in a frame in which getDmaAddress() hands the worker no buffer:
     // the worker then returns at once.
     void SkipFrame();
 
-    // The frame's output, as signed 8-bit points.
+    // The frame's output as signed 8-bit points.
     std::vector<int8_t> Left();
     std::vector<int8_t> Right();
 
@@ -125,8 +125,8 @@ public:
     std::vector<uint8_t> Bytes(uint32_t address, uint32_t size);
 
     // Moves each word of `record` at `offsets` that points into the unpacked data of the music file that the last
-    // Play() loaded, to the address of the same byte in ntdlib's copy of it (DriverInfo::unpacked). Leaves the record
-    // alone in a game without music files.
+    // Play() loaded, to the address of the same byte in the library's copy of it (DriverInfo::unpacked). Leaves the
+    // record alone in a game without music files.
     void Translate(std::vector<uint8_t>& record, std::span<const uint32_t> offsets) const;
 
     const GameRoutines& Routines() const

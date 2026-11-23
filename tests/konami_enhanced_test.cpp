@@ -3,6 +3,7 @@
 // Tests of the enhanced mode of konami::ArchivePlayer, its echo and its archive source. konami_player_test.cpp says
 // how the tests are built.
 
+#include "agb_test_util.h"
 #include "konami_player_test_util.h"
 
 namespace konami_player_tests
@@ -26,9 +27,10 @@ void TestEnhancedGain()
     {
         XSFLIB_CHECK(std::fabs(out[i]) < 0.03f);
     }
+
     for (size_t i = 2 * kEnhanced; i < out.size(); i++)
     {
-        XSFLIB_CHECK(Near(out[i], 0.5));
+        XSFLIB_CHECK(NearPrinted(out[i], 0.5));
     }
 
     // The console's mode refuses the enhanced mode's frames.
@@ -46,8 +48,8 @@ void TestEnhancedDoesNotWrap()
     player.Start(0, EnhancedOptions());
     const std::vector<float> out = EnhancedFrames(player, 3);
     XSFLIB_CHECK(AllAre(player.FifoBytes(0), -2));
-    XSFLIB_CHECK(Near(out[out.size() - 1], 254.0 / 128.0, 0.01));
-    XSFLIB_CHECK(Near(out[out.size() - 2], 254.0 / 128.0, 0.01));
+    XSFLIB_CHECK(NearPrinted(out[out.size() - 1], 254.0 / 128.0, 0.01));
+    XSFLIB_CHECK(NearPrinted(out[out.size() - 2], 254.0 / 128.0, 0.01));
 }
 
 void TestEnhancedRingAndFifoGains()
@@ -61,8 +63,8 @@ void TestEnhancedRingAndFifoGains()
     ArchivePlayer ring_player(ring_rom, InfoOf(Revision::kEternalDuelist));
     ring_player.Start(0, EnhancedOptions());
     const std::vector<float> ring_out = EnhancedFrames(ring_player, 5);
-    XSFLIB_CHECK(Near(ring_out[ring_out.size() - 1], 64.0 / 128.0 * 8.0 / 16.0));
-    XSFLIB_CHECK(Near(ring_out[ring_out.size() - 2], 64.0 / 128.0 * 8.0 / 16.0));
+    XSFLIB_CHECK(NearPrinted(ring_out[ring_out.size() - 1], 64.0 / 128.0 * 8.0 / 16.0));
+    XSFLIB_CHECK(NearPrinted(ring_out[ring_out.size() - 2], 64.0 / 128.0 * 8.0 / 16.0));
 
     // In the revision without a mixer, a volume v gives (v + 1) / 32, at the FIFO's timer.
     Image fifo;
@@ -74,8 +76,8 @@ void TestEnhancedRingAndFifoGains()
     ArchivePlayer fifo_player(fifo_rom, FifoInfo());
     fifo_player.Start(0, EnhancedOptions());
     const std::vector<float> fifo_out = EnhancedFrames(fifo_player, 2);
-    XSFLIB_CHECK(Near(fifo_out[fifo_out.size() - 1], 64.0 / 128.0 * 13.0 / 32.0));
-    XSFLIB_CHECK(Near(fifo_out[fifo_out.size() - 2], 64.0 / 128.0 * 13.0 / 32.0));
+    XSFLIB_CHECK(NearPrinted(fifo_out[fifo_out.size() - 1], 64.0 / 128.0 * 13.0 / 32.0));
+    XSFLIB_CHECK(NearPrinted(fifo_out[fifo_out.size() - 2], 64.0 / 128.0 * 13.0 / 32.0));
 }
 
 void TestEnhancedRamp()
@@ -102,12 +104,12 @@ void TestEnhancedRamp()
     {
         return out[2 * sample];
     };
-    XSFLIB_CHECK(Near(right(ramp - 8), 0.5));
-    XSFLIB_CHECK(Near(right(ramp + kEnhanced / 4), 0.5 * (1.0 - 0.5 / 4.0)));
-    XSFLIB_CHECK(Near(right(ramp + kEnhanced / 2), 0.5 * (1.0 - 0.5 / 2.0)));
-    XSFLIB_CHECK(Near(right(ramp + kEnhanced + 8), 0.25));
-    XSFLIB_CHECK(Near(left(ramp + kEnhanced / 2), 0.5));
-    XSFLIB_CHECK(Near(left(ramp + kEnhanced + 8), 0.5));
+    XSFLIB_CHECK(NearPrinted(right(ramp - 8), 0.5));
+    XSFLIB_CHECK(NearPrinted(right(ramp + kEnhanced / 4), 0.5 * (1.0 - 0.5 / 4.0)));
+    XSFLIB_CHECK(NearPrinted(right(ramp + kEnhanced / 2), 0.5 * (1.0 - 0.5 / 2.0)));
+    XSFLIB_CHECK(NearPrinted(right(ramp + kEnhanced + 8), 0.25));
+    XSFLIB_CHECK(NearPrinted(left(ramp + kEnhanced / 2), 0.5));
+    XSFLIB_CHECK(NearPrinted(left(ramp + kEnhanced + 8), 0.5));
 }
 
 void TestEnhancedRate()
@@ -164,13 +166,15 @@ void TestEnhancedEcho()
     {
         start++;
     }
+
     XSFLIB_CHECK(start + 2 * 115 + 64 < out.size() / 2);
     constexpr size_t kDelay = 115;
     for (size_t i = start - 16; i < start + 48; i++)
     {
-        XSFLIB_CHECK(Near(out[2 * (i + kDelay)], 0.25 * double(out[2 * i]), 0.001));
-        XSFLIB_CHECK(Near(out[2 * (i + 2 * kDelay)], 0.0625 * double(out[2 * i]), 0.001));
+        XSFLIB_CHECK(NearPrinted(out[2 * (i + kDelay)], 0.25 * double(out[2 * i]), 0.001));
+        XSFLIB_CHECK(NearPrinted(out[2 * (i + 2 * kDelay)], 0.0625 * double(out[2 * i]), 0.001));
     }
+
     XSFLIB_CHECK(out[2 * (start + 14)] > 0.4f && out[2 * (start + 14)] < 0.6f);
 }
 
@@ -269,6 +273,7 @@ void TestEnhancedFramesWithoutMixing()
     {
         XSFLIB_CHECK(b[i] == 0.0f);
     }
+
     for (size_t i = 2 * kEnhanced; i < a.size(); i++)
     {
         XSFLIB_CHECK(a[i] == b[i]);
@@ -285,33 +290,26 @@ void TestEnhancedSnapshotsAndMutes()
     const std::vector<float> run = EnhancedFrames(player, 4);
     player.Restore(snapshot);
     XSFLIB_CHECK(EnhancedFrames(player, 4) == run);
-    XSFLIB_CHECK(Near(run[run.size() - 1], 0.75));
+    XSFLIB_CHECK(NearPrinted(run[run.size() - 1], 0.75));
 
     // A mute takes the voice's samples out, and a solo leaves only them. A meter shows the part of a track on the scale
     // of 16-bit samples, and the output's peak on the same scale.
     player.MuteTrack(5, true);
     std::vector<float> muted = EnhancedFrames(player, 3);
-    XSFLIB_CHECK(Near(muted[muted.size() - 1], 0.5));
+    XSFLIB_CHECK(NearPrinted(muted[muted.size() - 1], 0.5));
     player.MuteTrack(5, false);
     player.SoloTrack(5, true);
     player.MeterTracks(true);
     muted = EnhancedFrames(player, 3);
-    XSFLIB_CHECK(Near(muted[muted.size() - 1], 0.25));
+    XSFLIB_CHECK(NearPrinted(muted[muted.size() - 1], 0.25));
     XSFLIB_CHECK(std::abs(player.TrackPeaks(5)[0] - 8192) < 200 && std::abs(player.TrackPeaks(5)[1] - 8192) < 200);
     XSFLIB_CHECK(player.TrackPeaks(4)[0] == 0);
     XSFLIB_CHECK(std::abs(player.OutputPeaks()[0] - 8192) < 200);
 }
 
-struct RomSet
+// A test program's set for archive mode, and whether it names the driver's tables.
+struct RomSet : agblib::testing::agb_tests::RomSet
 {
-    std::vector<uint8_t>* File(const std::string& path)
-    {
-        const auto file = files.find(path);
-        return file != files.end() ? &file->second : nullptr;
-    }
-
-    std::map<std::string, std::vector<uint8_t>> files;
-    int song = 0;
     bool tables_given = true;
 };
 
@@ -352,6 +350,7 @@ void PutDetectedCode(Image& m)
     {
         m.Put16(kRomBase + 0xA00 + 2 * i, volume[i]);
     }
+
     m.Put32(kRomBase + 0xA08, kVolumes);
 }
 
@@ -393,6 +392,7 @@ void TestArchiveSource()
     {
         source.RunFrame(out);
     }
+
     XSFLIB_CHECK(out.back() == 32 * 4 * 64);
     source.Restore(*snapshot);
     std::vector<int16_t> again;
@@ -400,6 +400,7 @@ void TestArchiveSource()
     {
         source.RunFrame(again);
     }
+
     XSFLIB_CHECK(std::equal(again.begin(), again.end(), out.begin() + std::ptrdiff_t(saved), out.end()));
 
     RomSet missing = SetOf(rom, 5);

@@ -37,8 +37,8 @@ constexpr int PresetBank(int channel)
     return channel;
 }
 
-// The bank of the noise's drums. Channel 9's noise keys play on the PSG's noise channel, which gets a MIDI track of its
-// own. No sequence channel 3 plays notes, so its bank is free.
+// The bank of the noise's drums. Channel 9's noise keys play on the PSG's noise channel. That channel gets a MIDI track
+// of its own. No sequence channel 3 plays notes, and its bank is therefore free.
 constexpr int kNoiseBank = 3;
 
 // The MIDI keys of the noise's drums: kKitDrums drums to a program, from kFirstDrumKey.
@@ -53,12 +53,12 @@ const char* ChannelName(int channel);
 // `key` - 36. A key past the table's ends takes no tuning.
 int SquareCents(const Rom& rom, const DriverInfo& info, int key);
 
-// Returns the cents by which a wave zone of key `key` plays the key's pitch in the game's frequency table: entry
-// `key` - 12, which plays the 64 steps of the wave RAM's two banks. `offset` is WaveKeyOffset() of the program's wave.
+// Returns the cents by which a wave zone of key `key` plays the key's pitch in the game's frequency table: entry `key`
+// - 12. That entry plays the 64 steps of the wave RAM's two banks. `offset` is WaveKeyOffset() of the program's wave.
 int WaveCents(const Rom& rom, const DriverInfo& info, int key, int offset);
 
 // Returns the wave that the wave channel plays for program `program`: both banks of the wave RAM, the program's 32
-// bytes of the wave table, as 64 steps.
+// bytes of the wave table as 64 steps.
 WaveShape ProgramWave(const Rom& rom, const DriverInfo& info, int program);
 
 // The instruments that songs play. They become a SoundFont's presets. One set can serve all of a game's songs, for a
@@ -70,8 +70,8 @@ public:
     // point `skip`.
     void AddKitKey(int program, int key, uint32_t sample, uint32_t skip = 0);
 
-    // Returns the number of the noise's drum `sound`, which plays at key kFirstDrumKey + number % kKitDrums of program
-    // number / kKitDrums. A new sound gets the next number.
+    // Returns the number of the noise's drum `sound`. The drum plays at key kFirstDrumKey + number % kKitDrums of
+    // program number / kKitDrums. A new sound gets the next number.
     int AddNoise(const NoiseSound& sound);
 
     // Adds instrument `program` of square channel `channel`, 0 or 1, whose notes set NRx1 to `duty`. NRx1's top 2 bits

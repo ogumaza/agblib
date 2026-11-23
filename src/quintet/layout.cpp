@@ -38,7 +38,7 @@ struct List
 };
 
 // The end of part `part` of the music file whose first word is at `file`, from the ROM's start: where the next part's
-// size lies. Returns 0 if the file doesn't hold the part.
+// size is. Returns 0 if the file doesn't contain the part.
 uint32_t PartEnd(const Rom& rom, uint32_t file, int part)
 {
     uint32_t at = file;
@@ -48,6 +48,7 @@ uint32_t PartEnd(const Rom& rom, uint32_t file, int part)
         {
             return 0;
         }
+
         at += 4 + (rom.U32(at) & ~3u);
     }
 
@@ -55,7 +56,7 @@ uint32_t PartEnd(const Rom& rom, uint32_t file, int part)
 }
 
 // The list of `songs`, whose room ends no later than `limit` from the ROM's start, or at the list's end without it.
-// Returns nothing unless each song's header reads and the songs lie back to back.
+// Returns nothing unless each song's header reads and the songs are back to back.
 std::optional<List> ListOf(const Rom& rom, const std::vector<uint32_t>& songs, uint32_t limit)
 {
     List list;
@@ -67,6 +68,7 @@ std::optional<List> ListOf(const Rom& rom, const std::vector<uint32_t>& songs, u
         {
             return std::nullopt;
         }
+
         list.songs.push_back(songs[i] - kRomBase);
     }
 
@@ -82,6 +84,7 @@ std::optional<List> ListOf(const Rom& rom, const std::vector<uint32_t>& songs, u
         {
             same = rom.U8(kRomBase + at) == fill;
         }
+
         if (same)
         {
             list.room_end = limit;
@@ -116,6 +119,7 @@ std::vector<List> ListsOf(const Rom& rom, std::span<const DriverInfo> files)
             {
                 continue;
             }
+
             if (std::optional<List> list = ListOf(rom, songs, in_file ? PartEnd(rom, file, part) : 0))
             {
                 lists.push_back(std::move(*list));
@@ -143,6 +147,7 @@ void AddRun(std::vector<ntdlib::sar::Piece>& pieces, std::span<const uint8_t> by
     {
         return;
     }
+
     if (pieces.empty() || !std::holds_alternative<std::vector<uint8_t>>(pieces.back()))
     {
         pieces.emplace_back(std::vector<uint8_t>());
@@ -152,7 +157,7 @@ void AddRun(std::vector<ntdlib::sar::Piece>& pieces, std::span<const uint8_t> by
     run.insert(run.end(), bytes.begin(), bytes.end());
 }
 
-// The places of a song's header's fields.
+// The places of the fields of a song's header.
 ntdlib::sar::Place PieceStart(uint32_t piece)
 {
     return {piece, 0, false, false};
@@ -215,8 +220,10 @@ Placed PlacePieces(const Traits& traits, std::span<const ntdlib::commands::Seque
             {
                 throw std::invalid_argument("a list of songs outgrows its room");
             }
+
             out.resize(room->second->end, room->second->fill);
         }
+
         starts.push_back(uint32_t(out.size()));
         if (p == pieces.size())
         {
@@ -230,6 +237,7 @@ Placed PlacePieces(const Traits& traits, std::span<const ntdlib::commands::Seque
             ends.push_back(uint32_t(out.size()));
             continue;
         }
+
         if (std::holds_alternative<ntdlib::sar::Padding>(piece))
         {
             throw std::invalid_argument("a ROM of Quintet's driver holds no padding");
@@ -240,6 +248,7 @@ Placed PlacePieces(const Traits& traits, std::span<const ntdlib::commands::Seque
         {
             throw std::invalid_argument("a sequence piece names a sequence that the layout lacks");
         }
+
         const std::set<uint32_t>& named = entries[p];
         const std::vector<uint32_t> starts_of(named.begin(), named.end());
         const Encoded encoded = EncodeSequence(sequences[sequence.sequence], starts_of, traits);
@@ -248,6 +257,7 @@ Placed PlacePieces(const Traits& traits, std::span<const ntdlib::commands::Seque
         {
             out.push_back(0);
         }
+
         ends.push_back(uint32_t(out.size()));
         offsets[p] = encoded.offsets;
     }
@@ -266,12 +276,14 @@ uint32_t Position(std::span<const ntdlib::sar::Piece> pieces, const Placed& plac
     {
         throw std::invalid_argument("a field names a place that the pieces lack");
     }
+
     if (!place.item)
     {
         if (place.offset > ends[place.piece] - starts[place.piece])
         {
             throw std::invalid_argument("a field names a place past its piece");
         }
+
         return starts[place.piece] + place.offset;
     }
 
@@ -303,6 +315,7 @@ void CutSong(const Rom& rom, std::span<const uint8_t> bytes, uint32_t song, Layo
         {
             starts.push_back(channel - kRomBase - song - kHeaderBytes);
         }
+
         decoded = DecodeSequence(body, starts, layout.traits);
         if (!decoded.opaque)
         {
@@ -339,6 +352,7 @@ void CutSong(const Rom& rom, std::span<const uint8_t> bytes, uint32_t song, Layo
         offset.bytes = 2;
         layout.fields.push_back(offset);
     }
+
     layout.sequences.push_back(std::move(decoded.sequence));
 }
 
@@ -371,6 +385,7 @@ Layout Cut(const Rom& rom, std::span<const DriverInfo> files)
         layout.pieces.emplace_back(std::vector<uint8_t>());
         at = list.room_end;
     }
+
     AddRun(layout.pieces, bytes.subspan(at));
 
     if (layout.sequences.empty())

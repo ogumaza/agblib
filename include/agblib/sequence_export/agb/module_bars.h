@@ -30,7 +30,7 @@ struct OrderRun
     size_t start = 0; // the step of its first row
     size_t steps = 0; // the steps to the next run, or to the end
     int order = 0;
-    int first_row = 0; // its first row's number in the pattern, which a break can make more than 0
+    int first_row = 0; // its first row's number in the pattern: more than 0 after a break
 };
 
 // Returns the runs of rows that the module's orders play.
@@ -46,19 +46,19 @@ struct Meter
 // Returns the ticks in a full bar of `meter`.
 size_t BarTicks(const Meter& meter);
 
-// Chooses a beat and meter using row lengths and pattern boundaries. In 4/4, a quarter note spans a power-of-two number
-// of rows; in 12/8, each eighth note does. The target beat tempo is at least 105 BPM and below 210, with `row_ticks`
-// MIDI ticks per row and `tick_seconds` seconds per MIDI tick. 12/8 wins when more of the runs' MIDI ticks, in `ticks`,
-// fit whole bars of it than of 4/4, as 48-row patterns do at two rows per eighth note. `ticks` holds the MIDI tick of
-// each step, and of the end. The count leaves out the first run, which may be a lead-in, and the last, which may end
-// early.
+// Chooses a beat and meter from the row lengths and the pattern boundaries. In 4/4, a quarter note spans a power-of-two
+// number of rows. In 12/8, each eighth note does. The target beat tempo is at least 105 BPM and below 210, with
+// `row_ticks` MIDI ticks per row and `tick_seconds` seconds per MIDI tick. 12/8 wins when more of the runs' MIDI ticks,
+// in `ticks`, fit whole bars of it than of 4/4. 48-row patterns at two rows per eighth note do. `ticks` contains the
+// MIDI tick of each step, and of the end. The count leaves out the first run and the last. The first may be a lead-in,
+// and the last may end early.
 Meter ChooseMeter(const std::vector<uint32_t>& ticks, const std::vector<OrderRun>& runs, uint32_t row_ticks,
                   double tick_seconds);
 
 // Returns bar start positions in MIDI ticks, with `bar` MIDI ticks in a full bar. Bars align to each pattern's first
 // row, and any rows that a run skips count as long as its first row. A pattern that ends early has a short final bar.
-// If a break or jump cuts the first order short, as with a game's lead-in, its partial bar comes at the start instead,
-// as a pickup, each time the first order plays.
+// If a break or jump cuts the first order short, like a game's lead-in, its partial bar comes at the start instead, as
+// a pickup, each time the first order plays.
 std::vector<uint32_t> BarStarts(const std::vector<ModuleStep>& steps, const std::vector<uint32_t>& ticks,
                                 const std::vector<OrderRun>& runs, size_t bar);
 

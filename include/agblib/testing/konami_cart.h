@@ -43,6 +43,7 @@ public:
         {
             Put16(e + 4 + 2 * uint32_t(t), rest);
         }
+
         for (const auto& [t, o] : offsets)
         {
             Put16(e + 4 + 2 * uint32_t(t), uint16_t(o));

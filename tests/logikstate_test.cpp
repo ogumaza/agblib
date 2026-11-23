@@ -13,7 +13,9 @@
 #include "seqlib/midi/reader.h"
 #include "seqlib/sf2/soundfont.h"
 #include "seqlib/testing/check.h"
+#include "xsflib/testing/near.h"
 
+#include "agb_conversion_test_util.h"
 #include "agblib/agb/rom.h"
 #include "agblib/logikstate/driver.h"
 #include "agblib/logikstate/player.h"
@@ -24,6 +26,7 @@
 #include "agblib/testing/agb_cart.h"
 #include "agblib/testing/agb_files.h"
 #include "agblib/testing/logikstate_cart.h"
+#include "logikstate_test_util.h"
 
 namespace agblib::sequence_export::logikstate
 {
@@ -57,7 +60,9 @@ using agblib::testing::agb_files::ReadMidi;
 using agblib::testing::agb_files::ReadSf2;
 using agblib::testing::agb_files::Sf2Records;
 using agblib::testing::agb_files::TempSettings;
+using agblib::testing::agb_tests::CheckFilesInMemory;
 using namespace agblib::testing::logikstate_cart;
+using xsflib::testing::Near;
 
 // The lengths of a row and of a tick of effects at the test modules' rate, speed 6 and tempo 125.
 constexpr uint32_t kRow = 2522;
@@ -95,25 +100,10 @@ std::vector<std::vector<int8_t>> TestBank()
 // pattern of 64 empty rows.
 TestModule EmptyModule(uint32_t channels = 4)
 {
-    TestModule module;
+    TestModule module = ThreeSampleModule();
     module.channels = channels;
-    module.patterns = {std::vector<TestRow>(64)};
-    module.samples[0] = {100, 0, 64, 0, 0};
-    module.samples[1] = {400, 0, 64, 0, 0};
-    module.samples[2] = {3000, 0, 64, 0, 0};
 
     return module;
-}
-
-// A cell with a note of `sample` at `pitch`, and one with an effect alone.
-TestCell NoteCell(uint16_t pitch, uint16_t sample, uint8_t effect = 0, uint8_t operand = 0)
-{
-    return {pitch, sample, effect, operand};
-}
-
-TestCell EffectCell(uint8_t effect, uint8_t operand)
-{
-    return {kNoPitch, 0, effect, operand};
 }
 
 // Returns the ROM of a cartridge with the test bank and `module`. One call of the play routine names the module.
@@ -123,15 +113,6 @@ Rom RomWith(const TestModule& module)
     cart.AddCall(cart.AddModule(module), kBank, 0);
 
     return cart.ToRom();
-}
-
-DriverInfo Detect(const Rom& rom)
-{
-    DriverInfo info;
-    std::string error;
-    DetectDriver(rom, info, error);
-
-    return info;
 }
 
 // A row or a tick that a player ran: the samples from the song's start, and the channels after it.
@@ -164,6 +145,7 @@ std::vector<Step> Play(const Rom& rom, int frames, std::vector<std::string>* war
     {
         player.Frame();
     }
+
     if (warnings)
     {
         *warnings = player.Warnings();
@@ -670,12 +652,9 @@ void TestMixerPlaces()
     SEQLIB_CHECK(changed.position == paused.position && changed.starts == 2 && changed.first_point == points);
 }
 
-// Returns true if two times in seconds are within a millisecond. The frames that end a sample or two short move a
-// row's time by that much.
-bool Near(double a, double b)
-{
-    return std::fabs(a - b) < 0.001;
-}
+// Two times in seconds are near within a millisecond. The frames that end a sample or two short move a row's time by
+// that much.
+constexpr double kTimeTolerance = 0.001;
 
 // Converts the first song of `rom` with the default settings and returns the report.
 SongReport Convert(const Rom& rom, const std::string& name)
@@ -740,8 +719,8 @@ void TestConversion()
     SEQLIB_CHECK_EQ(SampleField(sf, 0, kShdrRate), uint32_t(kPeriodClock) / (428 * 2));
     SEQLIB_CHECK_EQ(SampleField(sf, 1, kShdrStartLoop) - SampleField(sf, 1, kShdrStart), 100u);
     SEQLIB_CHECK_EQ(SampleField(sf, 1, kShdrEndLoop) - SampleField(sf, 1, kShdrStart), 400u);
-    SEQLIB_CHECK(Near(report.seconds, double(128 * kRow) / kRate));
-    SEQLIB_CHECK(report.loop_start == 0 && Near(report.loop_end, double(64 * kRow) / kRate));
+    SEQLIB_CHECK(Near(report.seconds, double(128 * kRow) / kRate, kTimeTolerance));
+    SEQLIB_CHECK(report.loop_start == 0 && Near(report.loop_end, double(64 * kRow) / kRate, kTimeTolerance));
 }
 
 // The fine tune of a sample is part of the rate of its SoundFont sample. Its notes therefore have no bend. A slide
@@ -828,6 +807,7 @@ void TestPausedNote()
         const auto it = gens.find(uint16_t(seqlib::sf2::kStartAddrsOffset));
         offset = offset || (it != gens.end() && it->second == (kRow * TestStep(104)) >> 12);
     }
+
     SEQLIB_CHECK(offset);
 }
 
@@ -849,7 +829,7 @@ void TestSecondPass()
     SEQLIB_REQUIRE(report.ok && markers.size() == 2);
     SEQLIB_CHECK_EQ(markers[0].tick, uint64_t(128 * kRowTicks));
     SEQLIB_CHECK_EQ(markers[1].tick, uint64_t(192 * kRowTicks));
-    SEQLIB_CHECK(Near(report.loop_start, double(128 * kRow) / kRate));
+    SEQLIB_CHECK(Near(report.loop_start, double(128 * kRow) / kRate, kTimeTolerance));
 }
 
 // A module that ends in a loop of empty rows becomes a file without a loop. A jingle ends that way. The file ends where
@@ -871,7 +851,7 @@ void TestSilentLoop()
 
     SEQLIB_REQUIRE(report.ok && held_report.ok);
     SEQLIB_CHECK(seqlib::midi::Markers(ReadMidi(report.midi_path)).empty());
-    SEQLIB_CHECK(Near(report.seconds, double(64 * kRow) / kRate));
+    SEQLIB_CHECK(Near(report.seconds, double(64 * kRow) / kRate, kTimeTolerance));
     SEQLIB_CHECK_EQ(seqlib::midi::Markers(ReadMidi(held_report.midi_path)).size(), size_t(2));
 }
 
@@ -893,13 +873,9 @@ void TestSongFiles()
     const SongFiles silent = ConvertSongFiles(rom, info, 0, none);
     const SongFiles missing = ConvertSongFiles(rom, info, 1, opt);
 
-    SEQLIB_REQUIRE(written.ok && files.report.ok && inspected.ok);
-    SEQLIB_CHECK(!written.midi_path.empty() && !written.sf2_path.empty());
-    SEQLIB_CHECK(files.report.midi_path.empty() && files.report.sf2_path.empty() && inspected.midi_path.empty());
-    SEQLIB_CHECK(!files.midi.empty() && files.midi == ReadAll(written.midi_path));
-    SEQLIB_CHECK(!files.sf2.empty() && files.sf2 == ReadAll(written.sf2_path));
-    SEQLIB_CHECK(files.report.seconds == written.seconds && inspected.seconds == written.seconds);
-    SEQLIB_CHECK_EQ(files.report.tracks, written.tracks);
+    CheckFilesInMemory(written, files);
+    SEQLIB_REQUIRE(inspected.ok);
+    SEQLIB_CHECK(inspected.midi_path.empty() && inspected.seconds == written.seconds);
     SEQLIB_CHECK(silent.report.ok && silent.report.silent && silent.midi.empty() && silent.sf2.empty());
     SEQLIB_CHECK(!missing.report.ok && missing.midi.empty() && missing.sf2.empty());
 }

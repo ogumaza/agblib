@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: MIT
 
-// Small synthetic cartridges for the tests of Konami's output stage and player.
+// Small synthetic cartridges for the tests of Konami's output stage and player, and a check of the stores to the
+// sound registers.
 
 #pragma once
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <initializer_list>
 #include <utility>
 #include <vector>
 
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/konami/driver.h"
 #include "agblib/konami/seqformat.h"
 #include "agblib/testing/agb_cart.h"
@@ -21,6 +24,7 @@ namespace konami_testing
 {
 
 using agblib::agb::kRomBase;
+using agblib::agb::RegisterWrite;
 using agblib::konami::DriverInfo;
 using agblib::konami::Revision;
 using agblib::konami::SongEntrySize;
@@ -49,22 +53,21 @@ constexpr uint32_t kRecords28 = 0xE247701C;
 constexpr uint32_t kRecords24 = 0xE2477018;
 constexpr uint32_t kRecords20 = 0;
 
-// GBATEK's names of the sound registers.
-constexpr uint32_t kSound1CntL = 0x04000060;
-constexpr uint32_t kSound1CntH = 0x04000062;
-constexpr uint32_t kSound1CntX = 0x04000064;
-constexpr uint32_t kSound2CntL = 0x04000068;
-constexpr uint32_t kSound2CntH = 0x0400006C;
-constexpr uint32_t kSound3CntL = 0x04000070;
-constexpr uint32_t kSound3CntH = 0x04000072;
-constexpr uint32_t kSound3CntX = 0x04000074;
-constexpr uint32_t kSound4CntL = 0x04000078;
-constexpr uint32_t kSound4CntH = 0x0400007C;
-constexpr uint32_t kNr50 = 0x04000080;
-constexpr uint32_t kNr51 = 0x04000081;
-constexpr uint32_t kSoundCntH = 0x04000082;
-constexpr uint32_t kSoundCntHHigh = 0x04000083;
-constexpr uint32_t kWaveRam = 0x04000090;
+using agblib::agb::kRegNr50;
+using agblib::agb::kRegNr51;
+using agblib::agb::kRegSound1CntH;
+using agblib::agb::kRegSound1CntL;
+using agblib::agb::kRegSound1CntX;
+using agblib::agb::kRegSound2CntH;
+using agblib::agb::kRegSound2CntL;
+using agblib::agb::kRegSound3CntH;
+using agblib::agb::kRegSound3CntL;
+using agblib::agb::kRegSound3CntX;
+using agblib::agb::kRegSound4CntH;
+using agblib::agb::kRegSound4CntL;
+using agblib::agb::kRegSoundCntH;
+using agblib::agb::kRegSoundCntHHigh;
+using agblib::agb::kRegWaveRam;
 
 inline const std::vector<uint8_t> kWaitingTrack = {0x7F, 0xFD};
 
@@ -99,6 +102,7 @@ public:
         {
             Put16(e + 4 + 2 * uint32_t(t), rest);
         }
+
         for (const auto& [t, o] : offsets)
         {
             Put16(e + 4 + 2 * uint32_t(t), uint16_t(o));
@@ -200,8 +204,42 @@ inline std::vector<int8_t> Block(std::initializer_list<int> values)
             bytes.push_back(int8_t(v));
         }
     }
+
     bytes.resize(16);
     return bytes;
+}
+
+// Returns true if `writes` are the stores in `expected`, in that order. Prints the stores that differ.
+inline bool SameWrites(const std::vector<RegisterWrite>& writes, std::initializer_list<RegisterWrite> expected)
+{
+    bool same = writes.size() == expected.size();
+    if (!same)
+    {
+        std::printf("%zu stores, expected %zu\n", writes.size(), expected.size());
+        for (const RegisterWrite& w : writes)
+        {
+            std::printf("  %08X/%d = %X\n", w.address, w.size, w.value);
+        }
+    }
+
+    size_t i = 0;
+    for (const RegisterWrite& e : expected)
+    {
+        if (i >= writes.size() || writes[i].address != e.address || writes[i].size != e.size ||
+            writes[i].value != e.value)
+        {
+            if (i < writes.size())
+            {
+                std::printf("write %zu: %08X/%d = %X, expected %08X/%d = %X\n", i, writes[i].address, writes[i].size,
+                            writes[i].value, e.address, e.size, e.value);
+            }
+
+            same = false;
+        }
+        i++;
+    }
+
+    return same;
 }
 
 } // namespace konami_testing

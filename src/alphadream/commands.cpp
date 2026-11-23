@@ -162,12 +162,14 @@ private:
             {
                 return Fail("bytes at " + xsflib::Hex(at, 8, true) + " read as two commands");
             }
+
             same->second.states.insert(rests);
             if (same->second.rest_free && same->second.states.size() > 1)
             {
                 return Fail("the note at " + xsflib::Hex(at, 8, true) +
                             " takes a rest after it on one path and not on another");
             }
+
             return true;
         }
 
@@ -202,6 +204,7 @@ private:
         {
             return rom_.Contains(at, size);
         };
+
         Read read;
         if (IsNoteByte(b, version_))
         {
@@ -220,6 +223,7 @@ private:
             {
                 read.item.velocity = ToUnit(rom_.U8(at + 2), Scale{});
             }
+
             read.rest_free = b != 0 && !(key & kRestFlag);
             const bool rest = b == 0 ? (key & kRestFlag) != 0 : (rests || (key & kRestFlag));
             const bool after = b == 0 ? rests : rest;
@@ -227,11 +231,13 @@ private:
             {
                 return false;
             }
+
             if (!rest)
             {
                 work.push_back({at + bytes, after});
                 return true;
             }
+
             if (!need(bytes + 1))
             {
                 return Fail("a note's wait runs past the ROM at " + xsflib::Hex(at, 8, true));
@@ -244,6 +250,7 @@ private:
             {
                 return false;
             }
+
             work.push_back({at + bytes + 1, after});
             return true;
         }
@@ -252,15 +259,18 @@ private:
         {
             return int64_t(rom_.U8(at + offset));
         };
+
         const auto signed_value = [&](uint32_t offset)
         {
             return int64_t(int8_t(rom_.U8(at + offset)));
         };
+
         const auto target = [&](uint32_t offset, uint32_t end)
         {
             const uint32_t jump = rom_.U16(at + offset);
             return start + ((end - start + jump) & 0xFFFF);
         };
+
         bool goes_on = true;
         switch (b)
         {
@@ -322,6 +332,7 @@ private:
             {
                 read.target = target(1, at + 3);
             }
+
             goes_on = false;
             break;
         case kTrackTempo:
@@ -349,6 +360,7 @@ private:
             }
             break;
         }
+
         if (!need(read.size))
         {
             return Fail("a command runs past the ROM at " + xsflib::Hex(at, 8, true));
@@ -360,10 +372,12 @@ private:
         {
             return false;
         }
+
         if (to)
         {
             work.push_back({*to, rests});
         }
+
         if (goes_on)
         {
             work.push_back({at + size, rests});
@@ -402,7 +416,7 @@ Decoded KeptAsData(const Rom& rom, uint32_t address, uint32_t end, const std::st
     return decoded;
 }
 
-// The value of a field in the driver's units, from `low` to `high`. Throws when the bytes can't hold it.
+// The value of a field in the driver's units, from `low` to `high`. Throws when the bytes can't contain it.
 int64_t DriverValue(ntdlib::commands::Fixed unit, int64_t low, int64_t high, const char* what)
 {
     const int64_t value = FromUnit(unit, Scale{});
@@ -414,7 +428,7 @@ int64_t DriverValue(ntdlib::commands::Fixed unit, int64_t low, int64_t high, con
     return value;
 }
 
-// The bytes that `item` takes in `version`. Throws for a command that the version's bytes can't hold.
+// The bytes that `item` takes in `version`. Throws for a command that the version's bytes can't contain.
 uint32_t ItemSize(const Command& item, Version version)
 {
     switch (item.kind)
@@ -429,6 +443,7 @@ uint32_t ItemSize(const Command& item, Version version)
         {
             throw std::invalid_argument("AlphaDream's driver has no wait with this opcode");
         }
+
         return item.encoding.opcode == kRest ? 2 : 1;
     case Kind::kOther:
         if (item.encoding.opcode == kPitchLfo || item.encoding.opcode == kLevelLfo)
@@ -440,6 +455,7 @@ uint32_t ItemSize(const Command& item, Version version)
         {
             return 1;
         }
+
         throw std::invalid_argument("AlphaDream's driver has no other command with this opcode");
     case Kind::kJumpIfGreater:
     case Kind::kJumpIfLessOrEqual:
@@ -449,12 +465,14 @@ uint32_t ItemSize(const Command& item, Version version)
         {
             throw std::invalid_argument("this version of AlphaDream's driver has no volume command");
         }
+
         return 2;
     case Kind::kPriority:
         if (version != Version::kHamSports)
         {
             throw std::invalid_argument("this version of AlphaDream's driver has no priority command");
         }
+
         return 2;
     case Kind::kProgram:
     case Kind::kPan:
@@ -532,8 +550,10 @@ void CheckTracks(const std::vector<Command>& items, const std::vector<uint32_t>&
                 {
                     throw std::invalid_argument("an AlphaDream jump goes outside the 64 KiB from its track's start");
                 }
+
                 work.push_back({target, rests});
             };
+
             switch (item.kind)
             {
             case Kind::kAllocateTracks:
@@ -545,6 +565,7 @@ void CheckTracks(const std::vector<Command>& items, const std::vector<uint32_t>&
                 {
                     throw std::invalid_argument("an AlphaDream track reaches a byte of ticks without its note");
                 }
+
                 work.push_back({i + 1, rests});
                 break;
             case Kind::kNote:
@@ -563,15 +584,18 @@ void CheckTracks(const std::vector<Command>& items, const std::vector<uint32_t>&
                                 "an AlphaDream note takes a rest after it on one path and not on another");
                         }
                     }
+
                     if (!rest)
                     {
                         work.push_back({i + 1, after});
                         break;
                     }
+
                     if (i + 1 >= items.size() || !IsBareWait(items[i + 1]))
                     {
                         throw std::invalid_argument("an AlphaDream note takes a byte of ticks after it");
                     }
+
                     work.push_back({i + 2, after});
                     break;
                 }
@@ -604,6 +628,7 @@ Decoded DecodeSequence(const Rom& rom, Version version, uint32_t address)
         outside.reason = "the song starts outside the ROM";
         return outside;
     }
+
     if (!rom.Contains(address, 2))
     {
         return KeptAsData(rom, address, rom.End(), "the song's header is past the ROM");
@@ -622,9 +647,11 @@ Decoded DecodeSequence(const Rom& rom, Version version, uint32_t address)
         {
             return KeptAsData(rom, address, rom.End(), "the song's header runs past the ROM");
         }
+
         starts.push_back({t, address + rom.U16(header)});
         header += 2;
     }
+
     if (!(mask & kTrackBits))
     {
         return KeptAsData(rom, address, header, "the song plays no track");
@@ -666,6 +693,7 @@ Decoded DecodeSequence(const Rom& rom, Version version, uint32_t address)
             items.push_back(DataItem(rom, at, address_of));
             targets.emplace_back();
         }
+
         item_at[address_of] = uint32_t(items.size());
         items.push_back(read.item);
         targets.push_back(read.target);
@@ -678,6 +706,7 @@ Decoded DecodeSequence(const Rom& rom, Version version, uint32_t address)
         items[first_track + i].target = item;
         decoded.tracks.push_back(item);
     }
+
     for (size_t i = 0; i < items.size(); i++)
     {
         if (targets[i])
@@ -685,6 +714,7 @@ Decoded DecodeSequence(const Rom& rom, Version version, uint32_t address)
             items[i].target = item_at.at(*targets[i]);
         }
     }
+
     decoded.size = at - address;
 
     return decoded;
@@ -753,6 +783,7 @@ std::vector<uint32_t> ItemOffsets(const ntdlib::commands::Sequence& sequence, Ve
             throw std::invalid_argument("an AlphaDream song can't be this long");
         }
     }
+
     offsets.push_back(uint32_t(at));
 
     return offsets;
@@ -775,10 +806,12 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
             tracks.push_back(t);
         }
     }
+
     if (tracks.empty())
     {
         throw std::invalid_argument("an AlphaDream song plays at least one track");
     }
+
     for (size_t i = 0; i < tracks.size(); i++)
     {
         if (items.size() <= i + 1 || items[i + 1].kind != Kind::kOpenTrack || items[i + 1].index != tracks[i])
@@ -798,8 +831,10 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
         {
             throw std::invalid_argument("an AlphaDream command's target is missing from the song");
         }
+
         return encoded.offsets[target];
     };
+
     std::vector<uint8_t>& out = encoded.bytes;
     out.reserve(encoded.offsets.back());
     const auto put16 = [&out](uint32_t value)
@@ -807,6 +842,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
         out.push_back(uint8_t(value));
         out.push_back(uint8_t(value >> 8));
     };
+
     const auto jump = [&](const Command& item, uint32_t end)
     {
         const uint32_t to = offset_of(item.target);
@@ -814,6 +850,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
         {
             throw std::invalid_argument("an AlphaDream jump goes 16 bits at most");
         }
+
         put16((to - end) & 0xFFFF);
     };
 
@@ -825,6 +862,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
         {
             out.push_back(uint8_t(DriverValue(item.value.value, low, high, what)));
         };
+
         switch (item.kind)
         {
         case Kind::kAllocateTracks:
@@ -832,6 +870,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
             {
                 throw std::invalid_argument("an AlphaDream song has one mask, at its start");
             }
+
             put16(mask);
             break;
         case Kind::kOpenTrack:
@@ -843,6 +882,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
             {
                 throw std::invalid_argument("an AlphaDream track starts 16 bits at most from its song's start");
             }
+
             put16(offset_of(item.target));
             break;
         case Kind::kNote:
@@ -856,6 +896,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
                 {
                     throw std::invalid_argument("AlphaDream's driver can't hold this key");
                 }
+
                 out.push_back(length);
                 out.push_back(uint8_t(item.key | (item.encoding.opcode & kRestFlag)));
                 if (version != Version::kSuperstarSaga)
@@ -873,6 +914,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
             {
                 out.push_back(kRest);
             }
+
             byte(0, 0xFF, "wait");
             break;
         case Kind::kOther:
@@ -883,6 +925,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
                 {
                     throw std::invalid_argument("an AlphaDream LFO's settings take 3 bytes");
                 }
+
                 out.insert(out.end(), item.bytes.begin(), item.bytes.end());
             }
             else if (!item.bytes.empty())
@@ -896,6 +939,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
             {
                 throw std::invalid_argument("AlphaDream's driver has 4 counters");
             }
+
             out.push_back(uint8_t((item.kind == Kind::kJumpIfGreater ? kCountedJump : kCountedLoop) + item.index));
             byte(0, 0xFF, "count");
             jump(item, end);
@@ -948,6 +992,7 @@ Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version versi
         default:
             throw std::invalid_argument("AlphaDream's driver has no command of this kind");
         }
+
         if (out.size() != end)
         {
             throw std::logic_error("an AlphaDream item took other bytes than its size");

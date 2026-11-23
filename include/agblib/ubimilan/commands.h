@@ -5,11 +5,11 @@
 //
 //     <countdown> { <command> <countdown> }* <end>
 //
-// A countdown is 2 bytes, low first. The decoder reads the bytes in order: the driver's commands hold no jumps or
+// A countdown is 2 bytes, low first. The decoder reads the bytes in order: the driver's commands contain no jumps or
 // calls. The first 4 bytes become an item of kData, each countdown an item of kWait, and each command an item of its
 // kind. The encoder writes the items back, and gives the same bytes. Bytes after the end stay out of the sequence.
 //
-// The driver counts time in frames, and a sequence has one track of commands for its 16 channels. `index` holds a
+// The driver counts time in frames, and a sequence has one track of commands for its 16 channels. `index` contains a
 // command's channel. A wait's value is the driver's countdown, not a length of time. A countdown of 0 runs the next
 // command in the same frame. A countdown of n runs it n + 1 frames later. No command therefore runs a single frame
 // after another. The first countdown of a piece's first sequence runs its first command n frames in.
@@ -33,11 +33,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+
 #include "agblib/agb/encoded.h"
 #include "agblib/agb/rom.h"
 #include "agblib/ubimilan/driver.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace agblib::ubimilan
 {
@@ -68,10 +69,10 @@ Decoded DecodeResource(const Rom& rom, const DriverInfo& info, int id);
 // The bytes of a sequence, and each item's offset in them (agb/encoded.h).
 using Encoded = agb::Encoded;
 
-// Encodes `sequence`. Throws std::invalid_argument for a value that the driver's bytes can't hold, and for a sequence
-// that the driver wouldn't read as its items say: one that doesn't start with the 4 bytes of a sequence and a wait, a
-// command without a wait after it, a kind that the driver doesn't have, a sequence without an end, or a command after
-// the end.
+// Encodes `sequence`. Throws std::invalid_argument for a value that the driver's bytes can't contain, and for a
+// sequence that the driver wouldn't read as its items say: one that doesn't start with the 4 bytes of a sequence and a
+// wait, a command without a wait after it, a kind that the driver doesn't have, a sequence without an end, or a command
+// after the end.
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence);
 
 // The scale of the value of a command of `kind` (ntdlib::commands::UnitOf): every value stays in the driver's units.

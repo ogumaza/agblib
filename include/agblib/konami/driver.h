@@ -44,11 +44,24 @@ struct SampleInfo
     bool packed = false;     // true if the data is packed (see SamplePcm)
 };
 
+// The bytes of a sample's header before its PCM: the step, the length and the loop start.
+constexpr uint32_t kSampleHeaderBytes = 12;
+
+// The bytes of a packed sample's table of 32 pairs of samples, between its header and its packed data.
+constexpr uint32_t kPackedPairBytes = 0x40;
+
+// The sample numbers that the driver's commands reach: 12 bits.
+constexpr int kSampleNumbers = 0x1000;
+
+// The run of entries that can't be read that ends a walk of a sample table. A table has no count, and some have null
+// entries among their samples.
+constexpr int kInvalidSampleRun = 64;
+
 // Returns the `length` samples of `s`'s PCM, unpacked if the sample is packed.
 std::vector<int8_t> SamplePcm(const Rom& rom, const SampleInfo& s);
 
 // Returns entry `index` of the table of halfwords at `table`. Returns nothing if `table` is 0 (not found) or if the
-// entry lies outside the ROM. A negative index reads before the table. The driver reads there too.
+// entry is outside the ROM. A negative index reads before the table. The driver reads there too.
 std::optional<uint16_t> TableEntry(const Rom& rom, uint32_t table, int index);
 
 // Driver table addresses, detection details (`log`), and problems or assumptions made during detection (`warnings`).
@@ -80,9 +93,9 @@ struct DriverInfo
     uint32_t noise_table = 0;    // u16 NR43 (+flags) per noise note; 0 = not found
     uint32_t wave_table = 0;     // 16-byte wave RAM images, [wave][16 volumes], or in Dungeon Dice Monsters [wave] at
                                  // full scale; 0 = not found
-    uint32_t sfx_wave_table = 0; // the same for waves 80 and up (wave & 7F), which sound effects use; 0 = not found
+    uint32_t sfx_wave_table = 0; // the same for the sound effects' waves 80 and up (wave & 7F); 0 = not found
     uint32_t timer_table = 0;    // u32 timer 0 setting per mixer mode; 0 = not found
-    double mix_rate = 0;         // DirectSound mixer output rate in Hz; 0 in Dungeon Dice Monsters, which has no mixer
+    double mix_rate = 0;         // DirectSound mixer output rate in Hz; 0 in Dungeon Dice Monsters (no mixer)
 
     // The Dungeon Dice Monsters revision's other tables: the sample of each sample map entry that a note gives, the
     // timer period of each sample pitch, and the NR32 volume code of each track volume. Its vibrato reads the PSG
@@ -92,7 +105,7 @@ struct DriverInfo
     uint32_t wave_volume_table = 0;   // u16 NR32 value per volume (0-15)
     int vibrato_entry = 0;
 
-    // True if a pitch bend (F2) also bends the notes after it, as it does in Yu-Gi-Oh! Ultimate Masters Edition. Other
+    // True if a pitch bend (F2) also bends the notes after it as it does in Yu-Gi-Oh! Ultimate Masters Edition. Other
     // builds of the driver, such as the Shaman King games', bend only the note that's playing, until its next note or
     // vibrato step.
     bool bend_kept = true;
@@ -102,8 +115,8 @@ struct DriverInfo
     // game plays these songs in both states. Each of them therefore has a second version. Only BMAJ and B3MJ have any.
     std::vector<int> live_songs;
 
-    // The table of samples that the live stage gives F6 for each song that has one: entry 0 is 0, and the entries
-    // after it hold sample numbers with flags (see Request::samples).
+    // The table of samples that the live stage gives F6 for each song that has one: entry 0 is 0, and the entries after
+    // it contain sample numbers with flags (see Request::samples).
     std::map<int, std::vector<uint16_t>> live_tables;
 
     // The second sample table. The note start reads it for a sample number with bit 15 set. Only the samples of the

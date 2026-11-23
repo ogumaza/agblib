@@ -3,7 +3,7 @@
 // A game's R&D2 driver, run on the GBA's CPU (agb::System). It calls the routines that the game calls: the game's sound
 // init, the requests for a song, and each frame the driver's VBlank routine and its per-frame routine. It reads what
 // the driver leaves in memory: the bytes that the mixer leaves for the FIFOs and the voices' records. It's the
-// reference for ntdlib's model of the driver (rd2::Output).
+// reference for the model of the driver (rd2::Output).
 
 #pragma once
 
@@ -62,7 +62,7 @@ public:
     // `info.free_voices`.
     void Play(const DriverInfo& info, int song, int version = 0);
 
-    // Asks the driver for the echo's level `level`, as the game's request does. The level moves towards it by 1 a
+    // Asks the driver for the echo's level `level` as the game's request does. The level moves towards it by 1 a
     // frame.
     void SetEchoGoal(uint8_t level);
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// Unit tests for Brownie Brown's driver. They build small synthetic cartridges in memory, so no game ROM is needed.
+// Unit tests for Brownie Brown's driver. They build small synthetic cartridges in memory. No game ROM is needed.
 
 #include <algorithm>
 #include <array>
@@ -207,10 +207,11 @@ void TestSamples()
     {
         odd.Step();
     }
+
     const Voice odd_later = odd.GetVoice(1);
 
-    // Key 38 plays semitone 2 at the mixer's rate, which takes 17 runs of 16 points in the first frame: 4 to the end of
-    // the 64-point sample and back to its loop at its start, 3 times, and then one more.
+    // Key 38 plays semitone 2 at the mixer's rate. That rate takes 17 runs of 16 points in the first frame: 4 to the
+    // end of the 64-point sample and back to its loop at its start, 3 times, and then one more.
     SEQLIB_CHECK_EQ(first.mode, 0);
     SEQLIB_CHECK_EQ(first.point, kStart);
     SEQLIB_CHECK_EQ(first.end, kStart + kSampleBytes);
@@ -253,6 +254,7 @@ void TestLoops()
             }
         }
     }
+
     ConvertSettings opt;
 
     const SongReport sum = InspectSong(rom, info, 1, opt);
@@ -267,8 +269,8 @@ void TestLoops()
 }
 
 // A channel comes back to the place it loops from with the settings that the end of its loop leaves. Here that's a
-// transpose of -12, where the channel first read the place with none, so its first pass plays an octave higher than the
-// others, and the conversion's loop starts with its second pass.
+// transpose of -12, where the channel first read the place with none. Its first pass therefore plays an octave higher
+// than the others, and the conversion's loop starts with its second pass.
 void TestLoopSettings()
 {
     Cart cart;
@@ -286,8 +288,8 @@ void TestLoopSettings()
 }
 
 // A square on both sides plays a note at volume 0, and then loops a note at volume 0 and one at 6. The first time
-// through, the loop's first note has the level that the note before it left, but a player that jumps back to the loop's
-// start comes from the note at volume 6, so the level is written again there, and so is the tempo.
+// through, the loop's first note has the level that the note before it left. A player that jumps back to the loop's
+// start comes from the note at volume 6. The level is therefore written again there, and so is the tempo.
 void TestLoopSettingsAgain()
 {
     Cart cart;
@@ -327,8 +329,8 @@ void TestLoopSettingsAgain()
 
 // A sound with too few notes for a beat plays on its frames, at 30 frames a quarter note and 480 ticks to the quarter,
 // from its first frame. Each note is on the key that the driver's key stands for, and the SoundFont tunes the squares
-// as the frequency table is tuned. The hardware's envelope fades a square that FD lets play on both sides, which CC11
-// follows. A sample note's zone plays the semitone's sample at the key's octave.
+// as the frequency table is tuned. The hardware's envelope fades a square that FD lets play on both sides. CC11 follows
+// that envelope. A sample note's zone plays the semitone's sample at the key's octave.
 void TestConversion()
 {
     Cart cart;
@@ -353,6 +355,7 @@ void TestConversion()
             fading.push_back(bytes[2]);
         }
     }
+
     const Sf2Records sf2 = ReadSf2(sum.sf2_path);
     bool tuned = false, rooted = false;
     for (size_t z = 0; z + 1 < sf2.Count("ibag", 4); z++)
@@ -378,7 +381,7 @@ void TestConversion()
 }
 
 // ED's rest mutes the wave channel, as does an envelope's step to a level of 0, and either ends its note. The rest
-// writes the routine's r5, the square's frequency setting here, to the wave's, which bends nothing.
+// writes the routine's r5, the square's frequency setting here, to the wave's. That write bends nothing.
 void TestWaveRests()
 {
     Cart cart;
@@ -461,10 +464,10 @@ void TestRecords()
     SEQLIB_CHECK_EQ(Le32(&voice[12]), kStart);
 }
 
-// The Magical Vacation revision: 12 channels, with a sample on each FIFO, which a sample note starts at the rate
-// table's rate for its key and its detune. The FIFO's interrupt gives it 4 points whenever it holds 16 or fewer after
-// playing one, and stops its timer at the end of a sample that doesn't loop. EC stops the timer of the FIFO of the
-// channel's number & 1, on a PSG channel too, and E2-E9 are F2-F9 again.
+// The Magical Vacation revision: 12 channels, with a sample on each FIFO. A sample note starts the FIFO's sample at the
+// rate table's rate for its key and its detune. The FIFO's interrupt gives it 4 points whenever it has 16 or fewer
+// after playing one, and stops its timer at the end of a sample that doesn't loop. EC stops the timer of the FIFO of
+// the channel's number & 1, on a PSG channel too, and E2-E9 are F2-F9 again.
 void TestVacation()
 {
     Cart cart(true, Revision::kMagicalVacation);
@@ -493,6 +496,7 @@ void TestVacation()
     {
         looped.Step();
     }
+
     const Fifo looping = looped.FifosBeforeInterrupts()[1];
     const uint32_t point = looped.FifoVoicesBeforeInterrupts()[1].point;
     looped.Step();
@@ -502,12 +506,13 @@ void TestVacation()
     {
         stopped.Step();
     }
+
     const bool playing = stopped.FifosBeforeInterrupts()[1].running;
     stopped.Step();
     const bool stopped_by_psg = !stopped.FifosBeforeInterrupts()[1].running;
 
-    // Key 48 plays at 16384 Hz. The one-shot 64-byte sample runs out in its first frame, which stops the timer, and the
-    // trace keeps the FIFO's sample at its end.
+    // Key 48 plays at 16384 Hz. The one-shot 64-byte sample runs out in its first frame and stops the timer. The trace
+    // keeps the FIFO's sample at its end.
     SEQLIB_CHECK(info.revision == Revision::kMagicalVacation);
     SEQLIB_CHECK_EQ(info.rate_table, kRateTable);
     SEQLIB_CHECK_EQ(info.sample_table, kSampleEntries);
@@ -578,8 +583,8 @@ void TestVacationConversion()
         last = bytes[1] | bytes[2] << 7;
     }
 
-    // Key 49 plays at 17349 Hz, a cent below the semitone above the samples' 16384 Hz, so its zone has key 85 for its
-    // root and a fine tune of -1, and key 48 plays at 16384 Hz on its own key.
+    // Key 49 plays at 17349 Hz, a cent below the semitone above the samples' 16384 Hz. Its zone therefore has key 85
+    // for its root and a fine tune of -1. Key 48 plays at 16384 Hz on its key.
     SEQLIB_CHECK(sum.ok && sum.tracks == 1);
     SEQLIB_REQUIRE_EQ(notes.size(), 2);
     SEQLIB_CHECK_EQ(notes[0].bytes[1], 86);
@@ -598,6 +603,7 @@ void TestShortLoop()
     {
         image.Put8(kRomBase + i, uint8_t(i * 9));
     }
+
     const Rom rom = image.ToRom();
     SoundfontBuilder sf(rom, 13379);
     const int index = sf.GameSampleIndex({kRomBase, kRomBase + 20, kRomBase + 14});

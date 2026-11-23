@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 
 // Unit tests for the conversion of Rare's songs: the MIDI and SoundFont files, envelopes, programs, drum banks and key
-// pressures. They build small synthetic cartridges in memory, so no game ROM is needed.
+// pressures. They build small synthetic cartridges in memory. No game ROM is needed.
 
+#include "agb_conversion_test_util.h"
 #include "rare_test_util.h"
 
 namespace agblib::sequence_export::rare
 {
 namespace
 {
+
+using agblib::testing::agb_tests::CheckFilesInMemory;
 
 void TestConversion()
 {
@@ -63,6 +66,7 @@ void TestConversion()
             tempo = ((e.bytes[3] << 16) | (e.bytes[4] << 8) | e.bytes[5]) == std::lround(500000 * kTempoScale);
         }
     }
+
     SEQLIB_CHECK(tempo);
 
     // Key 64 played twice at once is one note. The note is as loud as both: (30 + 1) + (40 + 1) - 1 = 71. A velocity
@@ -75,7 +79,7 @@ void TestConversion()
     const auto offs = m.Find(0x80);
     SEQLIB_CHECK(offs.size() == 2 && offs[1].tick == 480);
 
-    // The bend range is set to the instrument's 2 semitones, so the bend keeps its value.
+    // The bend range is set to the instrument's 2 semitones. The bend keeps its value.
     const auto bends = m.Find(0xE0);
     SEQLIB_CHECK(!bends.empty() && bends.back().bytes[1] == 0x00 && bends.back().bytes[2] == 0x60);
     bool range = false;
@@ -83,6 +87,7 @@ void TestConversion()
     {
         range = range || (e.bytes[1] == 6 && e.bytes[2] == 2);
     }
+
     SEQLIB_CHECK(range);
 
     // The channel's volume of 100 is written in controller 7 as 127 × √(100 / 127), rounded: 113.
@@ -94,10 +99,11 @@ void TestConversion()
             volumes.push_back(e.bytes[2]);
         }
     }
+
     SEQLIB_CHECK(volumes == std::vector<int>({113}));
 
-    // The drum channel's note comes before its program change, at the same tick, and gets that program, so the MIDI
-    // file puts the change first.
+    // The drum channel's note comes before its program change, at the same tick, and gets that program. The MIDI file
+    // therefore puts the change first.
     const auto drums = m.Find(0x99);
     SEQLIB_CHECK(drums.size() == 1 && drums[0].bytes[1] == 36);
     int change = -1, note = -1;
@@ -109,12 +115,14 @@ void TestConversion()
             {
                 change = int(i);
             }
+
             if (note < 0 && t.events[i].bytes[0] == 0x99)
             {
                 note = int(i);
             }
         }
     }
+
     SEQLIB_CHECK(change >= 0 && change < note);
 
     // The SoundFont: a preset for each program, and the drum channel's in bank 128 too.
@@ -126,6 +134,7 @@ void TestConversion()
         presets[{Le16(h + 22), Le16(h + 20)}] =
             Le16(sf.Record("pgen", 4, Le16(sf.Record("pbag", 4, Le16(h + 24)))) + 2);
     }
+
     SEQLIB_CHECK(presets.count({0, 1}) && presets.count({0, 2}) && presets.count({0, 127}) &&
                  presets.count({128, 127}));
     SEQLIB_REQUIRE_EQ(presets.size(), 4);
@@ -166,6 +175,7 @@ void TestConversion()
             SEQLIB_CHECK_EQ(Le32(h + 24) - Le32(h + 32), 8);
         }
     }
+
     SEQLIB_CHECK_EQ(leads, 1);
 }
 
@@ -200,6 +210,7 @@ void TestTwoTempoTracks()
                 tempos.push_back({uint32_t(e.tick), (e.bytes[3] << 16) | (e.bytes[4] << 8) | e.bytes[5]});
             }
         }
+
         const std::vector<std::pair<uint32_t, long>> kTempos = {{0, std::lround(500000 * kTempoScale)},
                                                                 {98, std::lround(1000000 * kTempoScale)},
                                                                 {98, std::lround(250000 * kTempoScale)}};
@@ -208,9 +219,9 @@ void TestTwoTempoTracks()
 }
 
 // In the revision of Donkey Kong Country 3, channel 1's first note plays with settings from controllers 20 to 23, and
-// its second, after a program change, without them. The first note's preset is in a bank of its own, which a bank
-// select gives before its program change, with an instrument whose envelope has the settings, and the second note's
-// bank select goes back to bank 0.
+// its second, after a program change, without them. The first note's preset is in a bank of its own, with an instrument
+// whose envelope has the settings. A bank select gives that bank before its program change. The second note's bank
+// select goes back to bank 0.
 void TestEnvelopeConversion()
 {
     const Format kFormat = Format::kChannelNibble;
@@ -251,6 +262,7 @@ void TestEnvelopeConversion()
             banks.push_back({uint32_t(e.tick), e.bytes[2]});
         }
     }
+
     const std::vector<std::pair<uint32_t, int>> kBanks = {{0, 1}, {320, 0}};
     SEQLIB_CHECK(banks == kBanks);
 
@@ -264,6 +276,7 @@ void TestEnvelopeConversion()
         presets[{Le16(h + 22), Le16(h + 20)}] =
             Le16(sf.Record("pgen", 4, Le16(sf.Record("pbag", 4, Le16(h + 24)))) + 2);
     }
+
     SEQLIB_CHECK(presets.size() == 2 && presets.count({0, 5}) && presets.count({1, 5}));
 
     const uint8_t* variant = sf.Record("inst", 22, size_t(presets[{1, 5}]));
@@ -280,8 +293,8 @@ void TestEnvelopeConversion()
     SEQLIB_CHECK_EQ(int16_t(zone.at(sf2::kSustainVolEnv)), want.sustain);
     SEQLIB_CHECK_EQ(int16_t(zone.at(sf2::kReleaseVolEnv)), want.release);
 
-    // That envelope: an attack of 4 frames, a sustain at half the level, which the decay reaches in its 5 frames, and a
-    // release of 3 frames stretched to 3 times as long.
+    // That envelope: an attack of 4 frames, a sustain at half the level after a decay of 5 frames, and a release of 3
+    // frames stretched to 3 times as long.
     SEQLIB_CHECK_EQ(want.attack, int(std::lround(1200 * std::log2(4 / kFrameRate))));
     SEQLIB_CHECK_EQ(want.sustain, 60);
     SEQLIB_CHECK_EQ(want.decay, int(std::lround(1200 * std::log2(1000.0 / 60 * 5 / kFrameRate))));
@@ -294,7 +307,7 @@ void TestEnvelopeConversion()
 
 // A note that plays without settings ends before the tune's end, where its slot's next note starts with an attack from
 // controller 20. That note isn't converted, and with frame timing the settings it takes don't go to the note before it
-// either, so both conversions have only bank 0.
+// either. Both conversions therefore have only bank 0.
 void TestEnvelopePastEnd()
 {
     const Format kFormat = Format::kChannelNibble;
@@ -359,6 +372,7 @@ void TestEnvelopeAtEnd()
             variant = sf.Record("inst", 22, Le16(sf.Record("pgen", 4, Le16(sf.Record("pbag", 4, Le16(h + 24)))) + 2));
         }
     }
+
     SEQLIB_CHECK(variant != nullptr);
     if (variant)
     {
@@ -408,17 +422,13 @@ void TestSongFiles()
     const SongFiles files = ConvertSongFiles(rom, info, 0, opt);
     const SongFiles none = ConvertSongFiles(rom, info, 1, opt);
 
-    SEQLIB_REQUIRE(written.ok && files.report.ok && !files.report.silent);
-    SEQLIB_CHECK(files.report.midi_path.empty() && files.report.sf2_path.empty());
-    SEQLIB_CHECK(!files.midi.empty() && files.midi == ReadAll(written.midi_path));
-    SEQLIB_CHECK(!files.sf2.empty() && files.sf2 == ReadAll(written.sf2_path));
-    SEQLIB_CHECK(files.report.warnings == written.warnings && files.report.seconds == written.seconds);
+    CheckFilesInMemory(written, files);
     SEQLIB_CHECK(none.report.silent && none.midi.empty() && none.sf2.empty());
 }
 
 // A program's instrument plays every key. A key split gives each key the instrument of its range, and a drum kit plays
 // its instrument for the key at that instrument's root key. A program that the map doesn't have reads entry 0xFF of the
-// instrument table. The tune table holds one tune, which is the one song.
+// instrument table. The tune table holds one tune: the one song.
 void TestLookUpInstrument()
 {
     const Format kFormat = Format::kChannelByte;
@@ -449,8 +459,8 @@ void TestLookUpInstrument()
     SEQLIB_CHECK(!unmapped.mapped && unmapped.program == rom.U32(header.instruments + 4u * 0xFF));
 }
 
-// An instrument of a type the driver doesn't name plays as a drum kit, so its SoundFont instrument has a zone for its
-// drum.
+// An instrument of a type the driver doesn't name plays as a drum kit. Its SoundFont instrument therefore has a zone
+// for its drum.
 void TestOtherDrumKitType()
 {
     const Format kFormat = Format::kChannelNibble;
@@ -470,9 +480,9 @@ void TestOtherDrumKitType()
 
 void TestPrograms()
 {
-    // Track 1 plays a note on channel 0 and then changes the channel's program on the same tick, so the driver plays
-    // the note with the old program. Track 2 gives channel 1 a new program on the tick that track 3 plays a note on it,
-    // and the driver runs track 2's commands first, so that note plays with the new program.
+    // Track 1 plays a note on channel 0 and then changes the channel's program on the same tick. The driver plays the
+    // note with the old program. Track 2 gives channel 1 a new program on the tick that track 3 plays a note on it. The
+    // driver runs track 2's commands first, and that note plays with the new program.
     const Format kFormat = Format::kChannelNibble;
     Cart cart(kFormat);
     const auto bank = cart.Bank({{1, cart.Sample(Saw(), 32)}, {2, cart.Sample(Saw(), 32, 8000)}});
@@ -514,6 +524,7 @@ void TestPrograms()
     {
         channel1.push_back({uint32_t(e.tick), e.bytes[1]});
     }
+
     const std::vector<std::pair<uint32_t, int>> kChannel1 = {{0, 1}, {240, 2}};
     SEQLIB_CHECK(channel1 == kChannel1);
 }
@@ -587,8 +598,8 @@ void TestSharedKey()
 
     const SongReport r = ConvertSong(rom, info, 0, opt, nullptr);
 
-    // A player takes track 1's events of a tick before track 2's, so track 2's note ends a tick before track 1's
-    // starts. Track 1's note lasts until track 2's note off.
+    // A player takes track 1's events of a tick before track 2's. Track 2's note therefore ends a tick before track
+    // 1's starts. Track 1's note lasts until track 2's note off.
     SEQLIB_CHECK(r.ok && !r.silent);
     const MidiEvents m = ReadMidi(r.midi_path);
     SEQLIB_REQUIRE_EQ(m.tracks.size(), 3);
@@ -670,14 +681,12 @@ bool MutesNotes(const Sf2Records& sf)
     for (size_t i = 0; i < instruments; i++)
     {
         const uint16_t bag = Le16(sf.Record("inst", 22, i) + 20);
-        const uint16_t first = Le16(sf.Record("ibag", 4, bag) + 2), end = Le16(sf.Record("ibag", 4, bag + 1) + 2);
-        bool found = false;
-        for (uint16_t m = first; m < end; m++)
+        const std::vector<sf2::Modulator> mods = sf.ZoneModulators(bag);
+        const auto mutes = [](const sf2::Modulator& mod)
         {
-            const uint8_t* mod = sf.Record("imod", 10, m);
-            found = found || (Le16(mod) == 0x0C0A && Le16(mod + 2) == sf2::kInitialAttenuation && Le16(mod + 4) == 960);
-        }
-        if (!found)
+            return mod.source == 0x0C0A && mod.dest == sf2::kInitialAttenuation && mod.amount == 960;
+        };
+        if (std::none_of(mods.begin(), mods.end(), mutes))
         {
             return false;
         }
@@ -702,6 +711,7 @@ void TestKeyPressures()
     {
         notes.On(0, k, 100);
     }
+
     notes.On(1, 70, 100).On(1, 71, 100).On(1, 72, 100).Wait(48).Off(0, 60).Wait(48);
     cart.Tune({Track(kFormat).Tempo(500000).Wait(960).End(), notes.End()}, bank);
     const Rom rom = cart.ToRom();
@@ -737,6 +747,7 @@ void TestPressureTiming()
     {
         eight.On(0, k, 100);
     }
+
     const std::vector<uint8_t> held = eight.On(1, 70, 100).On(1, 71, 100).Wait(960).End();
     cart.Tune({Track(kFormat).Tempo(500000).Wait(32).On(3, 90, 100).Wait(928).End(), held}, bank);
 
@@ -746,6 +757,7 @@ void TestPressureTiming()
     {
         twice.On(0, k, 100);
     }
+
     cart.Tune({Track(kFormat).Tempo(500000).Wait(960).End(),
                twice.On(1, 70, 100).On(1, 71, 100).On(1, 70, 100).Wait(96).End()},
               bank);
@@ -790,12 +802,14 @@ void TestLoopPressures()
     {
         loop.On(0, k, 100);
     }
+
     loop.On(1, 70, 100).On(1, 71, 100).On(3, 91, 100).Wait(96);
 
     for (int k = 60; k < 66; k++)
     {
         loop.Off(0, k);
     }
+
     loop.Off(1, 70).Off(1, 71).Off(3, 91).Wait(96).Control(0, kCtrlLoopEnd, 0);
     cart.Tune({Track(kFormat).Tempo(500000).Wait(96).End(), loop.End()}, bank);
 
@@ -815,7 +829,7 @@ void TestLoopPressures()
 }
 
 // A tune that the mixer leaves no note out of gets no key pressures with a SoundFont of its own. With the shared
-// SoundFont of --single-sf2, which another tune's mutes can give the modulator, the file starts with pressure 0 for
+// SoundFont of --single-sf2, where another tune's mutes can give the modulator, the file starts with pressure 0 for
 // each key that it plays. Neither file mutes a key, and neither has General MIDI 2's mute message.
 void TestStartPressures()
 {
@@ -905,6 +919,7 @@ void TestWaterVersions()
         {
             seq.Step();
         }
+
         std::vector<MixResult> out;
         for (int channel = 0; channel < 4; channel++)
         {
@@ -937,7 +952,7 @@ void TestWaterVersions()
 
     // Each file plays the notes of its version and has no events of the other version's channels. Above water, no
     // note is left out. Under water, the mixer leaves out channel 3's notes in the first frame. Their keys are muted
-    // until the second frame, which starts at tick 15. The keys of channel 2 start at pressure 0.
+    // until the second frame. That frame starts at tick 15. The keys of channel 2 start at pressure 0.
     const MidiEvents a = ReadMidi(r.midi_path);
     const MidiEvents b = ReadMidi(u.midi_path);
     SEQLIB_CHECK(a.Find(0x90).size() == 3 && a.Find(0x91).size() == 2 && a.Find(0xA0).empty() && a.Find(0xA1).empty());
@@ -956,6 +971,7 @@ void TestWaterVersions()
             title.assign(e.bytes.begin() + 3, e.bytes.end());
         }
     }
+
     SEQLIB_CHECK(title.ends_with("#00 under water"));
 
     // The tune has both versions.

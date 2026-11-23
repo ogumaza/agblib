@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-// A model of Krawall playing a module: the player, which runs a tick of the module each time the sound timer runs out,
-// and the mixer, whose channels play the samples. The game calls the mixer's worker once a frame to mix the frame's
-// samples, and the worker runs the player's ticks at the samples where they fall due.
+// A model of Krawall playing a module: the player and the mixer. The player runs a tick of the module each time the
+// sound timer runs out, and the mixer's channels play the samples. The game calls the mixer's worker once a frame to
+// mix the frame's samples, and the worker runs the player's ticks at the samples where they fall due.
 
 #pragma once
 
@@ -24,8 +24,8 @@ namespace agblib::krawall
 using agblib::agb::Rom;
 
 // The mixer's channels, those of the builds before 1.4 and of the modified build, and the most channels a module can
-// have. The player's record holds 20 channels. The records of the channels past the 20th lie in the copy of the record
-// that krapPlay() makes for a jingle. A row names a channel with 5 bits.
+// have. The player's record contains 20 channels. The records of the channels past the 20th are in the copy of the
+// record that krapPlay() makes for a jingle. A row names a channel with 5 bits.
 constexpr int kMixChannels = 32;
 constexpr int kOldMixChannels = 24;
 constexpr int kModifiedMixChannels = 14;
@@ -48,7 +48,7 @@ int PlayMode(const ModuleSong& song);
 // prevents a stale handle from changing a note after the mixer channel has been reassigned.
 struct MixChannel
 {
-    uint8_t volume = 0; // 0-64 from the player, though a byte holds what it's given
+    uint8_t volume = 0; // 0-64 from the player, though a byte contains what it's given
     int8_t pan = 0;     // -64 to 64
     uint8_t status = 0; // 0 free, 1 playing
     uint8_t loop = 0;   // 0 none, 1 forwards, 2 back and forth
@@ -74,13 +74,13 @@ struct MixChannel
     int sample_index = -1;
 };
 
-// A channel of the module, as the player keeps it.
+// A channel of the module as the player keeps it.
 struct Channel
 {
     // The channel's note: its mixer channel's handle, volume and pan, and its sample's rate as a note and a period.
     uint32_t handle = 0;
     int8_t volume = 0;         // 0-64
-    int8_t channel_volume = 0; // the channel's volume, which the channel volume effect sets
+    int8_t channel_volume = 0; // the channel's volume, from the channel volume effect
     int8_t panning = 0;        // -64 to 64
     uint8_t start_point = 0;   // where the next note starts, in 256 points
     int8_t played_volume = 0;  // from 2004/09/17 on: the volume with the tremolo or the tremor
@@ -94,8 +94,8 @@ struct Channel
     uint8_t last_effect = 0;
     uint8_t effect_op = 0;
 
-    // The effects' settings, which their operands set and an operand of 0 leaves as they are, and their places in their
-    // waves.
+    // The effects' settings and their places in their waves. An effect's operand sets them, and an operand of 0 leaves
+    // them as they are.
     uint16_t porta_step = 0;
     int16_t porta_goal = 0; // the period that the slide to a note slides to
     int16_t gliss_note = 0; // the note that a slide with glissando plays
@@ -115,13 +115,13 @@ struct Channel
     uint8_t panbrello_reset = 0;
     uint32_t panbrello_wave = 0;
     uint8_t glissando = 0;
-    uint8_t tremor_count = 0; // the ticks of the tremor so far, which mutes the note at `tremor_on`
+    uint8_t tremor_count = 0; // the ticks of the tremor so far: the note is muted from `tremor_on`
     uint8_t tremor_on = 0;
     uint8_t tremor_cycle = 0;
     uint8_t volume_slide = 0;
     uint8_t fine_volume_slide = 0;
     uint8_t channel_volume_slide = 0;
-    uint8_t volume_slide_once = 0; // the volume slide is fine, so it slides on the row alone
+    uint8_t volume_slide_once = 0; // the volume slide is fine: it slides on the row alone
     uint8_t pan_slide = 0;
     uint8_t pan_slide_once = 0;
     uint8_t arpeggio = 0;
@@ -163,12 +163,12 @@ struct Channel
     uint32_t entry = 0;
 };
 
-// A model of Krawall that plays a module a frame at a time, as the game's call to the mixer's worker does.
+// A model of Krawall that plays a module a frame at a time as the game's call to the mixer's worker does.
 class Player
 {
 public:
-    // Starts module `module` as krapPlay() does in `mode`, from song `song`. Keeps references to `rom` and `info`,
-    // which have to outlive the player.
+    // Starts module `module` as krapPlay() does in `mode`, from song `song`. Keeps references to `rom` and `info`. Both
+    // have to outlive the player.
     Player(const Rom& rom, const DriverInfo& info, uint32_t module, int mode = kModeLoop, int song = 0);
 
     // Starts a piece that the conversion numbers. A whole module plays in loop mode, or in the jingle mode if the game
@@ -241,7 +241,7 @@ public:
     }
 
     // Returns the speed, the tick within the row, and the order and row that the last row came from, with the state of
-    // the pattern loop then, which together say where the module is.
+    // the pattern loop then. Together they say where the module is.
     int Speed() const
     {
         return speed_;
@@ -307,7 +307,7 @@ public:
     std::vector<uint8_t> Globals() const;
 
     // Starts an audition in place of the module's rows: channel 0 plays `note` (from 1 for C-0) with `instrument` (from
-    // 1), as a row's entry with both starts a note. The rows don't move on. The ticks run the effects of the channel's
+    // 1) as a row's entry with both starts a note. The rows don't move on. The ticks run the effects of the channel's
     // instrument: its envelopes, its fade and its vibrato. ReleaseAudition() then plays a note off on the channel.
     void Audition(uint16_t instrument, uint8_t note);
     void ReleaseAudition();
@@ -348,6 +348,7 @@ public:
     {
         return output_[0];
     }
+
     const std::vector<int8_t>& RightOutput() const
     {
         return output_[1];
@@ -357,7 +358,7 @@ public:
     // samples at agb::kEnhancedRate in EnhancedOutput(0) for the left side and EnhancedOutput(1) for the right. Each
     // mixer channel's points play interpolated between them, at the channel's volumes and the master volume, without
     // the sums' wrap, the table and the 8 bits. A ramp at a stop falls as the mixer's does. The samples are on the
-    // scale of the output's 8-bit points. In mono, the left side holds the mix.
+    // scale of the output's 8-bit points. In mono, the left side contains the mix.
     void MixEnhanced(bool on);
     const std::vector<float>& EnhancedOutput(int side) const
     {
@@ -376,10 +377,10 @@ public:
 private:
     void Warn(const std::string& text);
 
-    // The mixer: kramPlayExt(), which starts a sample on the channel that `handle` names if it's still that play's, or
-    // else on the first free channel, and returns the play's handle, or 0 if every channel is busy; kramStop(),
-    // kramSetFreq(), kramSetVol(), kramSetPan() and kramSetPos(), which return false for a handle that's no longer its
-    // channel's; and the rest of its state.
+    // The mixer: kramPlayExt(), kramStop(), kramSetFreq(), kramSetVol(), kramSetPan(), kramSetPos() and the rest of its
+    // state. kramPlayExt() starts a sample on the channel that `handle` names if it's still that play's, or else on the
+    // first free channel. It returns the play's handle, or 0 if every channel is busy. The others return false for a
+    // handle that's no longer its channel's.
     uint32_t Play(uint32_t sample, int sample_index, int sfx, uint32_t handle, uint32_t freq, uint32_t volume,
                   int32_t pan);
 
@@ -431,7 +432,7 @@ private:
     // The point at `at` of `m`'s sample in the enhanced mix, within its loop.
     double EnhancedPoint(const MixChannel& m, int64_t at) const;
 
-    // The part of `samples` samples from sample `at` that lies in the amount that Mix() mixes. The game's routines mix
+    // The part of `samples` samples from sample `at` that is in the amount that Mix() mixes. The game's routines mix
     // the whole count. Where a note starts past its sample's end, the count wraps below 0, and the game's routine
     // writes over the memory after its sums for a long time. The model mixes the amount's samples alone.
     uint32_t InAmount(uint32_t at, uint32_t samples) const
@@ -489,7 +490,7 @@ private:
     void EntryNote(Channel& c, const RowEntry& entry, bool sample_set);
 
     // Returns true if the mixer channel `m` plays a note of a muted channel. Meter() keeps the part of a mixer channel
-    // that has `volume` on a side, for points from `low` to `high`, as its channel's peak on that side.
+    // that has `volume` on a side, for points from `low` to `high` as its channel's peak on that side.
     bool Muted(const MixChannel& m) const;
     void Meter(const MixChannel& m, int side, uint32_t volume, int32_t low, int32_t high);
 
@@ -538,8 +539,8 @@ private:
     uint32_t LinearFreq(uint32_t period) const;
     int16_t Wave(uint32_t table, uint32_t index) const;
 
-    // The effects: the ones of the effect column, by number, which run on the row's tick and on the ticks between, and
-    // those of the volume column.
+    // The effects of the effect column, by number, and those of the volume column. Each runs on the row's tick and on
+    // the ticks between.
     void Effect(Channel& c, int effect, bool on_row);
     void VolumeColumnEffect(Channel& c, bool on_row);
     void VolumeSlideS3m(Channel& c, bool on_row);
@@ -591,7 +592,7 @@ private:
     int8_t loop_row_ = 0;   // the pattern loop's row, the times it has left to go back there, and whether it runs
     int8_t loop_count_ = 0;
     int8_t loop_active_ = 0;
-    int8_t volume_ = 0; // the module's global volume, which the global volume effect sets
+    int8_t volume_ = 0; // the module's global volume, from the global volume effect
     uint8_t volume_slide_ = 0;
     uint8_t vibrato_offset_ = 0; // where a vibrato starts in its wave: 32 for modules with instruments
     uint8_t instrument_based_ = 0;

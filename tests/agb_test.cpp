@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-// Unit tests for the GBA's shared code: the reader of GSF files, the plan of a song's loop, and the runner of Thumb
-// routines.
+// Unit tests for the GBA's shared code: the reader of GSF files, the plan of a song's loop, the runner of Thumb
+// routines and the lines of a trace.
 
 #include <algorithm>
 #include <cstddef>
@@ -17,11 +17,13 @@
 #include <vector>
 
 #include "seqlib/testing/check.h"
+#include "xsflib/testing/temp_folder.h"
 
 #include "agblib/agb/files.h"
 #include "agblib/agb/rom.h"
 #include "agblib/agb/song_plan.h"
 #include "agblib/agb/thumb.h"
+#include "agblib/agb/trace.h"
 #include "agblib/testing/agb_cart.h"
 
 namespace fs = std::filesystem;
@@ -33,7 +35,7 @@ using agblib::testing::agb_files::TempPath;
 namespace
 {
 
-// Returns a zlib stream holding `data` in stored blocks.
+// Returns a zlib stream of `data` in stored blocks.
 std::vector<uint8_t> ZlibStored(const std::vector<uint8_t>& data)
 {
     std::vector<uint8_t> z = {0x78, 0x01};
@@ -57,6 +59,7 @@ std::vector<uint8_t> ZlibStored(const std::vector<uint8_t>& data)
         a = (a + c) % 65521;
         b = (b + a) % 65521;
     }
+
     const uint32_t adler = (b << 16) | a;
     for (int s = 24; s >= 0; s -= 8)
     {
@@ -66,28 +69,21 @@ std::vector<uint8_t> ZlibStored(const std::vector<uint8_t>& data)
     return z;
 }
 
-// Writes a GSF file whose program puts `data` at `address`, with the given tags.
-void WriteGsf(const fs::path& path, uint32_t address, const std::vector<uint8_t>& data, const std::string& tags)
+// Writes a PSF file of `version` with `program`, the given tags and the reserved area.
+void WritePsfFile(const fs::path& path, uint8_t version, const std::vector<uint8_t>& program, const std::string& tags,
+                  const std::vector<uint8_t>& reserved = {})
 {
-    std::vector<uint8_t> program;
-    for (uint32_t v : {kRomBase, address, uint32_t(data.size())})
-    {
-        for (int i = 0; i < 4; i++)
-        {
-            program.push_back(uint8_t(v >> (8 * i)));
-        }
-    }
-    program.insert(program.end(), data.begin(), data.end());
-
     const std::vector<uint8_t> z = ZlibStored(program);
-    std::vector<uint8_t> f = {'P', 'S', 'F', 0x22};
-    for (uint32_t v : {0u, uint32_t(z.size()), 0u})
+    std::vector<uint8_t> f = {'P', 'S', 'F', version};
+    for (uint32_t v : {uint32_t(reserved.size()), uint32_t(z.size()), 0u})
     {
         for (int i = 0; i < 4; i++)
         {
             f.push_back(uint8_t(v >> (8 * i)));
         }
     }
+
+    f.insert(f.end(), reserved.begin(), reserved.end());
     f.insert(f.end(), z.begin(), z.end());
     if (!tags.empty())
     {
@@ -98,9 +94,27 @@ void WriteGsf(const fs::path& path, uint32_t address, const std::vector<uint8_t>
     std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char*>(f.data()), std::streamsize(f.size()));
 }
 
+// Writes a GSF file whose program puts `data` at `address` and starts the CPU at `entry`, with the given tags and
+// reserved area.
+void WriteGsf(const fs::path& path, uint32_t address, const std::vector<uint8_t>& data, const std::string& tags,
+              uint32_t entry = kRomBase, const std::vector<uint8_t>& reserved = {})
+{
+    std::vector<uint8_t> program;
+    for (uint32_t v : {entry, address, uint32_t(data.size())})
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            program.push_back(uint8_t(v >> (8 * i)));
+        }
+    }
+
+    program.insert(program.end(), data.begin(), data.end());
+    WritePsfFile(path, 0x22, program, tags, reserved);
+}
+
 void TestGsfLoading()
 {
-    // A GSF set in a folder whose name isn't ASCII: the library holds the cartridge, and the mini-GSF names it and
+    // A GSF set in a folder whose name isn't ASCII: the library contains the cartridge, and the mini-GSF names it and
     // patches one byte.
     std::error_code ec;
     const fs::path dir = TempPath("gsf_\xC3\xA9\xE3\x81\x82");
@@ -158,7 +172,7 @@ void TestGsfLoading()
 
     SEQLIB_CHECK(err == "it's a folder, not a ROM or GSF file");
 
-    // A zipped ROM, which has to be taken out of its archive first.
+    // A zipped ROM. It has to be taken out of its archive first.
     std::vector<uint8_t> zip(0x200, 0);
     std::memcpy(zip.data(), "PK\x03\x04", 4);
     std::string write_error;
@@ -169,6 +183,81 @@ void TestGsfLoading()
     SEQLIB_CHECK(err.find("it's an archive") == 0);
 
     fs::remove_all(dir, ec);
+}
+
+// A loaded GSF set gives where its CPU starts and the reserved area of each of its files.
+void TestGsfEntryAndReserved()
+{
+    const xsflib::testing::TempFolder folder("gsf_entry");
+    const fs::path& dir = folder.Path();
+
+    // The library and the mini each have a reserved area, and each program its start. The mini's section at 0x09000004
+    // lands 16 MiB into the image: sets of an image of 16 MiB or more have such sections.
+    WriteGsf(dir / "set.gsflib", kRomBase, std::vector<uint8_t>(16, 0xAA), "", kRomBase, {1, 2, 3});
+    WriteGsf(dir / "set-01.minigsf", 0x09000004, {1, 2, 3, 4}, "_lib=set.gsflib\n", 0x08000004, {9});
+    Rom rom;
+    std::string err;
+
+    SEQLIB_CHECK(rom.Load(Utf8(dir / "set-01.minigsf"), err));
+
+    // The library loads first: its start sets where the CPU starts, and its reserved area comes first.
+    SEQLIB_CHECK_EQ(rom.GsfEntry(), kRomBase);
+    SEQLIB_CHECK(rom.GsfReserved() == std::vector<std::vector<uint8_t>>({{1, 2, 3}, {9}}));
+    SEQLIB_CHECK_EQ(rom.Size(), size_t{0x01000008});
+    SEQLIB_CHECK_EQ(rom.U8(kRomBase + 0xF), 0xAA);
+    SEQLIB_CHECK_EQ(rom.U32(0x09000004), 0x04030201);
+
+    // A set that starts the CPU in the work memory loads with its start. A cartridge image has no reserved area and
+    // starts at the cartridge.
+    WriteGsf(dir / "work.gsf", kRomBase, {7}, "", 0x02000000);
+
+    SEQLIB_CHECK(rom.Load(Utf8(dir / "work.gsf"), err));
+
+    SEQLIB_CHECK_EQ(rom.GsfEntry(), 0x02000000);
+    SEQLIB_CHECK(rom.GsfReserved().empty());
+
+    std::string write_error;
+    SEQLIB_CHECK(WriteFile(Utf8(dir / "game.gba"), std::vector<uint8_t>(0x200, 0), write_error));
+
+    SEQLIB_CHECK(rom.Load(Utf8(dir / "game.gba"), err));
+
+    SEQLIB_CHECK_EQ(rom.GsfEntry(), kRomBase);
+    SEQLIB_CHECK(rom.GsfReserved().empty());
+}
+
+// The loader refuses a PSF file of another version, a program shorter than its header, a section that runs past the
+// cartridge's 32 MiB and a section in the work memory (a multiboot set). An error in a library names the library.
+void TestGsfErrors()
+{
+    const xsflib::testing::TempFolder folder("gsf_errors");
+    const fs::path& dir = folder.Path();
+
+    std::vector<uint8_t> other_program(12, 0);
+    other_program[3] = 0x08;
+    other_program[7] = 0x08;
+    WritePsfFile(dir / "other.psf", 0x01, other_program, "");
+    WritePsfFile(dir / "short.gsf", 0x22, std::vector<uint8_t>(11, 0), "");
+    WriteGsf(dir / "past.gsf", kRomBase + 0x01FFFFFC, {1, 2, 3, 4, 5, 6, 7, 8}, "");
+    WriteGsf(dir / "multiboot.gsf", 0x02000000, {1}, "", 0x02000000);
+    WriteGsf(dir / "song.minigsf", kRomBase, {1}, "_lib=other.psf\n");
+    Rom rom;
+    std::string other_error;
+    std::string short_error;
+    std::string past_error;
+    std::string multiboot_error;
+    std::string library_error;
+
+    const bool other = rom.Load(Utf8(dir / "other.psf"), other_error);
+    const bool short_program = rom.Load(Utf8(dir / "short.gsf"), short_error);
+    const bool past = rom.Load(Utf8(dir / "past.gsf"), past_error);
+    const bool multiboot = rom.Load(Utf8(dir / "multiboot.gsf"), multiboot_error);
+    const bool library = rom.Load(Utf8(dir / "song.minigsf"), library_error);
+
+    SEQLIB_CHECK(!other && other_error == "it isn't a GSF (PSF version 0x22) file");
+    SEQLIB_CHECK(!short_program && short_error == "its program: GSF program section is too short");
+    SEQLIB_CHECK(!past && past_error == "its program: GSF program doesn't fit in the cartridge address space");
+    SEQLIB_CHECK(!multiboot && multiboot_error == "its program: multiboot GSF sets (loaded to EWRAM) aren't supported");
+    SEQLIB_CHECK(!library && library_error == "the library other.psf isn't a GSF (PSF version 0x22) file");
 }
 
 // A song's loop lasts until every track's loop is back where it started: loops of 3 and 4 bars make one of 12, and a
@@ -186,7 +275,7 @@ void TestLoopLength()
 
 // RunThumb() runs ldmia and stmia: one routine loads two words from the ROM with ldmia and adds them, and another
 // stores its arguments on the stack with stmia and loads the second one back. A routine that stores a byte at the top
-// of the address space, which isn't on the stack, gets no result.
+// of the address space gets no result. That byte isn't on the stack.
 void TestRunThumb()
 {
     // The first routine is ldr r1, =words; ldmia r1!, {r0, r2}; adds r0, r0, r2; bx lr, followed by the words' address,
@@ -206,12 +295,45 @@ void TestRunThumb()
     SEQLIB_CHECK(!top);
 }
 
+// A trace prints a record when it changes. A record that starts at zeros prints only once it changes. The trace stops
+// when its frame returns false: here after three frames, though it may run five.
+void TestTraceFrames()
+{
+    std::FILE* out = std::tmpfile();
+    SEQLIB_REQUIRE(out != nullptr);
+    int played = 0;
+    const auto frame = [&]()
+    {
+        return ++played <= 3;
+    };
+    const auto records = [&]()
+    {
+        return std::vector<TraceRecord>{{"g", {uint8_t(played / 2)}}, {"c0", {0x12, 0x34}}};
+    };
+
+    TraceFrames(out, 5, frame, records);
+
+    std::rewind(out);
+    std::string text;
+    for (int c = std::fgetc(out); c != EOF; c = std::fgetc(out))
+    {
+        text += char(c);
+    }
+
+    std::fclose(out);
+    SEQLIB_CHECK(text == "0 c0 1234\n1 g 01\n");
+    SEQLIB_CHECK_EQ(played, 4);
+}
+
 // Runs every test. Returns the exit code.
 int RunTests()
 {
     TestGsfLoading();
+    TestGsfEntryAndReserved();
+    TestGsfErrors();
     TestLoopLength();
     TestRunThumb();
+    TestTraceFrames();
 
     return seqlib::testing::Summary("agb");
 }

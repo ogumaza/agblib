@@ -105,6 +105,7 @@ FreeSpace FreeSpaceOf(const Rom& rom, const Reached* reached, uint64_t floor)
                 break;
             }
         }
+
         free.start = uint32_t(AlignUp(std::max<uint64_t>(run, floor) + kFreeSpaceMargin, kFreeSpaceMargin));
         free.padding = last;
     }
@@ -146,6 +147,7 @@ std::vector<Span> FillerRunsOf(const Rom& rom, const Reached& reached, uint32_t 
             {
                 read = reached.Holds(i);
             }
+
             if (!read)
             {
                 (byte == 0xFF ? full : empty).push_back({uint32_t(start), end - kFreeSpaceMargin - uint32_t(start)});
@@ -193,6 +195,7 @@ std::vector<uint64_t> StartsOf(std::span<const ntdlib::sar::Piece> pieces, std::
             {
                 throw std::invalid_argument("a sequence piece names a sequence missing from the layout");
             }
+
             size += sequence->room;
         }
         else
@@ -374,6 +377,7 @@ uint64_t JoinedRom::Position(const ntdlib::sar::Place& place) const
     {
         throw std::invalid_argument("a field names a place missing from a GBA ROM's pieces");
     }
+
     if (place.item)
     {
         if (!std::holds_alternative<ntdlib::sar::SequencePiece>(pieces_[place.piece]) ||
@@ -426,6 +430,7 @@ std::optional<ntdlib::sar::Place> RunPlaceOf(std::span<const ntdlib::sar::Piece>
         {
             return ntdlib::sar::Place{p, address - start};
         }
+
         start += size;
     }
 

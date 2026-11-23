@@ -15,14 +15,13 @@
 #include <vector>
 
 #include "agblib/agb/output_peaks.h"
+#include "agblib/agb/player_steps.h"
+#include "agblib/agb/sound_registers.h"
 
 namespace agblib::rare
 {
 namespace
 {
-
-constexpr uint32_t kRegFifoVolumes = 0x04000082; // SOUNDCNT_H's low byte
-constexpr uint32_t kRegSoundCntHigh = 0x04000083;
 
 // The frames that a frame's mix takes to play, after the frame that makes it.
 constexpr int kTailFrames = 2;
@@ -36,10 +35,10 @@ std::vector<uint8_t> SoundRegisters()
         registers[address - agb::kRegSound1CntL] = value;
     };
 
-    set(kRegFifoVolumes, 0x0C);  // both FIFOs at full volume
-    set(kRegSoundCntHigh, 0x03); // FIFO A on both sides, on timer 0
-    set(0x04000084, 0x80);       // the sound on: the first VBlank after the init turns it on
-    set(0x04000089, 0x42);       // with the bias's low byte at 0: the bias at 0x200, and 8 bits at 65,536 Hz
+    set(agb::kRegSoundCntH, 0x0C);     // both FIFOs at full volume
+    set(agb::kRegSoundCntHHigh, 0x03); // FIFO A on both sides, on timer 0
+    set(agb::kRegSoundCntX, 0x80);     // the sound on: the first VBlank after the init turns it on
+    set(agb::kRegSoundBias + 1, 0x42); // with the bias's low byte at 0: the bias at 0x200, and 8 bits at 65,536 Hz
 
     return registers;
 }
@@ -86,10 +85,7 @@ void ArchivePlayer::StartNote(int tune, uint8_t program, uint8_t key, uint8_t ve
 
 void ArchivePlayer::ReleaseNote()
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no tune has started");
-    }
+    agb::CheckStarted(bool(sequencer_), "tune");
 
     sequencer_->ReleaseAudition();
 }
@@ -130,10 +126,7 @@ void ArchivePlayer::Begin(Sequencer sequencer, const ArchivePlayerOptions& optio
 
 const Sequencer& ArchivePlayer::Driver() const
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no tune has started");
-    }
+    agb::CheckStarted(bool(sequencer_), "tune");
 
     return *sequencer_;
 }
@@ -151,20 +144,14 @@ uint64_t ArchivePlayer::Tick() const
 
 void ArchivePlayer::RunFrame(std::vector<int16_t>& out)
 {
-    if (enhanced_)
-    {
-        throw std::logic_error("the tune plays in the enhanced mode");
-    }
+    agb::CheckPlainFrame(enhanced_, "tune");
 
     Frame(&out, nullptr);
 }
 
 void ArchivePlayer::RunFrame(std::vector<float>& out)
 {
-    if (sequencer_ && !enhanced_)
-    {
-        throw std::logic_error("the tune doesn't play in the enhanced mode");
-    }
+    agb::CheckEnhancedFrame(bool(sequencer_), enhanced_, "tune");
 
     Frame(nullptr, &out);
 }
@@ -176,7 +163,7 @@ void ArchivePlayer::RunFrame()
 
 uint32_t ArchivePlayer::SilentTracks() const
 {
-    return muted_ | (soloed_ ? ~soloed_ : 0);
+    return agb::SilentTracksOf(muted_, soloed_);
 }
 
 bool ArchivePlayer::Sounding() const
@@ -208,10 +195,7 @@ bool ArchivePlayer::Sounding() const
 
 void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhanced_out)
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no tune has started");
-    }
+    agb::CheckStarted(bool(sequencer_), "tune");
 
     const bool metering = metered_ && (out || enhanced_out);
     const size_t first_sample = out ? out->size() : enhanced_out ? enhanced_out->size() : 0;
@@ -223,18 +207,7 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
         apu_.QueueEnhanced(0, sequencer_->EnhancedSamples());
     }
 
-    if (out)
-    {
-        apu_.Run(agb::kFrameCycles, *out);
-    }
-    else if (enhanced_out)
-    {
-        apu_.Run(agb::kFrameCycles, *enhanced_out);
-    }
-    else
-    {
-        apu_.Run(agb::kFrameCycles);
-    }
+    agb::RunApu(apu_, agb::kFrameCycles, out, enhanced_out);
     frames_++;
     tail_ = Sounding() ? kTailFrames : std::max(tail_ - 1, 0);
 
@@ -251,6 +224,7 @@ void ArchivePlayer::Frame(std::vector<int16_t>* out, std::vector<float>* enhance
     {
         TakePeaks(*mixed_);
     }
+
     mixed_ = sequencer_->TrackPeaks();
 
     agb::KeepOutputPeaks(output_peaks_, out, enhanced_out, first_sample);
@@ -261,8 +235,8 @@ void ArchivePlayer::TakePeaks(const TrackParts& parts)
     // A byte of the mix counts 4 or 2 times in the output's 10 bits: the FIFO's volume at 100% or 50%. The model gives
     // the output's steps 64 times on the scale of 16-bit samples. SOUNDCNT_H's high byte puts FIFO A on its sides, the
     // right in the low bit.
-    const uint8_t volumes = apu_.Register(kRegFifoVolumes);
-    const uint8_t sides = apu_.Register(kRegSoundCntHigh);
+    const uint8_t volumes = apu_.Register(agb::kRegSoundCntH);
+    const uint8_t sides = apu_.Register(agb::kRegSoundCntHHigh);
     const int32_t scale = (volumes >> 2 & 1 ? 4 : 2) * 64;
     const uint32_t silent = SilentTracks();
     for (size_t t = 0; t < parts.size() && t < peaks_.size(); t++)
@@ -277,6 +251,7 @@ void ArchivePlayer::TakePeaks(const TrackParts& parts)
         {
             peaks_[t][1] = peak;
         }
+
         if (sides >> 1 & 1)
         {
             peaks_[t][0] = peak;
@@ -332,10 +307,7 @@ void ArchivePlayer::MeterTracks(bool on)
 
 ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 {
-    if (!sequencer_)
-    {
-        throw std::logic_error("no tune has started");
-    }
+    agb::CheckStarted(bool(sequencer_), "tune");
 
     Snapshot snapshot;
     snapshot.owner_ = this;
@@ -349,10 +321,7 @@ ArchivePlayer::Snapshot ArchivePlayer::Save(const Snapshot*) const
 
 void ArchivePlayer::Restore(const Snapshot& snapshot)
 {
-    if (snapshot.owner_ != this || !snapshot.sequencer_)
-    {
-        throw std::invalid_argument("the snapshot is another player's");
-    }
+    agb::CheckSnapshotOwner(snapshot.owner_ == this && snapshot.sequencer_);
 
     sequencer_.reset();
     sequencer_.emplace(*snapshot.sequencer_);

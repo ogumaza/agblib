@@ -36,7 +36,7 @@ using agblib::agb::ThumbPattern;
 namespace
 {
 
-// The most songs and samples detection reads, so that unrelated ROM data can't keep it busy.
+// The most songs and samples detection reads. Unrelated ROM data then can't keep it busy.
 constexpr int kMaxSongs = 1024;
 constexpr int kMaxSamples = 128;
 
@@ -263,7 +263,7 @@ uint32_t FindLiteralSongs(const Rom& rom, uint32_t play)
     return 0;
 }
 
-// Returns the samples in the sample file at `samples`, as the driver's routine that loads the file lists them: each
+// Returns the samples in the sample file at `samples` as the driver's routine that loads the file lists them: each
 // sample starts with its size, and the file ends where a size of 0 follows a sample, or after 128 samples.
 std::vector<uint32_t> ReadSampleList(const Rom& rom, uint32_t samples)
 {
@@ -338,8 +338,8 @@ std::vector<uint32_t> ReadSongList(const Rom& rom, uint32_t songs, int limit)
     return list;
 }
 
-// Returns the songs of the list at `list`, as the loader lists them: up to the first length of 0, which has to come
-// before `end`. Returns nothing if a song before it isn't one that the driver can read.
+// Returns the songs of the list at `list` as the loader lists them: up to the first length of 0. That length has to
+// come before `end`. Returns nothing if a song before it isn't one that the driver can read.
 std::optional<std::vector<uint32_t>> ReadFileSongs(const Rom& rom, uint32_t list, uint32_t end)
 {
     std::vector<uint32_t> songs = ReadSongList(rom, list, kMaxSongs);
@@ -367,6 +367,7 @@ std::vector<uint32_t> FilesFromCalls(const Rom& rom, uint32_t loader, bool& numb
         {
             found.push_back(ThumbLiteral(rom, call - 2));
         }
+
         for (uint32_t back = 4; back <= kMaxLookupBack; back += 2)
         {
             if (const std::optional<uint32_t> file = GameLookup(rom, call - back))
@@ -374,6 +375,7 @@ std::vector<uint32_t> FilesFromCalls(const Rom& rom, uint32_t loader, bool& numb
                 found.push_back(*file);
             }
         }
+
         if (rom.U16(call - 2) == kAddsR0Four && BlTarget(rom, call - 6))
         {
             numbered = true;
@@ -412,10 +414,12 @@ std::vector<uint32_t> FindMusicFiles(const Rom& rom, DriverInfo& log)
             }
         }
     }
+
     if (!loaders)
     {
         return files;
     }
+
     std::sort(files.begin(), files.end());
 
     // The scan: each word-aligned file that reads in full. A table of numbered files gives each file's address less 4.
@@ -430,8 +434,10 @@ std::vector<uint32_t> FindMusicFiles(const Rom& rom, DriverInfo& log)
         {
             continue;
         }
+
         scanned.push_back(at);
     }
+
     std::set<uint32_t> pointed;
     for (uint32_t at = kRomBase; !scanned.empty() && rom.Contains(at, 4); at += 4)
     {
@@ -444,6 +450,7 @@ std::vector<uint32_t> FindMusicFiles(const Rom& rom, DriverInfo& log)
             }
         }
     }
+
     std::stable_partition(scanned.begin(), scanned.end(),
                           [&pointed](uint32_t file) { return pointed.count(file) != 0; });
     files.insert(files.end(), scanned.begin(), scanned.end());
@@ -455,6 +462,7 @@ std::vector<uint32_t> FindMusicFiles(const Rom& rom, DriverInfo& log)
         list += (list.empty() ? "" : ", ") + Hex(file) + " (" + std::to_string(info.song_addresses.size()) +
                 " songs, " + std::to_string(info.effect_addresses.size()) + " sound effects)";
     }
+
     if (!files.empty())
     {
         log.log.push_back("music files that the driver's loader reads" +
@@ -490,6 +498,7 @@ bool FindCodeTables(const Rom& rom, DriverInfo& info, std::string& error)
     {
         info.length_table = FindLiteral(rom, "2x0D DD00 E1xx 2x0C DD00 E1xx 48xx 18xx 7801 20C0 0040", 6);
     }
+
     info.frequency_table = FindLiteral(rom, "2E53 DD00 2653 4Dxx 1C30 210C", 3);
     info.pcm_pitch_table = FindLiteral(rom, "2A34 DD00 2234 48xx 0051", 3);
     info.lfo_table = FindLiteral(rom, "48xx 0411 1409 1809 2000 5608", 0);
@@ -513,8 +522,8 @@ bool FindCodeTables(const Rom& rom, DriverInfo& info, std::string& error)
 void FindGameFiles(const Rom& rom, DriverInfo& info)
 {
     // The game gives the driver its wave table, noise macros and samples through routines that store them in the
-    // driver's variables, which the routines that use them load. The A revision's music only ever reads bank 0. Its
-    // sound effects read bank 1.
+    // driver's variables. The routines that use them load them from there. The A revision's music only ever reads bank
+    // 0. Its sound effects read bank 1.
     const uint32_t wave_variable = FindLiteral(rom, "B530 0600 0E02 48xx 6801 1C05 2900", 3);
     info.waves = TableFromSetter(rom, FindSetter(rom, wave_variable, kStoreInVariable));
     const RevisionCode& code = kRevisionCode[size_t(info.revision)];
@@ -545,6 +554,7 @@ bool FindMusicFile(const Rom& rom, const DriverOverrides& overrides, DriverInfo&
         {
             info.music_file = FindLiteralSongs(rom, info.play);
         }
+
         if (!info.music_file)
         {
             error = "found Quintet's sound driver, but not the game's music file";
@@ -560,6 +570,7 @@ bool FindMusicFile(const Rom& rom, const DriverOverrides& overrides, DriverInfo&
         error = "the music file at " + Hex(info.music_file) + " has no songs";
         return false;
     }
+
     if (overrides.song_count && int(info.song_addresses.size()) < overrides.song_count)
     {
         info.warnings.push_back("the music file has only " + std::to_string(info.song_addresses.size()) + " songs");
@@ -577,6 +588,7 @@ void FindEffectsFile(const Rom& rom, DriverInfo& info)
     {
         info.effects_file = FindLiteralSongs(rom, info.play_effect);
     }
+
     if (info.effects_file)
     {
         info.effect_addresses = ReadSongList(rom, info.effects_file, kMaxSongs);
@@ -609,6 +621,7 @@ void ReportDetection(DriverInfo& info)
                            std::to_string(songs) + "-" + std::to_string(SongCount(info) - 1) + "), play routine at " +
                            Hex(info.play_effect));
     }
+
     info.log.push_back("wave table " + found(info.waves) + ", noise macros " + found(info.macros[0]) +
                        ", PCM samples " + samples(0));
     info.log.push_back("the sound effects' noise macros " + found(info.macros[1]) + ", PCM samples " + samples(1));
@@ -620,10 +633,12 @@ void ReportDetection(DriverInfo& info)
     {
         info.warnings.push_back("the game's wave table wasn't found, so the wave channel plays silence");
     }
+
     if (!info.macros[0])
     {
         info.warnings.push_back("the game's noise macros weren't found, so the noise channel ignores them");
     }
+
     if (!info.samples[0])
     {
         info.warnings.push_back("the game's PCM samples weren't found, so the PCM channels play silence");
@@ -644,10 +659,12 @@ bool ReadMusicFile(const Rom& rom, uint32_t file, DriverInfo& info)
         {
             return false;
         }
+
         parts[p] = at + 4;
         ends[p] = at + 4 + size;
         at += 4 + (size & ~3u);
     }
+
     parts[kFileParts - 1] = at + 4;
 
     const std::optional<std::vector<uint32_t>> songs = ReadFileSongs(rom, parts[0], ends[0]);
@@ -692,6 +709,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
     {
         info.music_files = FindMusicFiles(rom, info);
     }
+
     if (!info.music_files.empty())
     {
         ReadMusicFile(rom, info.music_files[0], info);

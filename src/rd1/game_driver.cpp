@@ -10,6 +10,7 @@
 #include <tuple>
 #include <vector>
 
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/thumb.h"
 #include "table_bytes.h"
 
@@ -58,10 +59,6 @@ constexpr uint32_t kMaxFrameRoutine = 0x400;
 
 // The longest handler of DMA 2's interrupt that FindGameRoutines() reads.
 constexpr uint32_t kMaxHandler = 0x200;
-
-// SOUNDCNT_H, whose bit 10 gives FIFO A's timer, and timer 0's reload register.
-constexpr uint32_t kRegSoundCntH = 0x04000082;
-constexpr uint32_t kRegTimer0Reload = 0x04000100;
 
 // The registers of DMA 1's source, whose store in the handler comes before the loads of the rings' addresses.
 constexpr uint32_t kRegDma1Source = 0x040000BC;
@@ -128,6 +125,7 @@ std::optional<GameRoutines> FindGameRoutines(const agb::Rom& rom, const DriverIn
     {
         r.echo_settings[i] = uint32_t(info.echo[i]);
     }
+
     r.play = info.play_routine;
     r.start = info.start_routine;
     r.player_table = info.player_table;
@@ -291,9 +289,9 @@ void GameDriver::Frame()
 
 uint32_t GameDriver::TimerPeriod()
 {
-    const uint32_t timer = system_.Load(kRegSoundCntH, 2) >> 10 & 1;
+    const uint32_t timer = system_.Load(agb::kRegSoundCntH, 2) >> 10 & 1;
 
-    return 0x10000 - system_.Load(kRegTimer0Reload + 4 * timer, 2);
+    return 0x10000 - system_.Load(agb::kRegTimer0Reload + 4 * timer, 2);
 }
 
 const std::vector<agb::RegisterWrite>& GameDriver::SoundWrites() const

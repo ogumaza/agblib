@@ -24,7 +24,7 @@ using agblib::sequence_export::agb::Sf2File;
 using agblib::sequence_export::agb::SongBanks;
 namespace sf2 = seqlib::sf2;
 
-// Returns the level of a PSG voice at its full volume, as a share of a full-scale sample at the driver's default
+// Returns the level of a PSG voice at its full volume as a share of a full-scale sample at the driver's default
 // volumes. The driver mixes the PSG at 50%. Volume 15 is therefore 15/128 of the GBA's full scale. A sample voice plays
 // a full-scale sample at about 47/128 on each side, or 31/128 in the Super Mario Advance 2 and 3 revisions.
 constexpr double PsgShare(Revision revision)

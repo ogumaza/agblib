@@ -9,8 +9,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "agblib/agb/gba.h"
 #include "ntdlib/wave/sinc.h"
+
+#include "agblib/agb/gba.h"
 
 namespace agblib::rd1
 {
@@ -67,6 +68,7 @@ void EnhancedMix::Frame(const std::vector<MixVoice>& voices, const MixSettings& 
     {
         side.assign(n, 0.0f);
     }
+
     parts_ = {};
 
     // The echo's delays: a ring's length on FIFO A, less the offset on FIFO B. A delay shorter than a frame reads the
@@ -124,6 +126,7 @@ void EnhancedMix::Frame(const std::vector<MixVoice>& voices, const MixSettings& 
             {
                 filter_state_[side] = high ? 0.0f : Past(side, 1, 0);
             }
+
             filter_high_ = high;
         }
 
@@ -166,6 +169,7 @@ void EnhancedMix::Frame(const std::vector<MixVoice>& voices, const MixSettings& 
             line[size_t((written_ + i) % line.size())] = std::fabs(x) < kSilence ? 0.0f : x;
         }
     }
+
     written_ += n;
 }
 
@@ -197,6 +201,7 @@ void EnhancedMix::MixVoiceInto(const MixVoice& voice, const MixSettings& setting
     {
         next = end > loop ? loop + (next - end) % (end - loop) : end;
     }
+
     state = {true, base, uint32_t(next), to};
 
     const size_t n = target[0].size();

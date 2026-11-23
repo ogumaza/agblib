@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 
-// Plays a tune of a GBA ROM with Rare's driver on ntdlib's models: the driver's sequencer and mixer (rare::Sequencer)
+// Plays a tune of a GBA ROM with Rare's driver on the agblib models: the driver's sequencer and mixer (rare::Sequencer)
 // on the GBA's sound hardware (agb::Apu), frame by frame. The driver uses only FIFO A, on both sides at full volume,
 // and no PSG channel.
 //
 // On the console, the driver mixes a frame's samples into one of two buffers. At the next VBlank, the game's interrupt
-// swaps the buffers and points DMA 1 at the new mix, which timer 0 then plays to FIFO A, a byte every
-// agb::kFrameCycles / DriverInfo::samples_per_frame cycles. A frame here runs the driver, queues its mix behind the
-// mix of the frame before, and runs the hardware for the frame. Each mix therefore plays whole in the next frame, and
-// the FIFO starts with a frame of silence. On the console, the FIFO still holds the bytes that the DMA has read ahead
-// when the interrupt points it at the new mix. The player leaves that out, as it leaves out the byte of 0x80 that the
+// swaps the buffers and points DMA 1 at the new mix. Timer 0 then plays the mix to FIFO A, a byte every
+// agb::kFrameCycles / DriverInfo::samples_per_frame cycles. A frame here runs the driver, queues its mix behind the mix
+// of the frame before, and runs the hardware for the frame. Each mix therefore plays whole in the next frame, and the
+// FIFO starts with a frame of silence. On the console, the FIFO still contains the bytes that the DMA has read ahead
+// when the interrupt points it at the new mix. The player leaves that out. It also leaves out the byte of 0x80 that the
 // driver's init stores in each FIFO before the sound is on.
 //
 // The driver's init sets the output's resolution in the sound bias register: 8 bits at 65,536 Hz. Rate() gives it.
@@ -65,7 +65,7 @@ public:
     // Throws std::invalid_argument when the tune can't be played.
     void Start(int tune, const ArchivePlayerOptions& options = {});
 
-    // Starts an audition: one note of program `program` of tune `tune` at `key` and `velocity` (0 to 127), as
+    // Starts an audition: one note of program `program` of tune `tune` at `key` and `velocity` (0 to 127) as
     // Sequencer::Audition() plays it. The tune's tracks stay idle. The note sounds until ReleaseNote() and its
     // release, or its sample's end. Throws std::invalid_argument when the tune can't be played.
     void StartNote(int tune, uint8_t program, uint8_t key, uint8_t velocity, const ArchivePlayerOptions& options = {});
@@ -98,7 +98,7 @@ public:
         return frames_;
     }
 
-    // The tune's tick: the largest tick count of its tracks, which counts every pass through a loop.
+    // The tune's tick: the largest tick count of its tracks, with every pass through a loop.
     uint64_t Tick() const;
 
     // The output's rate in Hz: agb::kEnhancedRate in the enhanced mode, or else from the resolution in the sound bias
@@ -136,7 +136,7 @@ public:
     }
 
     // While any track is soloed, leaves every track that isn't out of the output, in the same way as a mute. A mute
-    // still holds on a soloed track.
+    // still applies on a soloed track.
     void SoloTrack(int track, bool solo);
     bool IsTrackSoloed(int track) const
     {
@@ -158,7 +158,7 @@ public:
         return output_peaks_;
     }
 
-    // What Restore() takes to go back to a place in the tune. A snapshot holds the driver's whole state and the
+    // What Restore() takes to go back to a place in the tune. A snapshot contains the driver's whole state and the
     // hardware's FIFOs: a few kilobytes.
     class Snapshot
     {
@@ -172,7 +172,7 @@ public:
         bool enhanced_ = false;
     };
 
-    // Takes a snapshot. `previous` is there for the interface that ntdlib's archive players share: a snapshot stands
+    // Takes a snapshot. `previous` is there for the interface that the agblib archive players share: a snapshot stands
     // alone. Throws std::logic_error before a start.
     Snapshot Save(const Snapshot* previous = nullptr) const;
 

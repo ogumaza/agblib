@@ -95,6 +95,7 @@ public:
                 }
             }
         }
+
         if (length_on_)
         {
             length_cycles_ += point_cycles_;
@@ -259,6 +260,7 @@ int PsgModel::Frame(const PsgRegisters& r)
     {
         frequency_ = r.frequency & 0x7FF;
     }
+
     written_ = r.frequency & 0x7FF;
 
     // A channel whose DAC is off is off at once.
@@ -411,6 +413,7 @@ sf2::Sample NoiseSequence(bool narrow, double level)
         s.data.push_back((lfsr & 1) ? int16_t(-amplitude) : amplitude);
         lfsr = NextLfsr(lfsr, narrow);
     }
+
     s.loop_start = 0;
     s.loop_end = points;
     AddLoopGuard(s);
@@ -429,6 +432,7 @@ int WaveKeyOffset(const WaveShape& shape)
         {
             repeats = repeats && shape.steps[i] == shape.steps[i + n / 2];
         }
+
         if (!repeats)
         {
             break;
@@ -474,13 +478,14 @@ int PsgSamples::Wave(Sf2File& file, const WaveShape& shape)
     std::snprintf(name, sizeof name, "Wave %d", int(waves_.size()));
     out.name = name;
 
-    // 4 points a step. The pattern is stored at half scale, without its mean: a channel at 100% plays it at level
-    // 4 × 15, so that a pattern from 0 to 15 is as loud as a square at volume 15.
+    // 4 points a step. The pattern is stored at half scale, without its mean: a channel at 100% plays it at level 4 ×
+    // 15. A pattern from 0 to 15 is then as loud as a square at volume 15.
     double mean = 0;
     for (uint8_t v : shape.steps)
     {
         mean += v;
     }
+
     mean /= double(shape.steps.size());
 
     std::vector<int16_t> cycle;

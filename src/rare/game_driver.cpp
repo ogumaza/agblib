@@ -38,6 +38,7 @@ void GameDriver::Play(const DriverInfo& info, int tune, uint16_t silenced)
         system_.Store(routines_.volume_option, 2, routines_.volume_level);
         volume_ = system_.Call(routines_.volume_routine | 1);
     }
+
     const std::array<uint32_t, 1> volume = {volume_};
     system_.Call(routines_.volume_setter | 1, volume);
     silenced_ = silenced;
@@ -46,7 +47,7 @@ void GameDriver::Play(const DriverInfo& info, int tune, uint16_t silenced)
 void GameDriver::Frame()
 {
     // The game sets the levels between the driver's frames. The driver gives every channel a level of 128 as a tune
-    // starts, so the tune's first frame plays every channel.
+    // starts. The tune's first frame therefore plays every channel.
     for (int c = 0; c < kChannels && routines_.channel_levels; c++)
     {
         if (silenced_ >> c & 1)

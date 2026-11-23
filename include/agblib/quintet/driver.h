@@ -28,7 +28,7 @@ struct DriverOverrides
 // The revisions of the driver.
 enum class Revision : uint8_t
 {
-    kA, // Super Robot Taisen A's, which D and R have too
+    kA, // Super Robot Taisen A's, also in D and R
     kJ, // Super Robot Taisen J's: kRevisionTraits gives how it differs
     kS, // Star Communicator's: the A revision with notes of two bytes and the commands numbered from 80
 };
@@ -146,7 +146,7 @@ constexpr int kFrequencyEntries = 84;
 constexpr int kPcmPitchEntries = 53;
 
 // The driver's tables in a ROM, and the tables the game gives it. The game gives the driver two banks of noise macros
-// and PCM samples: bank 0 for music and bank 1 for sound effects, which the J revision's music can switch to.
+// and PCM samples: bank 0 for music and bank 1 for sound effects. The J revision's music can switch to bank 1.
 struct DriverInfo
 {
     Revision revision = Revision::kA;
@@ -164,23 +164,24 @@ struct DriverInfo
     std::vector<uint32_t> song_addresses;
     std::vector<uint32_t> effect_addresses;
 
-    // Each sample's header, as the driver's sample tables hold them.
+    // Each sample's header as the driver's sample tables contain them.
     std::array<std::vector<uint32_t>, 2> sample_addresses;
 
-    // A game whose driver loads its tables from a music file can have several. The fields above hold one file's songs,
-    // sound effects and tables. The conversion numbers each file's songs and sound effects after the previous file's.
+    // A game whose driver loads its tables from a music file can have several. The fields above contain one file's
+    // songs, sound effects and tables. The conversion numbers each file's songs and sound effects after the previous
+    // file's.
     std::vector<uint32_t> music_files; // each file's first word, or none if the game has no such files
     int first_song = 0;                // the number that the conversion gives this file's first song
 
-    std::vector<std::string> log;      // detection results, as text
+    std::vector<std::string> log;      // detection results as text
     std::vector<std::string> warnings; // assumptions detection had to make
 };
 
 // Finds the driver in `rom`. Returns false and sets `error` if the driver's tables can't be read, or returns false with
-// `error` empty if the game shows no sign of the driver. In a game with several music files, `info` holds the first.
+// `error` empty if the game shows no sign of the driver. In a game with several music files, `info` contains the first.
 bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& info, std::string& error);
 
-// Reads the music file whose first word is at `file`, as the driver's loader does: its songs, its sound effects and the
+// Reads the music file whose first word is at `file` as the driver's loader does: its songs, its sound effects and the
 // tables it gives the driver. Sets them in `info`. Returns false, leaving `info` as it was, if it isn't a music file.
 bool ReadMusicFile(const Rom& rom, uint32_t file, DriverInfo& info);
 

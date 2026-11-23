@@ -18,6 +18,7 @@
 #include "agblib/rd1/driver.h"
 #include "agblib/rd1/instruments.h"
 #include "agblib/sequence_export/agb/psg.h"
+#include "agblib/sequence_export/agb/psg_cycles.h"
 #include "agblib/sequence_export/agb/sf2.h"
 
 namespace agblib::sequence_export::rd1
@@ -31,6 +32,7 @@ using agblib::rd1::InstrumentKind;
 using agblib::rd1::InstrumentRecord;
 using agblib::rd1::KeyPitch;
 using agblib::rd1::kMaxSamplePoints;
+using agblib::rd1::kSampleHeaderBytes;
 using agblib::rd1::PlayedInstrument;
 using agblib::rd1::ProgramInstrument;
 using agblib::rd1::PsgSetting;
@@ -40,6 +42,8 @@ using agblib::sequence_export::agb::AddLoopGuard;
 using agblib::sequence_export::agb::AddressName;
 using agblib::sequence_export::agb::AddTuning;
 using agblib::sequence_export::agb::AddVolumeEnvelope;
+using agblib::sequence_export::agb::AppendNoise;
+using agblib::sequence_export::agb::CenteredSquareCycle;
 using agblib::sequence_export::agb::Centibels;
 using agblib::sequence_export::agb::FadeSeconds;
 using agblib::sequence_export::agb::KeyHz;
@@ -54,7 +58,6 @@ using agblib::sequence_export::agb::kSilent;
 using agblib::sequence_export::agb::LengthenLoop;
 using agblib::sequence_export::agb::MakeInstrument;
 using agblib::sequence_export::agb::MakePreset;
-using agblib::sequence_export::agb::NextLfsr;
 using agblib::sequence_export::agb::SetCycle;
 using agblib::sequence_export::agb::SettingCents;
 using agblib::sequence_export::agb::Sf2File;
@@ -64,6 +67,7 @@ using agblib::sequence_export::agb::Timecents;
 using agblib::sequence_export::agb::TunedZones;
 using agblib::sequence_export::agb::UniformTuning;
 using agblib::sequence_export::agb::VolumeEnvelope;
+using agblib::sequence_export::agb::WavePatternCycle;
 
 namespace
 {
@@ -71,34 +75,31 @@ namespace
 // The envelope's full level.
 constexpr uint32_t kFullLevel = 0x7F0000;
 
-// The Game Boy's square duties: the steps of 8 that are high.
-constexpr int kDutyHigh[4] = {1, 2, 4, 6};
-
 // The points a square sample gives each of its 8 steps.
 constexpr int kStepPoints = 8;
 
 // The rate a noise sample is rendered at, and its length. Both games set SOUNDBIAS to 0x200. The GBA then samples the
-// PSG's output 32768 times a second. All the noise's power therefore lies under 16384 Hz. A sample at a higher rate
+// PSG's output 32768 times a second. All the noise's power is therefore under 16384 Hz. A sample at a higher rate
 // spreads the power wider, and a player at 44.1 or 48 kHz loses the top of it.
 constexpr uint32_t kNoiseRate = 32768;
 constexpr uint32_t kNoisePoints = kNoiseRate;
 constexpr uint32_t kNoiseStep = 524288 / kNoiseRate; // the LFSR's clock with a divisor of 1, in steps a point
 
-// The keys that the noise's table covers. The driver holds the key to this range (0x080F29D6).
+// The keys that the noise's table covers. The driver clamps the key to this range (0x080F29D6).
 constexpr int kNoiseLow = 0x15;
 constexpr int kNoiseHigh = 0x50;
 
-// The PSG's level at kPsgFullVolume against a sample voice at the mixer's full level, which the mixer writes to the
-// FIFO at full scale. Under SOUNDCNT_L 0xBB77 and the PSG at 100%, volume 15 plays at 30/128 of a full-scale FIFO
+// The PSG's level at kPsgFullVolume against a sample voice at the mixer's full level. The mixer writes that level to
+// the FIFO at full scale. Under SOUNDCNT_L 0xBB77 and the PSG at 100%, volume 15 plays at 30/128 of a full-scale FIFO
 // sample (psg.h).
 constexpr double kPsgShare = kPsgFullVolume * kPsgLevelPerVolume / kFifoLevel;
 
-// The PSG doesn't pass through the mixer, so the echo doesn't reach it. A PSG zone holds this in place of the default
-// modulator from CC91 to the reverb send.
+// The PSG doesn't pass through the mixer, and the echo therefore doesn't reach it. A PSG zone contains this in place of
+// the default modulator from CC91 to the reverb send.
 constexpr sf2::Modulator kNoReverb = {sf2::kController | 91, sf2::kReverbEffectsSend, 0, sf2::kNoController,
                                       sf2::kLinear};
 
-// The driver doesn't bend a fixed-pitch sample or the noise. Their zones hold this in place of the global zone's
+// The driver doesn't bend a fixed-pitch sample or the noise. Their zones have this in place of the global zone's
 // modulator from the pitch wheel.
 constexpr sf2::Modulator kNoBend = {sf2::kSrcPitchWheel, sf2::kFineTune, 0, sf2::kSrcPitchWheelSensitivity,
                                     sf2::kLinear};
@@ -193,7 +194,7 @@ public:
             return cached->second.first;
         }
 
-        // The header holds the length, the rate, the root key, the loop's start and end, then the address of the
+        // The header contains the length, the rate, the root key, the loop's start and end, then the address of the
         // points. A sample with a loop plays up to the loop's end and goes back to its start.
         const uint32_t length = rom_.U32(address);
         const uint32_t rate = rom_.U32(address + 4);
@@ -203,8 +204,8 @@ public:
         const uint32_t data = rom_.U32(address + 20);
         const bool looped = loop_start || loop_end;
         const uint32_t points = looped ? loop_end : length;
-        if (!rom_.Contains(address, 24) || !points || points > kMaxSamplePoints || !rate || root > 127 ||
-            !rom_.Contains(data, points) || (looped && loop_start >= loop_end))
+        if (!rom_.Contains(address, kSampleHeaderBytes) || !points || points > kMaxSamplePoints || !rate ||
+            root > 127 || !rom_.Contains(data, points) || (looped && loop_start >= loop_end))
         {
             game_[address] = {-1, false};
             loops = false;
@@ -220,6 +221,7 @@ public:
         {
             s.data.push_back(int16_t(rom_.S8(data + i) * 256));
         }
+
         if (looped)
         {
             s.loop_start = loop_start;
@@ -245,32 +247,19 @@ public:
             return cached->second;
         }
 
-        // The high steps come first. Without the DC offset, which the GBA's output removes, the levels sit either side
-        // of 0. They lie as far apart as a wave's levels 0 and 15.
-        const int high = kDutyHigh[duty];
-        std::vector<int16_t> cycle;
-        for (int step = 0; step < 8; step++)
-        {
-            const double level = step < high ? 2.0 - high / 4.0 : -high / 4.0;
-            for (int i = 0; i < kStepPoints; i++)
-            {
-                cycle.push_back(int16_t(std::lround(level * kPsgShare * 32767)));
-            }
-        }
-
         sf2::Sample s;
         s.name = SquareName(duty);
         s.sample_rate = uint32_t(std::lround(8 * kStepPoints * kMiddleC));
         s.original_key = 60;
-        SetCycle(s, cycle);
+        SetCycle(s, CenteredSquareCycle(duty, kStepPoints, kPsgShare));
         file_.samples.push_back(std::move(s));
         squares_[duty] = int(file_.samples.size()) - 1;
 
         return squares_[duty];
     }
 
-    // Returns the sample of the wave channel's pattern at `address`. Key 60 plays it an octave below middle C, as the
-    // channel plays it an octave below the square channels at the same setting.
+    // Returns the sample of the wave channel's pattern at `address`. Key 60 plays it an octave below middle C. The
+    // channel plays an octave below the square channels at the same setting.
     int Wave(uint32_t address)
     {
         const auto cached = waves_.find(address);
@@ -278,28 +267,18 @@ public:
         {
             return cached->second;
         }
+
         if (!rom_.Contains(address, 16))
         {
             waves_[address] = -1;
             return -1;
         }
 
-        // The wave channel plays 32 steps of 4 bits, the high nibble of each byte first.
-        std::vector<int16_t> cycle;
-        for (uint32_t i = 0; i < 16; i++)
-        {
-            const uint8_t b = rom_.U8(address + i);
-            for (int v : {b >> 4, b & 15})
-            {
-                cycle.push_back(int16_t(std::lround((v - 7.5) / 7.5 * kPsgShare * 32767)));
-            }
-        }
-
         sf2::Sample s;
         s.name = AddressName("Wave", address);
         s.sample_rate = uint32_t(std::lround(32 * kMiddleC / 2));
         s.original_key = 60;
-        SetCycle(s, cycle);
+        SetCycle(s, WavePatternCycle(rom_, address, kPsgShare));
         file_.samples.push_back(std::move(s));
         waves_[address] = int(file_.samples.size()) - 1;
 
@@ -322,28 +301,7 @@ public:
         s.sample_rate = kNoiseRate;
         s.original_key = 60;
 
-        // The LFSR's clock is 524288 / r / 2^(s+1) Hz, with r = 0 counting as 0.5. Each point moves it on by
-        // kNoiseStep / ((r ? 2r : 1) << s) steps. The output is high while the LFSR's low bit is 0.
-        const int shift = nr43 >> 4;
-        const int ratio = nr43 & 7;
-        uint32_t lfsr = 0x7FFF;
-        uint32_t clock = 0;
-        for (uint32_t i = 0; i < kNoisePoints; i++)
-        {
-            s.data.push_back(shift < 14 ? int16_t(std::lround(((lfsr & 1) ? -32767 : 32767) * kPsgShare)) : 0);
-            if (shift >= 14)
-            {
-                continue;
-            }
-
-            clock += kNoiseStep;
-            const uint32_t den = uint32_t(ratio ? 2 * ratio : 1) << shift;
-            for (; clock >= den; clock -= den)
-            {
-                lfsr = NextLfsr(lfsr, (nr43 & 8) != 0);
-            }
-        }
-
+        AppendNoise(s, nr43, kNoisePoints, kNoiseStep, kPsgShare);
         s.loop_start = 0;
         s.loop_end = uint32_t(s.data.size());
         AddLoopGuard(s);
@@ -373,11 +331,12 @@ sf2::Zone RecordZone(const InstrumentRecord& r, int sample, bool loops, int lo, 
     const bool psg = r.kind == InstrumentKind::kPsg;
     if (!psg && r.pan != 0x7F && r.pan != 0)
     {
-        // The offset moves the channel's pan, which sits at the middle unless the song moves it.
+        // The offset moves the channel's pan. The pan sits at the middle unless the song moves it.
         const int pan = std::clamp(64 + r.pan, 0, 127);
         z.generators.push_back(
             sf2::Generator::Value(sf2::kPan, SidesPan(pan <= 63 ? 127 : 254 - 2 * pan, pan <= 63 ? 2 * pan : 127)));
     }
+
     AddVolumeEnvelope(z, ZoneEnvelope(r, release_from));
     z.generators.push_back(sf2::Generator::Value(sf2::kSampleModes, loops ? 1 : 0));
     z.generators.push_back(sf2::Generator::Value(sf2::kSampleId, sample));
@@ -392,7 +351,7 @@ sf2::Zone RecordZone(const InstrumentRecord& r, int sample, bool loops, int lo, 
 
 // Adds the zones of record `r` on keys `lo` to `hi` to `zones`. `fixed_key` is the key that a drum kit's part plays
 // at, or -1 for a part that follows the key. A sample zone's release falls from `release_from` (ZoneEnvelope()). A PSG
-// zone's release falls from the sustain level, as PsgVelocity() expects. Returns false if the record's sample can't be
+// zone's release falls from the sustain level as PsgVelocity() expects. Returns false if the record's sample can't be
 // read.
 bool AddZones(const Rom& rom, const DriverInfo& info, SampleCache& cache, const InstrumentRecord& r, int lo, int hi,
               int fixed_key, double release_from, std::vector<sf2::Zone>& zones)
@@ -415,9 +374,9 @@ bool AddZones(const Rom& rom, const DriverInfo& info, SampleCache& cache, const 
             sf2::Zone z = RecordZone(r, sample, loops, lo, hi, release_from);
             if (r.kind == InstrumentKind::kFixed || fixed_key >= 0)
             {
-                // A fixed part plays one pitch on every key: the mixer's rate for 'F', the drum's key's pitch for a
-                // kit. The frequency routine gives 'F' a rate of 0 (0x080F1990), which the step routine takes as a
-                // step of 1.0 (0x080F0E4C), whatever rate the sample's header gives.
+                // A fixed part plays one pitch on every key: the mixer's rate for 'F', the pitch of the drum's key for
+                // a kit. The frequency routine gives 'F' a rate of 0 (0x080F1990). The step routine takes that rate as
+                // a step of 1.0 (0x080F0E4C), whatever rate the sample's header gives.
                 const int played = r.kind == InstrumentKind::kFixed ? root : fixed_key;
                 z.generators.insert(z.generators.begin() + 1, sf2::Generator::Value(sf2::kScaleTuning, 0));
                 sf2::Zone tune;
@@ -431,6 +390,7 @@ bool AddZones(const Rom& rom, const DriverInfo& info, SampleCache& cache, const 
                 {
                     z.modulators.push_back(kNoBend);
                 }
+
                 zones.push_back(std::move(z));
                 return true;
             }
@@ -439,6 +399,7 @@ bool AddZones(const Rom& rom, const DriverInfo& info, SampleCache& cache, const 
             {
                 tuning[size_t(key)] = SampleCents(rom, info, key, root);
             }
+
             made = TunedZones(z, tuning);
             break;
         }
@@ -447,7 +408,7 @@ bool AddZones(const Rom& rom, const DriverInfo& info, SampleCache& cache, const 
         {
             if (r.psg_channel == 3)
             {
-                // The noise's setting comes from the key, so each run of keys with the same setting gets a zone.
+                // The noise's setting comes from the key. Each run of keys with the same setting therefore gets a zone.
                 for (int key = lo; key <= hi;)
                 {
                     const uint8_t nr43 = NoiseSetting(rom, info, r, fixed_key >= 0 ? fixed_key : key);
@@ -456,6 +417,7 @@ bool AddZones(const Rom& rom, const DriverInfo& info, SampleCache& cache, const 
                     {
                         last++;
                     }
+
                     if (fixed_key >= 0)
                     {
                         last = hi;
@@ -467,6 +429,7 @@ bool AddZones(const Rom& rom, const DriverInfo& info, SampleCache& cache, const 
                     zones.push_back(std::move(z));
                     key = last + 1;
                 }
+
                 return true;
             }
 
@@ -491,6 +454,7 @@ bool AddZones(const Rom& rom, const DriverInfo& info, SampleCache& cache, const 
             {
                 tuning[size_t(key)] = PsgCents(rom, info, key);
             }
+
             made = TunedZones(z, tuning);
             break;
         }
@@ -550,6 +514,7 @@ void MoveSharedGenerators(sf2::Instrument& instrument)
     {
         return std::any_of(shared.begin(), shared.end(), [&](const sf2::Generator& h) { return h.oper == g.oper; });
     };
+
     for (auto z = zones.begin() + 1; z != zones.end(); ++z)
     {
         std::erase_if(z->generators, moved);
@@ -626,6 +591,7 @@ Sf2File InstrumentSet::Build() const
         {
             AddZones(rom_, info_, cache, r, 0, 127, -1, ReleaseFrom(bank, program, 0), zones);
         }
+
         if (zones.empty())
         {
             continue;

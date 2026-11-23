@@ -46,7 +46,7 @@ VolumeEnvelope ZoneEnvelope(const InstrumentRecord& r, double release_from = -1)
 class InstrumentSet
 {
 public:
-    // Keeps references to `rom` and `info`, which have to outlive the set.
+    // Keeps references to `rom` and `info`. They have to outlive the set.
     InstrumentSet(const Rom& rom, const DriverInfo& info);
 
     // Adds key `key` of program `program` of bank `bank`. `release_level` is the driver's level, 0 to 0x7F, at which a

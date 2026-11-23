@@ -49,7 +49,7 @@ struct GameSample
 class SoundfontBuilder
 {
 public:
-    // Keeps a reference to `rom`, which has to outlive the builder. The game's samples play at `rate` Hz.
+    // Keeps a reference to `rom`. It has to outlive the builder. The game's samples play at `rate` Hz.
     SoundfontBuilder(const Rom& rom, uint32_t rate);
 
     Sf2File& File()
@@ -57,18 +57,18 @@ public:
         return file_;
     }
 
-    // Each returns the index of the SF2 sample for a sound, which is made on first use and shared afterwards. A square
-    // or wave sample plays its waveform at middle C on its root key; a noise sample is rendered at 32768 Hz, and loops
-    // its end if it goes on unchanged; a game's sample plays at the mixer's rate on key 60. GameSampleIndex() returns
-    // -1 for a sample that isn't in the ROM or has nothing to play.
+    // Each returns the index of the SF2 sample for a sound. The sample is made on first use and shared afterwards. A
+    // square or wave sample plays its waveform at middle C on its root key; a noise sample is rendered at 32768 Hz, and
+    // loops its end if it goes on unchanged; a game's sample plays at the mixer's rate on key 60. GameSampleIndex()
+    // returns -1 for a sample that isn't in the ROM or has nothing to play.
     int SquareSample(int duty);
     int WaveSample(const WaveShape& shape);
     int NoiseSample(const NoiseSound& sound);
     int GameSampleIndex(const GameSample& sample);
 
-    // Each returns the name and zones of a square or wave instrument whose notes switch from duty or wave shape
-    // `first` to `second` after `frames` frames (PsgSamples::SquareInstrument() and WaveInstrument()). The zones are
-    // tuned by `cents`. `shapes` holds the wave shapes by number.
+    // Each returns the name and zones of a square or wave instrument whose notes switch from duty or wave shape `first`
+    // to `second` after `frames` frames (PsgSamples::SquareInstrument() and WaveInstrument()). The zones are tuned by
+    // `cents`. `shapes` contains the wave shapes by number.
     NamedZones SquareInstrument(int first, int frames, int second, int cents);
     NamedZones WaveInstrument(const WaveShapes& shapes, int first, int frames, int second, int cents);
 
@@ -109,7 +109,7 @@ struct Instrument
     uint32_t set = 0; // a sample note's sample set, or in the Magical Vacation revision its sample's start
 };
 
-// The instruments that songs play, numbered in the order they're first played, which become a SoundFont's presets. One
+// The instruments that songs play, numbered in the order they're first played. They become a SoundFont's presets. One
 // set can serve all of a game's songs, for a shared SoundFont.
 class InstrumentSet
 {

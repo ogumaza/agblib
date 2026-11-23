@@ -30,7 +30,7 @@ struct Sample
     uint32_t data = 0;        // its first point: 8-bit, unsigned, with 0x80 as silence
     uint32_t end = 0;         // the address just past its last point
     uint8_t loop = 0;         // 0 none, 1 forwards, 2 back and forth
-    uint32_t loop_length = 0; // the loop's points, which end at `end`
+    uint32_t loop_length = 0; // the loop's points, up to `end`
     int8_t fine_tune = 0;     // in 128ths of a semitone
     int8_t relative_note = 0; // the semitones that the player adds to a note
     uint8_t volume = 0;       // 0-64
@@ -42,8 +42,8 @@ struct Sample
     uint32_t rate = 0;
 };
 
-// Reads sample `number` of the game's table, from 0. Gives nothing for a table that the game lacks, a header outside
-// the ROM, or points that don't lie in it.
+// Reads sample `number` of the game's table, from 0. Gives nothing for a table that the game doesn't have, a header
+// outside the ROM, or points that aren't in it.
 std::optional<Sample> ReadSample(const Rom& rom, const DriverInfo& info, int number);
 
 // A run of an instrument's notes that play one sample.
@@ -63,13 +63,13 @@ struct Instrument
     std::vector<Region> regions; // over the notes from 1 to kInstrumentNotes, in order
 };
 
-// Reads instrument `instrument`, from 1, as the rows of `module` name it. In a module without XM instruments, it's
+// Reads instrument `instrument`, from 1 as the rows of `module` name it. In a module without XM instruments, it's
 // sample `instrument` - 1 of the game's table, in one region over every note. Gives nothing for 0, or where the game's
-// tables or the module's instruments don't lie in the ROM.
+// tables or the module's instruments aren't in the ROM.
 std::optional<Instrument> ReadInstrument(const Rom& rom, const DriverInfo& info, const ModuleInfo& module,
                                          uint16_t instrument);
 
-// What a row of `module` with note `note` (from 1 for C-0) and instrument `instrument` (from 1) plays, as the player
+// What a row of `module` with note `note` (from 1 for C-0) and instrument `instrument` (from 1) plays as the player
 // picks it.
 struct Lookup
 {
@@ -80,8 +80,7 @@ struct Lookup
 };
 
 // Looks up `note` with `instrument` in `module`. An XM instrument takes the sample of the row's note, before the
-// sample's relative note. Gives nothing for a note off, a note past kInstrumentNotes, or tables that don't lie in the
-// ROM.
+// sample's relative note. Gives nothing for a note off, a note past kInstrumentNotes, or tables that aren't in the ROM.
 std::optional<Lookup> LookUpInstrument(const Rom& rom, const DriverInfo& info, const ModuleInfo& module,
                                        uint16_t instrument, uint8_t note);
 

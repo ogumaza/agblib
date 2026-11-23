@@ -1,29 +1,26 @@
 // SPDX-License-Identifier: MIT
 
-// Unit tests for Quintet's driver. They build small synthetic cartridges in memory, so no game ROM is needed.
+// Unit tests for Quintet's driver. They build small synthetic cartridges in memory. No game ROM is needed.
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <initializer_list>
 #include <map>
-#include <memory>
-#include <span>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
 #include "seqlib/midi/reader.h"
 #include "seqlib/testing/check.h"
 
+#include "agb_conversion_test_util.h"
 #include "agblib/agb/files.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
@@ -43,113 +40,14 @@
 #include "agblib/testing/agb_cart.h"
 #include "agblib/testing/agb_files.h"
 #include "agblib/testing/quintet_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
+#include "quintet_test_util.h"
 
 namespace agblib::sequence_export::quintet
 {
 namespace
 {
 
-using agblib::agb::kRomBase;
-using agblib::agb::RegisterWrite;
-using agblib::agb::Rom;
-using agblib::agb::Utf8;
-using agblib::quintet::ArchivePlayer;
-using agblib::quintet::Command;
-using agblib::quintet::DecodeCommand;
-using agblib::quintet::DetectDriver;
-using agblib::quintet::DriverInfo;
-using agblib::quintet::DriverOverrides;
-using agblib::quintet::DumpSong;
-using agblib::quintet::EffectIndex;
-using agblib::quintet::Event;
-using agblib::quintet::FifoFrames;
-using agblib::quintet::FileOfSong;
-using agblib::quintet::Instrument;
-using agblib::quintet::LookUpInstrument;
-using agblib::quintet::ReadMusicFiles;
-using agblib::quintet::ReadSample;
-using agblib::quintet::ReadWave;
-using agblib::quintet::Revision;
-using agblib::quintet::Sequencer;
-using agblib::quintet::SongAddress;
-using agblib::quintet::SongCount;
-using agblib::sequence_export::agb::ConvertSettings;
-using agblib::sequence_export::agb::kMiddleC;
-using agblib::sequence_export::agb::SongNumber;
-using agblib::sequence_export::agb::SongReport;
-using agblib::sequence_export::agb::SongStem;
-using agblib::testing::agb_files::HasGlobalZoneModulators;
-using agblib::testing::agb_files::LastWrite;
-using agblib::testing::agb_files::Le16;
-using agblib::testing::agb_files::Le32;
-using agblib::testing::agb_files::MidiEvents;
-using agblib::testing::agb_files::ReadAll;
-using agblib::testing::agb_files::ReadMidi;
-using agblib::testing::agb_files::ReadSf2;
-using agblib::testing::agb_files::Sf2Records;
-using agblib::testing::agb_files::TempPath;
-using agblib::testing::agb_files::TempSettings;
-using agblib::testing::quintet_cart::Cart;
-using agblib::testing::quintet_cart::Channel;
-using agblib::testing::quintet_cart::FileAddress;
-using agblib::testing::quintet_cart::kEffectsFile;
-using agblib::testing::quintet_cart::kFrequencyTable;
-using agblib::testing::quintet_cart::kLengthTable;
-using agblib::testing::quintet_cart::kLfoTable;
-using agblib::testing::quintet_cart::kMacroFile;
-using agblib::testing::quintet_cart::kMusicFile;
-using agblib::testing::quintet_cart::kPcmPitchTable;
-using agblib::testing::quintet_cart::kPlay;
-using agblib::testing::quintet_cart::kPlayEffect;
-using agblib::testing::quintet_cart::kSampleFile;
-using agblib::testing::quintet_cart::kSfxMacroFile;
-using agblib::testing::quintet_cart::kSfxSampleFile;
-using agblib::testing::quintet_cart::kWaveFile;
-using agblib::testing::quintet_cart::Saw;
-using agblib::testing::quintet_cart::Song;
-
-namespace cc = seqlib::midi::cc;
-
-// Returns the driver info of a cartridge, failing the test if detection fails.
-DriverInfo Detect(const Rom& rom)
-{
-    DriverInfo info;
-    std::string error;
-    SEQLIB_CHECK(DetectDriver(rom, DriverOverrides(), info, error));
-    SEQLIB_CHECK(error.empty());
-
-    return info;
-}
-
-// Runs a song for `frames` frames and returns each frame's register writes, with the play routine's first.
-std::vector<std::vector<RegisterWrite>> Writes(const Rom& rom, const DriverInfo& info, int song, int frames)
-{
-    Sequencer seq(rom, info, song);
-    std::vector<std::vector<RegisterWrite>> out = {seq.StartWrites()};
-    for (int f = 0; f < frames; f++)
-    {
-        out.push_back(seq.Step());
-    }
-
-    return out;
-}
-
-// Returns the tick of the last marker in `midi` whose text is `name`, or `missing` if there's none.
-uint32_t MarkerTick(const MidiEvents& midi, const std::string& name, uint32_t missing)
-{
-    uint32_t found = missing;
-    for (const auto& [tick, bytes] : midi.Find(0xFF))
-    {
-        if (bytes.size() > 3 && bytes[1] == 0x06 && std::string(bytes.begin() + 3, bytes.end()) == name)
-        {
-            found = uint32_t(tick);
-        }
-    }
-
-    return found;
-}
+using agblib::testing::agb_tests::CheckFilesInMemory;
 
 void TestDetection()
 {
@@ -236,6 +134,7 @@ void TestDecoding()
     {
         cart.Put8(kAt + uint32_t(i), kBytes[i]);
     }
+
     const Rom rom = cart.ToRom();
     DriverInfo info;
     info.length_table = kLengthTable;
@@ -265,8 +164,8 @@ void TestDecoding()
 void TestTiming()
 {
     // At tempo 90, a quarter note of 96 ticks takes 96 × 37 / 90 = 39.47 frames, and the driver plays each note at the
-    // start of the frame its tick falls in. A loop starts the count again where the driver is, so the passes drift from
-    // the song's ticks: the fourth note plays at frame 117, where tick 288 would fall in frame 118.
+    // start of the frame its tick falls in. A loop starts the count again where the driver is. The passes therefore
+    // drift from the song's ticks: the fourth note plays at frame 117, where tick 288 would fall in frame 118.
     Cart cart(Revision::kA);
     cart.Songs({Song({Channel().Bytes({0x7F, 90, 0x5E, 15, 0xBF}).Note(0, 3).End()})});
     const Rom rom = cart.ToRom();
@@ -353,13 +252,14 @@ void TestCommandGuard()
 void TestWaveSwitch()
 {
     // A wave note that switches from a wave whose halves match (wave 0, made a 16-step saw played twice) to one whose
-    // halves don't (wave 1, a square) plays both zones from the same root key, so the second sounds at the note's pitch
-    // and not an octave higher. Each run of keys that the frequency table tunes alike has a pair of zones.
+    // halves don't (wave 1, a square) plays both zones from the same root key. The second then sounds at the note's
+    // pitch and not an octave higher. Each run of keys that the frequency table tunes alike has a pair of zones.
     Cart cart(Revision::kA);
     for (uint32_t i = 0; i < 16; i++)
     {
         cart.Put8(FileAddress(kWaveFile) + 2 + i, uint8_t((2 * (i % 8)) << 4 | (2 * (i % 8) + 1)));
     }
+
     cart.Songs({Song({{0xFF}, {0xFF}, Channel().Bytes({0xDA, 0x00, 0xDA, 0x81, 0x5E, 3, 0xEA, 10}).Note(0, 2).End()})});
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
@@ -442,671 +342,10 @@ void TestPsgTuning()
     SEQLIB_CHECK_EQ(fine(ReadSf2(wave.sf2_path), 48), cents(flat, 60));
 }
 
-void TestLoopStarts()
-{
-    // Square 1 loops two notes from its start, and square 2 plays a note and then loops the same two notes. The loop
-    // starts after square 2's first note, within a frame, where both channels are looping, lasts two notes, and plays
-    // twice before the song ends.
-    Cart cart(Revision::kA);
-    cart.Songs({Song({Channel().Bytes({0x7F, 90, 0x5E, 15, 0xBF}).Note(0, 3).Note(4, 3).End(),
-                      Channel().Bytes({0x7F, 90, 0x5E, 15}).Note(2, 3).Bytes({0xBF}).Note(0, 3).Note(4, 3).End()})});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("loop_starts");
-
-    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-    const double length = sum.loop_end - sum.loop_start;
-    SEQLIB_CHECK(sum.ok && sum.loop_start > 0);
-    SEQLIB_CHECK(std::fabs(sum.loop_start - length / 2) < 0.02);
-    SEQLIB_CHECK(std::fabs(sum.seconds - (sum.loop_start + 2 * length)) < 0.001);
-}
-
-void TestLoopAfterTempoChange()
-{
-    // Square 1 plays two notes at tempo 200, slows to tempo 60 and loops two notes, and square 2 loops four notes from
-    // its start, so that its first pass starts at the faster tempo. The loop starts at the second pass, a loop after
-    // square 1's loop point, and the song still plays it twice in full.
-    Cart cart(Revision::kA);
-    cart.Songs({Song({Channel()
-                          .Bytes({0x7F, 200, 0x5E, 15})
-                          .Note(0, 3)
-                          .Note(2, 3)
-                          .Bytes({0x7F, 60, 0xBF})
-                          .Note(4, 3)
-                          .Note(5, 3)
-                          .End(),
-                      Channel().Bytes({0x5E, 15, 0xBF}).Note(0, 3).Note(2, 3).Note(4, 3).Note(5, 3).End()})});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("loop_tempo");
-
-    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-    const double length = sum.loop_end - sum.loop_start;
-    SEQLIB_CHECK(sum.ok && sum.loop_start > length);
-    SEQLIB_CHECK(std::fabs(sum.seconds - (sum.loop_start + 2 * length)) < 0.001);
-}
-
-void TestLoopLengths()
-{
-    // Square 1 loops three notes and square 2 four, both from the start, and the wave channel plays two notes and ends.
-    // The loop starts where the wave channel ends, after two notes, and lasts until both squares are back where they
-    // started, twelve notes, and the song plays it twice. The driver rounds the notes to frames, which the checks allow
-    // for.
-    Cart cart(Revision::kA);
-    cart.Songs({Song({Channel().Bytes({0x7F, 90, 0x5E, 15, 0xBF}).Note(0, 3).Note(2, 3).Note(4, 3).End(),
-                      Channel().Bytes({0x7F, 90, 0x5E, 15, 0xBF}).Note(0, 3).Note(2, 3).Note(4, 3).Note(5, 3).End(),
-                      Channel().Bytes({0x7F, 90, 0x5E, 15}).Note(7, 3).Note(9, 3).End()})});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("loop_lengths");
-
-    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-    const double note = sum.loop_start / 2;
-    SEQLIB_CHECK(sum.ok && sum.loop_start > 0);
-    SEQLIB_CHECK(std::fabs(sum.loop_end - sum.loop_start - 12 * note) < 0.1);
-    SEQLIB_CHECK(std::fabs(sum.seconds - (sum.loop_start + 24 * note)) < 0.1);
-}
-
-// Square 1's loop sets octave 2 after its first note, so the first time through, that note plays at the octave 3 set
-// before the loop, and every time after at octave 2. The loop starts at the second pass, which the driver goes on
-// repeating, and the song plays the first pass and then the loop twice. A loop that plays the same each time starts at
-// its first pass.
-void TestLoopAtSecondPass()
-{
-    for (const bool moves : {true, false})
-    {
-        Cart cart(Revision::kA);
-        cart.Songs({Song({Channel()
-                              .Bytes({0x7F, 90, 0x5E, 15, 0x4F, uint8_t(moves ? 3 : 2), 0xBF})
-                              .Note(0, 3)
-                              .Bytes({0x4F, 2})
-                              .Note(4, 3)
-                              .End()})});
-        const Rom rom = cart.ToRom();
-        const DriverInfo info = Detect(rom);
-        ConvertSettings opt = TempSettings(moves ? "second_pass" : "first_pass");
-
-        const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-        // The keys of the notes from the loop's start on.
-        const MidiEvents midi = ReadMidi(sum.midi_path);
-        const uint32_t loop_start = MarkerTick(midi, "loopStart", ~0u);
-        std::vector<int> keys;
-        for (const auto& [tick, bytes] : midi.Find(0x90))
-        {
-            if (tick >= loop_start)
-            {
-                keys.push_back(bytes[1]);
-            }
-        }
-
-        // At tempo 90, the two quarter notes take 2 × 96 × 37 / 90 = 78.9 frames, which the driver plays in 78.
-        const double kPass = 78 * 280896.0 / 16777216;
-        SEQLIB_CHECK(sum.ok);
-        SEQLIB_CHECK(std::fabs(sum.loop_start - (moves ? kPass : 0)) < 0.001);
-        SEQLIB_CHECK(std::fabs(sum.loop_end - sum.loop_start - kPass) < 0.001);
-        SEQLIB_CHECK(std::fabs(sum.seconds - sum.loop_start - 2 * kPass) < 0.001);
-        SEQLIB_CHECK(keys == std::vector<int>({60, 64, 60, 64}));
-    }
-}
-
-// The noise channel rests, then loops a note and a rest. At tempo 82, the loop point falls partway through a frame. The
-// driver drops the part of a frame it has counted when it loops. The note then spans a frame more or less in the first
-// pass than in the second. With a volume fade that changes the registers in every frame, the two notes make two drums.
-// They start alike, and the loop starts at the first pass. A note that plays at another volume in the second pass
-// differs in a frame that both passes span, and the loop starts at the second pass.
-void TestLoopNoiseEnds()
-{
-    for (const bool differs : {false, true})
-    {
-        Cart cart(Revision::kA);
-        Channel noise;
-        noise.Bytes({0x7F, 82, 0x5E, 15, 0xD2, 100, 0, 0, 60, 1}).Rest(1).Bytes({0xBF}).Note(12, 2);
-        if (differs)
-        {
-            noise.Bytes({0x5E, 8});
-        }
-        cart.Songs({Song({{0xFF}, {0xFF}, {0xFF}, noise.Rest(2).End()})});
-        const Rom rom = cart.ToRom();
-        const DriverInfo info = Detect(rom);
-        ConvertSettings opt = TempSettings(differs ? "loop_noise_differs" : "loop_noise_ends");
-
-        const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-        const double pass = sum.loop_end - sum.loop_start;
-        SEQLIB_CHECK(sum.ok && sum.loop_start > 0);
-        SEQLIB_CHECK((sum.loop_start < pass) != differs);
-    }
-}
-
-// Square 1 plays C, and then loops a note that slides from the C before it to E, and a C. The slide takes 4 frames
-// the first time through. With `differs`, the loop then sets 16 frames, and every later pass slides over 16. The
-// slide's notes start alike in both passes, at the same tick, key and bend, and differ only in their later frames. The
-// loop starts at the first pass when the slides match, and at the second when they don't.
-void TestLoopSlideSpeed()
-{
-    for (const bool differs : {false, true})
-    {
-        Cart cart(Revision::kA);
-        cart.Songs({Song({Channel()
-                              .Bytes({0x7F, 90, 0x5E, 15, 0x4F, 3, 0xE5, 4})
-                              .Note(0, 3)
-                              .Bytes({0xBF, 0xD4})
-                              .Note(4, 3)
-                              .Bytes({0xE5, uint8_t(differs ? 16 : 4)})
-                              .Note(0, 3)
-                              .End()})});
-        const Rom rom = cart.ToRom();
-        const DriverInfo info = Detect(rom);
-        ConvertSettings opt = TempSettings(differs ? "loop_slide_differs" : "loop_slide_same");
-
-        const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-        const double pass = sum.loop_end - sum.loop_start;
-        SEQLIB_CHECK(sum.ok && sum.loop_start > 0);
-        SEQLIB_CHECK((sum.loop_start < pass) != differs);
-    }
-}
-
-// Returns true if the song's loop starts at its second pass, and checks that it has a loop and an intro.
-bool LoopsAtSecondPass(const Cart& cart, const char* name)
-{
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings(name);
-
-    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-    const double pass = sum.loop_end - sum.loop_start;
-    SEQLIB_CHECK(sum.ok && sum.loop_start > 0);
-    return sum.loop_start >= pass;
-}
-
-// A channel plays a note, and then loops a second note and the first again. The second note has a setting the first
-// time through that `change` turns off after it. The note starts alike in both passes and differs only in what the
-// driver writes in its later frames. The loop starts at the first pass when `change` is empty, and at the second when
-// it isn't. On square 1, the setting is a volume envelope from 100% down to 50% over 8 frames (D2), and the driver
-// writes NR12 as it falls. On square 1 again, it is the hardware envelope's step (3E), which NR12 sets at the note's
-// start. On the wave channel, it is a volume envelope, and the driver writes NR32 as it falls.
-void TestLoopLevels()
-{
-    struct Case
-    {
-        const char* name;
-        int channel;
-        std::vector<uint8_t> setup;
-        std::vector<uint8_t> change;
-    };
-    const Case cases[] = {
-        {"loop_envelope", 0, {0x5E, 15, 0xD2, 100, 100, 50, 1, 8}, {0xD3}},
-        {"loop_envelope_step", 0, {0x5E, 15, 0x4E, 0x3E, 2}, {0x3E, 0}},
-        {"loop_wave_envelope", 2, {0xDA, 0x00, 0x5E, 3, 0xD2, 100, 100, 50, 1, 8}, {0xD3}},
-    };
-    for (const Case& test : cases)
-    {
-        for (const bool changes : {false, true})
-        {
-            std::vector<uint8_t> setup = {0x7F, 90, 0x4F, 3};
-            setup.insert(setup.end(), test.setup.begin(), test.setup.end());
-            Channel channel;
-            channel.Bytes(setup).Note(0, 3).Bytes({0xBF}).Note(4, 3);
-            if (changes)
-            {
-                channel.Bytes(test.change);
-            }
-            std::vector<std::vector<uint8_t>> channels(size_t(test.channel), {0xFF});
-            channels.push_back(channel.Note(0, 3).End());
-            Cart cart(Revision::kA);
-            cart.Songs({Song(channels)});
-
-            const std::string name = std::string(test.name) + (changes ? "_differs" : "_same");
-            SEQLIB_CHECK(LoopsAtSecondPass(cart, name.c_str()) == changes);
-        }
-    }
-}
-
-// Square 1 plays C, and then loops an E and a C with the hardware's sweep bending each note down. The sweep's clock
-// isn't tied to the frames, and a pass doesn't last a whole number of its steps. Its steps then fall at other places
-// in the frames from pass to pass, and the bends of the frames differ. The game plays each pass as the one before.
-// The bends of a swept note aren't compared, and the loop starts at the first pass. When the loop turns the sweep off
-// after the E, only the first E sweeps. NR10 then differs, and the loop starts at the second pass.
-void TestLoopSweep()
-{
-    for (const bool once : {false, true})
-    {
-        Channel square;
-        square.Bytes({0x7F, 90, 0x5E, 15, 0x4F, 3, 0x1F, 1, 0x0E, 7, 0x1E}).Note(0, 3).Bytes({0xBF}).Note(4, 3);
-        if (once)
-        {
-            square.Bytes({0x1F, 0, 0x0E, 0});
-        }
-        Cart cart(Revision::kA);
-        cart.Songs({Song({square.Note(0, 3).End()})});
-
-        SEQLIB_CHECK(LoopsAtSecondPass(cart, once ? "loop_sweep_once" : "loop_sweep") == once);
-    }
-}
-
-// Square 1 loops two quarter notes from its start, and square 2 the same after a rest of 56 ticks. At tempo 90, a frame
-// is 90 of the MIDI file's ticks and a tick is 37, so square 2's loop point is 2 MIDI ticks into frame 23, and square
-// 1's is at the start of frame 0. Each loop drops the part of a frame that the channel has counted, 84 MIDI ticks for
-// square 1 and 86 for square 2, so square 2's second pass starts 2 ticks before the end of a loop from its loop point,
-// and its first note would play twice at the seam. The loop starts at the second pass, where both squares start each
-// pass as the one before.
-void TestLoopSeam()
-{
-    Cart cart(Revision::kA);
-    cart.Songs(
-        {Song({Channel().Bytes({0x7F, 90, 0x5E, 15, 0x4F, 3, 0xBF}).Note(0, 3).Note(4, 3).End(),
-               Channel().Bytes({0x5E, 15, 0x4F, 3}).Rest(5).Rest(10).Bytes({0xBF}).Note(7, 3).Note(11, 3).End()})});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("loop_seam");
-
-    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-    // Each square's notes from the loop's start to its end.
-    const MidiEvents midi = ReadMidi(sum.midi_path);
-    const uint32_t loop_start = MarkerTick(midi, "loopStart", ~0u);
-    const uint32_t loop_end = MarkerTick(midi, "loopEnd", 0);
-    std::array<int, 2> notes = {};
-    for (const int c : {0, 1})
-    {
-        for (const auto& [tick, bytes] : midi.Find(uint8_t(0x90 + c)))
-        {
-            notes[size_t(c)] += tick >= loop_start && tick < loop_end ? 1 : 0;
-        }
-    }
-
-    // Square 1's first pass ends at frame 78, and the loop starts as much after that as square 2's loop point is into
-    // the song, 2072 MIDI ticks, and lasts 78 frames.
-    const double kFrame = 280896.0 / 16777216;
-    SEQLIB_CHECK(sum.ok);
-    SEQLIB_CHECK(std::fabs(sum.loop_start - (78 + 2072 / 90.0) * kFrame) < 1e-6);
-    SEQLIB_CHECK(std::fabs(sum.loop_end - sum.loop_start - 78 * kFrame) < 1e-6);
-    SEQLIB_CHECK(notes == (std::array<int, 2>{2, 2}));
-}
-
-// Square 1 plays a note at volume 15, and then loops a note at volume 15 and one at 8. The first time through, the
-// loop's first note has the level that the note before it left, but a player that jumps back to the loop's start comes
-// from the note at volume 8, so the level is written again there.
-void TestLoopSettingsAgain()
-{
-    Cart cart(Revision::kA);
-    cart.Songs({Song({Channel()
-                          .Bytes({0x7F, 90, 0x5E, 15, 0x4F, 3})
-                          .Note(0, 3)
-                          .Bytes({0xBF, 0x5E, 15})
-                          .Note(4, 3)
-                          .Bytes({0x5E, 8})
-                          .Note(7, 3)
-                          .End()})});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("loop_again");
-
-    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-    const MidiEvents midi = ReadMidi(sum.midi_path);
-    const uint32_t loop_start = MarkerTick(midi, "loopStart", ~0u);
-    std::vector<std::pair<uint32_t, int>> levels;
-    for (const auto& [tick, bytes] : midi.Find(0xB0))
-    {
-        if (bytes[1] == cc::kExpression)
-        {
-            levels.emplace_back(uint32_t(tick), bytes[2]);
-        }
-    }
-
-    // The setup's level of 0, the first note's, the same again at the loop's start, and then the note at volume 8's.
-    SEQLIB_CHECK(sum.ok && loop_start > 0);
-    SEQLIB_REQUIRE(levels.size() > 3);
-    SEQLIB_CHECK(levels[2] == std::make_pair(loop_start, levels[1].second));
-    SEQLIB_CHECK(levels[3].first > loop_start && levels[3].second < levels[2].second);
-}
-
-void TestHourLimit()
-{
-    // A song asked to play its loop, a whole note at tempo 6 or 384 × 37 / 6 = 2368 frames, a hundred times stops where
-    // the model gives up, after 216000 frames of 280896 cycles at 16.78 MHz, and says so.
-    Cart cart(Revision::kA);
-    cart.Songs({Song({Channel().Bytes({0x7F, 6, 0x5E, 15, 0xBF}).Note(0, 0).End()})});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("hour");
-    opt.loops = 100;
-
-    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-    const auto cut_off = [](const std::string& w)
-    {
-        return w.find("cut off after an hour") != std::string::npos;
-    };
-    SEQLIB_CHECK(sum.ok && std::any_of(sum.warnings.begin(), sum.warnings.end(), cut_off));
-    SEQLIB_CHECK(std::fabs(sum.seconds - 216000 * 280896.0 / 16777216) < 0.1);
-}
-
-void TestRegisters()
-{
-    // A note on square 1: the frequency table's entry for octave 2's C, and the note's volume, duty and length.
-    Cart cart(Revision::kA);
-    cart.Songs({Song({Channel().Bytes({0x5E, 12, 0x2F, 1}).Note(0, 3).End()})});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-
-    const auto writes = Writes(rom, info, 0, 2);
-
-    SEQLIB_CHECK_EQ(LastWrite(writes[1], 0x04000062), 0xC87F);
-    SEQLIB_CHECK_EQ(LastWrite(writes[1], 0x04000064), 0x8000 | rom.U16(kFrequencyTable + 48));
-}
-
-void TestWaveVolumes()
-{
-    // The wave channel at volume 3 plays at 100% in the A revision, and at 75% in the J revision, which has 4 for 100%.
-    // NR32's volume code is the top bits of NR31's halfword, which the driver fills with the length × 4.
-    for (Revision revision : {Revision::kA, Revision::kJ})
-    {
-        Cart cart(revision);
-        cart.Songs(
-            {Song({{0xFF}, {0xFF}, Channel().Bytes({0xDA, 0x00, 0x5E, 3}).Note(0, 3).Bytes({0x5F}).Note(0, 3).End()})});
-        const Rom rom = cart.ToRom();
-        const DriverInfo info = Detect(rom);
-
-        const auto writes = Writes(rom, info, 0, 60);
-        const long long first = LastWrite(writes[1], 0x04000072);
-        long long second = -1;
-        for (size_t f = 2; f < writes.size() && second < 0; f++)
-        {
-            second = LastWrite(writes[f], 0x04000072);
-        }
-
-        if (revision == Revision::kA)
-        {
-            SEQLIB_CHECK_EQ(first, 0x20FC);
-            SEQLIB_CHECK_EQ(second, 0x20FC);
-        }
-        else
-        {
-            SEQLIB_CHECK_EQ(first, 0x80FC);
-            SEQLIB_CHECK_EQ(second, 0x20FC);
-        }
-    }
-}
-
-void TestPcm()
-{
-    // A PCM note points FIFO A's DMA 32 bytes into the sample, the 32 before going into the FIFO, and sets timer 0 for
-    // the sample's rate. The J revision sets the timer at the end of the frame.
-    for (Revision revision : {Revision::kA, Revision::kJ})
-    {
-        Cart cart(revision);
-        cart.Songs({Song({{0xFF}, {0xFF}, {0xFF}, {0xFF}, Channel().Bytes({0xDC, 0x00, 0x5E, 1}).Note(12, 3).End()})});
-        const std::vector<uint32_t> data = cart.Samples(kSampleFile, {{Saw(4000), 10000}});
-        const Rom rom = cart.ToRom();
-        const DriverInfo info = Detect(rom);
-
-        const auto writes = Writes(rom, info, 0, 2);
-        const std::vector<RegisterWrite>& frame = writes[1];
-
-        SEQLIB_CHECK_EQ(LastWrite(frame, 0x040000BC), data[0] + 32);
-        SEQLIB_CHECK_EQ(LastWrite(frame, 0x040000C6), 0xB640);
-        SEQLIB_CHECK_EQ(LastWrite(frame, 0x04000100), 0x800000 | (0x10000 - 16780000 / 10000));
-        SEQLIB_CHECK(!frame.empty() && (frame.back().address == 0x04000100) == (revision == Revision::kJ));
-    }
-
-    // The driver checks a FIFO once a frame, and stops or loops it when the next frame would reach the end: from 0, at
-    // 600 60ths of a byte a frame and an end of 100 bytes, it does so at the 9th check, after 8 frames.
-    SEQLIB_CHECK_EQ(FifoFrames(0, 600, 100), 8);
-    SEQLIB_CHECK_EQ(FifoFrames(5000, 600, 100), 0);
-    SEQLIB_CHECK_EQ(FifoFrames(0, 0, 100), 0);
-}
-
-// The driver starts a FIFO's timer with one 32-bit store to TMxCNT_L. Its third byte sets the start bit: bit 7 of
-// TMxCNT_H. A store of 0 stops the timer, and a 16-bit store to TMxCNT_H starts timer 1 for FIFO B. On the player, a
-// PCM note on FIFO A sounds with no other channel playing, and the player stops at the sample's end.
-void TestPcmPlays()
-{
-    Cart cart(Revision::kA);
-    cart.Songs({Song({{0xFF}, {0xFF}, {0xFF}, {0xFF}, Channel().Bytes({0xDC, 0x00, 0x5E, 1}).Note(12, 3).End()})});
-    const std::vector<uint32_t> data = cart.Samples(kSampleFile, {{Saw(4000), 10000}});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-
-    agblib::quintet::SoundBus bus(rom, agblib::quintet::InitRegisters(Revision::kA), true);
-    bus.Store({0x040000BC, 4, data[0] + 32});
-    bus.Store({0x040000C4, 4, 0xB6400000});
-    bus.Store({0x04000100, 4, 0x0080FA0F});
-    const bool a_runs = bus.FifoRunning(0);
-    bus.Store({0x04000100, 4, 0});
-    const bool a_stops = !bus.FifoRunning(0);
-    bus.Store({0x040000C8, 4, data[0] + 32});
-    bus.Store({0x040000D0, 4, 0xB6400000});
-    bus.Store({0x04000104, 2, 0xFA0F});
-    bus.Store({0x04000106, 2, 0x0080});
-    const bool b_runs = bus.FifoRunning(1);
-
-    ArchivePlayer player(rom, std::span<const DriverInfo>(&info, 1));
-    player.Start(0);
-    player.MeterTracks(true);
-    std::vector<int16_t> out;
-    int32_t peak = 0;
-    for (int f = 0; f < 8; f++)
-    {
-        player.RunFrame(out);
-        peak = std::max(peak, player.TrackPeaks(4)[0]);
-    }
-    const bool sounds = std::any_of(out.begin(), out.end(), [&out](int16_t v) { return v != out.front(); });
-    int frames = 8;
-    for (; frames < 600 && player.Busy(); frames++)
-    {
-        player.RunFrame();
-    }
-
-    SEQLIB_CHECK(a_runs && a_stops && b_runs);
-    SEQLIB_CHECK(peak > 0);
-    SEQLIB_CHECK(sounds);
-    SEQLIB_CHECK(frames < 600);
-}
-
-// An audition plays one note with the instrument, the pitch and the volume given, as the channel's commands would: on
-// a FIFO, the sample at index 24 plays at its rate. Its release ends the channel. On the player, a square's audition
-// sounds until its release, and the player then stops.
-void TestAudition()
-{
-    Cart cart(Revision::kA);
-    cart.Songs({Song({Channel().Bytes({0x7F, 90}).Rest(3).End()})});
-    const std::vector<uint32_t> data = cart.Samples(kSampleFile, {{Saw(4000), 10000}});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-
-    Sequencer seq(rom, info, 0);
-    seq.Audition(4, 0, 24, 1);
-    const std::vector<RegisterWrite> frame = seq.Step();
-    const bool playing = !seq.Ended();
-    seq.ReleaseAudition();
-    seq.Step();
-
-    SEQLIB_CHECK_EQ(LastWrite(frame, 0x040000BC), data[0] + 32);
-    SEQLIB_CHECK_EQ(LastWrite(frame, 0x040000C6), 0xB640);
-    SEQLIB_CHECK_EQ(LastWrite(frame, 0x04000100), 0x800000 | (0x10000 - 16780000 / 10000));
-    SEQLIB_CHECK(playing && seq.Ended());
-
-    ArchivePlayer player(rom, std::span<const DriverInfo>(&info, 1));
-    player.StartNote(0, 0, 2, 24, 15);
-    std::vector<int16_t> out;
-    for (int f = 0; f < 4; f++)
-    {
-        player.RunFrame(out);
-    }
-    const bool sounds = std::any_of(out.begin(), out.end(), [&out](int16_t v) { return v != out.front(); });
-    const bool busy = player.Busy();
-    player.ReleaseNote();
-    int frames = 0;
-    for (; frames < 10 && player.Busy(); frames++)
-    {
-        player.RunFrame(out);
-    }
-
-    SEQLIB_CHECK(sounds && busy);
-    SEQLIB_CHECK(frames > 0 && frames < 10);
-
-    // An audition that can't start leaves the music file of the song that plays.
-    DriverInfo second = info;
-    second.first_song = SongCount(info);
-    const std::vector<DriverInfo> files = {info, second};
-    ArchivePlayer two(rom, files);
-    two.Start(0);
-    bool refused = false;
-    try
-    {
-        two.StartNote(SongCount(info), 9, 2, 24, 15);
-    }
-    catch (const std::out_of_range&)
-    {
-        refused = true;
-    }
-    SEQLIB_CHECK(refused && two.Info().first_song == 0);
-}
-
-// A FIFO's instrument is a sample of the bank, the wave channel's a wave of the wave table, and a square's a duty. A
-// sample of 106 bytes with its header plays (106 - 64) × 0.994 = 41 of them. The second wave is a square, and bit 7 of
-// its number picks the wave RAM's bank.
-void TestInstruments()
-{
-    Cart cart(Revision::kA);
-    cart.Songs({Song({Channel().Bytes({0x7F, 90}).Rest(3).End()})});
-    const std::vector<uint32_t> data = cart.Samples(kSampleFile, {{Saw(100), 10000}});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-
-    const Instrument pcm = LookUpInstrument(rom, info, 5, 0);
-    const Instrument missing = LookUpInstrument(rom, info, 4, 1);
-    const Instrument wave = LookUpInstrument(rom, info, 2, 0x81);
-    const Instrument square = LookUpInstrument(rom, info, 1, 3);
-    const auto sample = ReadSample(rom, info, 0, 0);
-    const auto shape = ReadWave(rom, info, 0x81);
-
-    SEQLIB_CHECK(pcm.kind == Instrument::Kind::kPcm && pcm.address == data[0] - 6 && missing.address == 0);
-    SEQLIB_CHECK(wave.kind == Instrument::Kind::kWave && wave.address == FileAddress(kWaveFile) + 18);
-    SEQLIB_CHECK(square.kind == Instrument::Kind::kSquare && square.number == 3);
-    SEQLIB_REQUIRE(sample && shape);
-    SEQLIB_CHECK(sample->data == data[0] && sample->size == 100 && sample->played == 41 && sample->rate == 10000);
-    SEQLIB_CHECK((*shape)[0] == 0xFF && (*shape)[8] == 0);
-    SEQLIB_CHECK(!ReadSample(rom, info, 0, 1));
-}
-
-void TestBanks()
-{
-    // In the J revision, F0 switches a PCM channel to the sound effects' samples, which the samples it then selects
-    // come from.
-    Cart cart(Revision::kJ);
-    cart.Songs({Song({{0xFF},
-                      {0xFF},
-                      {0xFF},
-                      {0xFF},
-                      Channel()
-                          .Bytes({0xDC, 0x00, 0x5E, 1})
-                          .Note(12, 3)
-                          .Bytes({0xF0, 0xDC, 0x01})
-                          .Note(12, 3)
-                          .Bytes({0xDC, 0x00})
-                          .Note(12, 3)
-                          .End()})});
-    const std::vector<uint32_t> music = cart.Samples(kSampleFile, {{Saw(1500), 10000}, {Saw(1500), 10000}});
-    const std::vector<uint32_t> effects = cart.Samples(kSfxSampleFile, {{Saw(1500), 10000}, {Saw(1500), 10000}});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-
-    const auto writes = Writes(rom, info, 0, 200);
-    std::vector<long long> sources;
-    for (size_t f = 1; f < writes.size(); f++)
-    {
-        const long long source = LastWrite(writes[f], 0x040000BC);
-        if (source >= 0)
-        {
-            sources.push_back(source - 32);
-        }
-    }
-
-    SEQLIB_REQUIRE(sources.size() >= 3);
-    SEQLIB_CHECK_EQ(sources[0], music[0]);
-    SEQLIB_CHECK_EQ(sources[1], effects[1]);
-    SEQLIB_CHECK_EQ(sources[2], effects[0]);
-}
-
-void TestNoiseDrums()
-{
-    // D2 fades the noise channel from volume 15 to 0 over 3 frames, restarting it at each new volume, and the drum's
-    // sample has those volumes in it. Two notes with the same writes share a drum.
-    Cart cart(Revision::kA);
-    cart.Songs({Song(
-        {{0xFF}, {0xFF}, {0xFF}, Channel().Bytes({0x5E, 15, 0xD2, 100, 0, 0, 3, 1}).Note(12, 3).Note(12, 3).End()})});
-    const Rom rom = cart.ToRom();
-    const DriverInfo info = Detect(rom);
-    ConvertSettings opt = TempSettings("noise");
-
-    const SongReport sum = ConvertSong(rom, info, 0, opt, nullptr);
-
-    const Sf2Records sf2 = ReadSf2(sum.sf2_path);
-    const MidiEvents midi = ReadMidi(sum.midi_path);
-    const auto ons = midi.Find(0x93);
-    SEQLIB_CHECK(sum.ok);
-    SEQLIB_CHECK(ons.size() == 2 && ons[0].bytes[1] == ons[1].bytes[1]);
-    SEQLIB_CHECK_EQ(sf2.Count("shdr", 46), 2);
-
-    // The sample's peak in each of its first 4 frames of 1097 points.
-    const std::vector<uint8_t>& pcm = sf2.chunks.at("smpl");
-    const uint32_t start = Le32(sf2.Record("shdr", 46, 0) + 20);
-    std::vector<int> volumes;
-    for (uint32_t f = 0; f < 4; f++)
-    {
-        int peak = 0;
-        for (uint32_t i = 100; i < 1000; i++)
-        {
-            const uint32_t at = 2 * (start + f * 1097 + i);
-            peak = std::max(peak, std::abs(int(int16_t(Le16(&pcm[at])))));
-        }
-        volumes.push_back(int(std::lround(peak * 15.0 / 32767)));
-    }
-
-    SEQLIB_CHECK(volumes == std::vector<int>({15, 10, 5, 0}));
-}
-
-void TestNoiseMacros()
-{
-    // A noise macro sets NR43 a frame at a time, restarting the channel with the note, and its end silences the
-    // channel. In the J revision, F0 switches the noise channel to the sound effects' macros.
-    for (Revision revision : {Revision::kA, Revision::kJ})
-    {
-        const bool j = revision == Revision::kJ;
-        Cart cart(revision);
-        std::vector<uint8_t> commands = {0x5E, 15, 0xDB, 0x01};
-        if (j)
-        {
-            commands.insert(commands.begin(), 0xF0);
-        }
-        cart.Songs({Song({{0xFF}, {0xFF}, {0xFF}, Channel().Bytes(commands).Note(12, 3).End()})});
-        cart.Macros(kMacroFile, {{0x27, 0x35, 0xFF}});
-        cart.Macros(kSfxMacroFile, {{0x45, 0x56, 0xFF}});
-        const Rom rom = cart.ToRom();
-        const DriverInfo info = Detect(rom);
-
-        const auto writes = Writes(rom, info, 0, 4);
-
-        SEQLIB_CHECK_EQ(LastWrite(writes[1], 0x0400007C), j ? 0x8045 : 0x8027);
-        SEQLIB_CHECK_EQ(LastWrite(writes[2], 0x0400007C), j ? 0x0056 : 0x0035);
-        SEQLIB_CHECK_EQ(LastWrite(writes[3], 0x0400007C), 0x8000);
-        SEQLIB_CHECK_EQ(LastWrite(writes[3], 0x04000078) >> 12, 0);
-    }
-}
-
 void TestConversion()
 {
     // A song with a loop: the tempo, the loop markers, and the level of a square that plays on the left only, in CC10
-    // and CC11. A sweep down lowers the pitch within each frame, which the MIDI file bends to between the frame's
+    // and CC11. A sweep down lowers the pitch within each frame. The MIDI file bends to that pitch between the frame's
     // changes.
     Cart cart(Revision::kA);
     cart.Songs({Song({Channel()
@@ -1174,11 +413,7 @@ void TestSongFiles()
     const SongFiles files = ConvertSongFiles(rom, info, 0, opt);
     const SongFiles none = ConvertSongFiles(rom, info, 1, opt);
 
-    SEQLIB_REQUIRE(written.ok && files.report.ok && !files.report.silent);
-    SEQLIB_CHECK(files.report.midi_path.empty() && files.report.sf2_path.empty());
-    SEQLIB_CHECK(!files.midi.empty() && files.midi == ReadAll(written.midi_path));
-    SEQLIB_CHECK(!files.sf2.empty() && files.sf2 == ReadAll(written.sf2_path));
-    SEQLIB_CHECK(files.report.warnings == written.warnings && files.report.seconds == written.seconds);
+    CheckFilesInMemory(written, files);
     SEQLIB_CHECK(none.report.silent && none.midi.empty() && none.sf2.empty());
 }
 
@@ -1251,6 +486,7 @@ void TestEffects()
         {
             last = square.Step();
         }
+
         std::vector<uint32_t> nr12;
         for (const RegisterWrite& w : last)
         {
@@ -1380,6 +616,7 @@ void TestRevisionS()
         {
             events.push_back(e);
         }
+
         if (!events.empty() && events.back().kind == Event::kRest && step < 0)
         {
             step = LastWrite(writes, 0x04000062);
@@ -1426,6 +663,7 @@ void TestShortLoop()
     {
         image.Put8(kRomBase + i, uint8_t(i * 9));
     }
+
     const Rom rom = image.ToRom();
     SoundfontBuilder sf(rom);
     PcmSound sound;
@@ -1451,26 +689,6 @@ int RunTests()
     TestCommandGuard();
     TestWaveSwitch();
     TestPsgTuning();
-    TestLoopStarts();
-    TestLoopAfterTempoChange();
-    TestLoopLengths();
-    TestLoopAtSecondPass();
-    TestLoopNoiseEnds();
-    TestLoopSlideSpeed();
-    TestLoopLevels();
-    TestLoopSweep();
-    TestLoopSeam();
-    TestLoopSettingsAgain();
-    TestHourLimit();
-    TestRegisters();
-    TestWaveVolumes();
-    TestPcm();
-    TestPcmPlays();
-    TestAudition();
-    TestInstruments();
-    TestBanks();
-    TestNoiseDrums();
-    TestNoiseMacros();
     TestConversion();
     TestSongFiles();
     TestDump();

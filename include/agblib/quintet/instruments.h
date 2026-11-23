@@ -36,7 +36,7 @@ struct Instrument
 };
 
 // The instrument that number `number` of bank `bank` selects on channel `channel` (0 to 5). Its address is 0 where the
-// game's tables don't hold it, or for a noise macro of number 0, which selects none. On a square, `number` is the duty.
+// game's tables don't contain it, or for a noise macro of number 0: it selects none. On a square, `number` is the duty.
 // Throws std::out_of_range for a channel past kChannels.
 Instrument LookUpInstrument(const Rom& rom, const DriverInfo& info, int channel, int number, int bank = 0);
 
@@ -56,7 +56,7 @@ struct Sample
     uint32_t rate = 0;
 };
 
-// Reads sample `number` of bank `bank` of the game's samples. Gives nothing for one that the bank doesn't hold.
+// Reads sample `number` of bank `bank` of the game's samples. Gives nothing for one that the bank doesn't contain.
 std::optional<Sample> ReadSample(const Rom& rom, const DriverInfo& info, int bank, int number);
 
 } // namespace agblib::quintet

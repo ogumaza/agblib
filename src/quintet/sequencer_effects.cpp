@@ -29,10 +29,12 @@ void Sequencer::ChannelEffects(int c)
     {
         PitchEnvelope(c);
     }
+
     if (ch.lfo_on)
     {
         Lfo(c);
     }
+
     if (ch.sliding)
     {
         Slide(c);
@@ -42,6 +44,7 @@ void Sequencer::ChannelEffects(int c)
     {
         NoiseMacro(c);
     }
+
     if (ch.switch_count)
     {
         Switch(c);
@@ -61,10 +64,12 @@ void Sequencer::PcmEffects(int c)
     {
         PitchEnvelope(c);
     }
+
     if (ch.lfo_on)
     {
         Lfo(c);
     }
+
     if (ch.sliding)
     {
         Slide(c);
@@ -216,6 +221,7 @@ void Sequencer::Lfo(int c)
                     random_high_ = 1;
                     NextRandom();
                 }
+
                 v = random_value_;
             }
             else
@@ -232,6 +238,7 @@ void Sequencer::Lfo(int c)
                 random_high_ = s > 0x7F;
                 NextRandom();
             }
+
             v = random_value_;
             break;
 
@@ -316,10 +323,11 @@ void Sequencer::NoiseMacro(int c)
         {
             ch.macro++;
         }
+
         return;
     }
 
-    // FF ends the macro, silencing the channel; FD n holds each setting for n frames; FE v sets the envelope and
+    // FF ends the macro, silencing the channel; FD n contains each setting for n frames; FE v sets the envelope and
     // restarts the channel; any other byte is the frame's NR43 setting.
     for (int bytes = 0; bytes < kMaxMacroBytes; bytes++)
     {
@@ -331,12 +339,14 @@ void Sequencer::NoiseMacro(int c)
             nr43 = uint16_t(length | kRestart);
             return;
         }
+
         if (b == 0xFD)
         {
             ch.macro_hold = uint8_t(rom_.U8(ch.macro + 1) - 1);
             ch.macro += 2;
             continue;
         }
+
         if (b == 0xFE)
         {
             nr41 = uint16_t(rom_.U8(ch.macro + 1) << 8 | (nr41 & 0xFF));
@@ -354,6 +364,7 @@ void Sequencer::NoiseMacro(int c)
         {
             ch.macro++;
         }
+
         return;
     }
 

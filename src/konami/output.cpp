@@ -15,12 +15,14 @@
 #include <utility>
 #include <vector>
 
+#include "ntdlib/wave/sinc.h"
+
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/konami/driver.h"
 #include "agblib/konami/seqformat.h"
 #include "agblib/konami/sequencer.h"
-#include "ntdlib/wave/sinc.h"
 #include "output_impl.h"
 
 namespace agblib::konami
@@ -110,6 +112,7 @@ void Output::Impl::FindPitchTable()
         {
             match = rom.U16(at + uint32_t(2 * i)) == kPitchCentre[i];
         }
+
         if (match)
         {
             pitch_table = at + 4;
@@ -135,6 +138,7 @@ int Output::Impl::VoiceSizeNear(uint32_t mixer) const
                 return true;
             }
         }
+
         return false;
     };
 
@@ -282,6 +286,7 @@ bool Output::Impl::RingStoresNr51Twice() const
         {
             match = rom.U16(at + uint32_t(2 * i)) == kOpening[i];
         }
+
         if (match)
         {
             return true;
@@ -303,6 +308,7 @@ bool Output::Impl::WaveKeepsRestart() const
         {
             match = rom.U16(at + uint32_t(2 * i)) == kStore[i];
         }
+
         if (match)
         {
             return true;
@@ -316,7 +322,7 @@ uint8_t Output::Impl::FirstDelayBlocks() const
 {
     // The init sets the mixer's rate, and the rate's routine works out the delay of each bus in blocks from a table of
     // scales. Some builds' routine has already put the timer's setting in the register that held the rate, and reads
-    // the table at twice that setting: at whatever data lies there.
+    // the table at twice that setting: at whatever data is there.
     constexpr uint32_t kFullDelay = 2 * 0x7F;
     constexpr std::array<uint16_t, 5> kScales = {4096, 3537, 3072, 2606, 2048};
     // ldr r3, [r0] / movs r0, #0x80 / lsls r0, r0, #16 / orrs r0, r3 / str r0, [r2], then lsls r0, r3, #1 after the two
@@ -342,11 +348,13 @@ uint8_t Output::Impl::FirstDelayBlocks() const
             {
                 match = rom.U16(at + uint32_t(2 * i)) == words[i];
             }
+
             if (match)
             {
                 return at;
             }
         }
+
         return 0;
     };
 
@@ -384,33 +392,33 @@ void Output::Impl::WaveLoad(int wave, int volume)
         const uint32_t image = table + uint32_t((wave << 4) + volume) * 16;
         for (uint32_t i = 0; i < 4; i++)
         {
-            Store(kWaveRam + 4 * i, 4, rom.U32(image + 4 * i));
+            Store(agb::kRegWaveRam + 4 * i, 4, rom.U32(image + 4 * i));
         }
     }
     else
     {
         for (uint32_t i = 0; i < 4; i++)
         {
-            Store(kWaveRam + 4 * i, 4, 0);
+            Store(agb::kRegWaveRam + 4 * i, 4, 0);
         }
     }
 
     wave_bank ^= 1;
-    Store(kSound3CntL, 2, wave_bank ? 0x80 : 0xC0);
+    Store(agb::kRegSound3CntL, 2, wave_bank ? 0x80 : 0xC0);
 }
 
 void Output::Impl::WaveLoadFifo(int wave)
 {
-    Store(kSound3CntL, 2, 0x40);
+    Store(agb::kRegSound3CntL, 2, 0x40);
     for (uint32_t i = 0; i < 8; i++)
     {
-        Store(kWaveRam + 2 * i, 2, rom.U16(info.wave_table + uint32_t(wave) * 16 + 2 * i));
+        Store(agb::kRegWaveRam + 2 * i, 2, rom.U16(info.wave_table + uint32_t(wave) * 16 + 2 * i));
     }
 
-    Store(kSound3CntL, 2, 0x80);
+    Store(agb::kRegSound3CntL, 2, 0x80);
     if (!wave_keeps_restart)
     {
-        Store(kSound3CntX, 2, 0x8000);
+        Store(agb::kRegSound3CntX, 2, 0x8000);
     }
 }
 
@@ -418,18 +426,18 @@ void Output::Impl::PlainReset()
 {
     if (stage == Stage::kFifo)
     {
-        Store(kSound1CntL, 2, 0);
+        Store(agb::kRegSound1CntL, 2, 0);
         WaveLoadFifo(0);
         return;
     }
 
     if (stage == Stage::kRing)
     {
-        Store(kNr51, 1, 0xFF);
-        Store(kSoundCntH, 2, 0x330E);
+        Store(agb::kRegNr51, 1, 0xFF);
+        Store(agb::kRegSoundCntH, 2, 0x330E);
     }
 
-    Store(kSound3CntH, 2, 0);
+    Store(agb::kRegSound3CntH, 2, 0);
     WaveLoad(0, 0);
 }
 
@@ -469,6 +477,7 @@ void Output::Impl::RouteUltimate(int bus, int voice, bool on)
     {
         routed &= ~bit;
     }
+
     if (routed)
     {
         routed |= 0x40000000;
@@ -566,6 +575,7 @@ void Output::Impl::UpdateEchoUltimate()
                 {
                     e.routed = 0;
                 }
+
                 e.routing = 0;
             }
             else
@@ -594,7 +604,7 @@ void Output::Impl::UpdateEchoUltimate()
 
         if (e.delay != settings->delay_goal)
         {
-            // The routine sets the blocks from the new value, and keeps the present value.
+            // The routine sets the blocks from the new value, and keeps the current value.
             DelayUltimate(i, std::max(e.delay - r.delay_ramp, int(settings->delay_goal)), false);
         }
     }
@@ -881,23 +891,23 @@ std::array<uint8_t, agb::kSoundRegisterBytes> Output::SoundRegisters() const
     // noise too, and loads the wave channel's first wave. A ring mixer's revision gives the wave channel full volume.
     const bool fifo = m.stage == Stage::kFifo;
     const bool ring = m.stage == Stage::kRing;
-    set(kSound1CntX + 1, 0x80);
-    set(kSound2CntH + 1, 0x80);
-    set(kSound3CntL, fifo ? 0x80 : 0xC0);
-    set(kSound3CntH + 1, ring ? 0x20 : 0x00);
-    set(kSound3CntX + 1, 0x80);
-    set(kSound4CntH + 1, fifo ? 0x80 : 0x00);
-    set(kNr50, 0x77);
-    set(kNr51, fifo || ring || m.voice_size == 20 ? 0xFF : 0xBB);
-    set(kSoundCntH, 0x0E);
-    set(kSoundCntHHigh, fifo || ring ? 0x33 : 0x21);
-    set(kSoundCntX, 0x80);
-    set(kSoundBias + 1, fifo ? 0x02 : 0x42);
+    set(agb::kRegSound1CntX + 1, 0x80);
+    set(agb::kRegSound2CntH + 1, 0x80);
+    set(agb::kRegSound3CntL, fifo ? 0x80 : 0xC0);
+    set(agb::kRegSound3CntH + 1, ring ? 0x20 : 0x00);
+    set(agb::kRegSound3CntX + 1, 0x80);
+    set(agb::kRegSound4CntH + 1, fifo ? 0x80 : 0x00);
+    set(agb::kRegNr50, 0x77);
+    set(agb::kRegNr51, fifo || ring || m.voice_size == 20 ? 0xFF : 0xBB);
+    set(agb::kRegSoundCntH, 0x0E);
+    set(agb::kRegSoundCntHHigh, fifo || ring ? 0x33 : 0x21);
+    set(agb::kRegSoundCntX, 0x80);
+    set(agb::kRegSoundBias + 1, fifo ? 0x02 : 0x42);
     if (fifo)
     {
         for (uint32_t i = 0; i < 16; i++)
         {
-            set(kWaveRam + i, m.rom.U8(m.info.wave_table + i));
+            set(agb::kRegWaveRam + i, m.rom.U8(m.info.wave_table + i));
         }
     }
 
@@ -943,7 +953,7 @@ void Output::StartEnhancedMixing()
     e.out.assign(2 * samples, 0.0f);
     if (m.rules.has_echo && m.stage != Stage::kFifo && m.stage != Stage::kRing)
     {
-        // A line holds the console's 256 blocks, and a frame's samples more.
+        // A line contains the console's 256 blocks, and a frame's samples more.
         e.line_samples = size_t(uint64_t(256) * m.block_cycles * samples / agb::kFrameCycles) + samples + 1;
         for (size_t bus = 0; bus < 2; bus++)
         {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-// Song conversion for AlphaDream's driver. The model plays a song frame by frame, and its notes go on the song's beat,
-// which BeatGrid works out from the frames they start and end on.
+// Song conversion for AlphaDream's driver. The model plays a song frame by frame, and its notes go on the song's beat.
+// BeatGrid works the beat out from the frames that the notes start and end on.
 
 #include "agblib/sequence_export/alphadream/convert.h"
 
@@ -13,6 +13,8 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+
+#include "seqlib/midi/performance.h"
 
 #include "agblib/agb/files.h"
 #include "agblib/agb/gba.h"
@@ -98,9 +100,8 @@ uint32_t LoopPeriod(const Sequencer& seq)
 
 // Plays a song for the conversion. A song whose tracks go back by a goto loops: its loop starts on the frame on which
 // the last of them first goes back, and lasts for LoopPeriod(). The commands after a goto run on the same frame. The
-// conversion plays `loops` passes of the loop. A song that doesn't loop plays until every track has ended and no
-// sample sounds. Notes that still sound at the end end with it. With `keep_reads`, the result holds what the tracks
-// read.
+// conversion plays `loops` passes of the loop. A song that doesn't loop plays until every track has ended and no sample
+// sounds. Notes that still sound at the end end with it. With `keep_reads`, the result contains what the tracks read.
 Simulation Simulate(const Rom& rom, const DriverInfo& info, const Song& song, int loops, bool keep_reads = false)
 {
     Simulation sim;
@@ -227,6 +228,7 @@ BeatGrid SongGrid(const Simulation& sim)
         {
             frames.push_back(0);
         }
+
         frames.push_back(n.on);
         frames.push_back(n.released);
     }
@@ -249,7 +251,7 @@ BeatGrid SongGrid(const Simulation& sim)
 std::string TrackName(int track)
 {
     static const char* const kPsgNames[] = {"Square 1", "Square 2", "Wave", "Noise"};
-    return track < kSampleTracks ? "Track " + std::to_string(track) : kPsgNames[track - kSampleTracks];
+    return track < kSampleTracks ? seqlib::midi::DefaultTrackName(track) : kPsgNames[track - kSampleTracks];
 }
 
 // Writes a track's notes, their pitches and their levels. The MIDI channel is the track's, without the drum channel.
@@ -351,6 +353,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int number, const Convert
         {
             report.bpm = 60 / FrameSeconds(SongGrid(sim).Tempos().front().frames);
         }
+
         return report;
     }
 
@@ -488,6 +491,7 @@ std::string DumpTrack(const Rom& rom, Version version, uint32_t data)
                     std::snprintf(line, sizeof line, "  +%04x  wait %d\n", unsigned(at), next());
                     out += line;
                 }
+
                 continue;
             }
 
@@ -498,6 +502,7 @@ std::string DumpTrack(const Rom& rom, Version version, uint32_t data)
                 std::snprintf(line, sizeof line, "  +%04x  rest %d\n", unsigned(at), next());
                 out += line;
             }
+
             continue;
         }
 

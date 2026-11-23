@@ -20,7 +20,7 @@
 namespace agblib::konami
 {
 
-// One track's requests to its sound channel in one frame. This holds the driver's per-track output record and the
+// One track's requests to its sound channel in one frame. This contains the driver's per-track output record and the
 // note's base pitch. The record has 12 bytes, or 8 in the Eternal Duelist revision.
 struct TrackOutput
 {
@@ -111,7 +111,7 @@ struct TrackRead
     Command command;
 };
 
-// Plays a song one frame at a time, as the driver's per-frame routine does.
+// Plays a song one frame at a time as the driver's per-frame routine does.
 class Sequencer
 {
 public:
@@ -163,8 +163,9 @@ public:
     }
 
     // Returns the frame a loop goes back to, or 0 if it has none. A loop sends every track back to its loop point at
-    // once, so that's the earliest frame on which a track passed its loop point, where a player that loops leaves out
-    // none of the loop's notes, or 0 if the track that loops the song has no loop point and goes back to its start.
+    // once. The frame is therefore the earliest on which a track passed its loop point: a player that loops there
+    // leaves out none of the loop's notes. It's 0 if the track that loops the song has no loop point and goes back to
+    // its start.
     // Only loop points within kLoopPointWindow frames before the looping track's count. A track whose loop point comes
     // far earlier, such as at its first command, would make a looping player replay the other tracks' intros.
     int LoopStartFrame() const;
@@ -186,14 +187,14 @@ public:
         return stage_commands_;
     }
 
-    // Returns the PSG's volume on each side, as NR50 holds it: left << 4 | right, 0-7 each. Only the Dungeon Dice
+    // Returns the PSG's volume on each side as NR50 contains it: left << 4 | right, 0-7 each. Only the Dungeon Dice
     // Monsters revision's songs change it.
     uint8_t PsgVolume() const
     {
         return psg_volume_;
     }
 
-    // Returns the wave in the wave channel's RAM, which the Dungeon Dice Monsters revision's commands load.
+    // Returns the wave in the wave channel's RAM. The commands of the Dungeon Dice Monsters revision load it.
     int LoadedWave() const
     {
         return loaded_wave_;
@@ -231,7 +232,7 @@ protected:
     // Returns true if `track` is running.
     virtual bool TrackActive(int track) const = 0;
 
-    // Returns the track's current data offset, which changes at loop points.
+    // Returns the track's current data offset. It changes at loop points.
     virtual uint16_t TrackStart(int track) const = 0;
 
     // Returns the pitch of the note that `track` plays, without bend or vibrato.
@@ -417,7 +418,7 @@ private:
     void PerFrame(int track) override;
 
     // Returns the sample key that a bend or vibrato step hands on with the pitch. Prince of Tennis 2004 hands on the
-    // duty byte. That byte holds the low byte of the note's sample.
+    // duty byte. That byte contains the low byte of the note's sample.
     uint16_t PitchKey(const Track& t) const
     {
         return key_from_duty_ ? t.b2 : t.key;
@@ -514,7 +515,7 @@ struct DungeonDiceTrack
     uint8_t count = 0;        // commands left in a call
 };
 
-// Dungeon Dice Monsters sequencer. Pitches index the PSG frequency table (which also holds noise settings) or the
+// Dungeon Dice Monsters sequencer. Pitches index the PSG frequency table (which also contains noise settings) or the
 // sample period table, in 1/16 semitones. Playback matches a song requested without a fade-in: master volume stays at
 // 16.
 class DungeonDiceSequencer : public TrackSequencer<DungeonDiceTrack>
@@ -544,8 +545,8 @@ private:
     // Runs a duty or wave command (00-7F). F5 uses the same handler but can pass any byte up to FF.
     void RunDutyOrWave(int track, uint8_t op);
 
-    // Returns the next track, which some commands modify. On the last track, warns and returns nullptr: the driver
-    // would write past the track array into its own variables.
+    // Returns the next track, for the commands that modify it. On the last track, warns and returns nullptr: the driver
+    // would write past the track array into the variables after it.
     Track* NextTrack(int track, const Command& c);
 
     // Applies fades and vibrato, then outputs the volume. Runs even after a track has ended.

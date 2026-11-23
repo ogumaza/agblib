@@ -41,7 +41,7 @@ using agblib::rare::kLoopOnce;
 inline constexpr uint32_t kInit = kRomBase + 0x100;     // the init routine (Thumb)
 inline constexpr uint32_t kInitPool = kRomBase + 0x180; // its literal pool
 inline constexpr uint32_t kCodeSize = kRomBase + 0x1F0; // a word: the size of the driver's code
-inline constexpr uint32_t kCode = kRomBase + 0x200;     // the driver's code (ARM), which the game copies to IWRAM
+inline constexpr uint32_t kCode = kRomBase + 0x200;     // the driver's code (ARM), for the game to copy to IWRAM
 inline constexpr uint32_t kCodeBytes = 0x200;
 inline constexpr uint32_t kChannelSize = kRomBase + 0x400; // a word: the size of a channel's note slots
 inline constexpr uint32_t kPitchTable = kRomBase + 0x600;  // 2^(n/12) for n = -64..64, with entry 0 here
@@ -104,6 +104,7 @@ public:
             {
                 map[size_t(k)] = uint8_t(i);
             }
+
             for (int b = 0; b < 4; b++)
             {
                 table.push_back(uint8_t(keys[i].second >> (8 * b)));
@@ -275,6 +276,7 @@ private:
         {
             Put32(kInitPool + 4 * i, kPool[i]);
         }
+
         Put32(kCodeSize, kCodeBytes);
 
         // The driver's code, with its literal pool at the end.
@@ -283,6 +285,7 @@ private:
         {
             code.insert(code.end(), {0xE1A01220, 0xE3C000F0});
         }
+
         code.push_back(0xE79C0100);
 
         constexpr uint32_t kLiterals = kCode + kCodeBytes - 16;
@@ -301,19 +304,22 @@ private:
         {
             Put32(kCode + 4 * uint32_t(i), code[i]);
         }
+
         Put32(kChannelSize, uint32_t(slots) * 0x28);
 
-        // The tables: 2^(n/12) in 9.23 fixed point, the vibrato's sine, and a fade table whose entry i is 99 - i, so
-        // that a fade with index i takes 100 - i frames, and one with index 99 none.
+        // The tables: 2^(n/12) in 9.23 fixed point, the vibrato's sine, and a fade table whose entry i is 99 - i. A
+        // fade with index i then takes 100 - i frames, and one with index 99 none.
         for (int n = -64; n <= 64; n++)
         {
             Put32(kPitchTable + uint32_t(n * 4), uint32_t(std::lround(8388608.0 * std::pow(2.0, n / 12.0))));
         }
+
         for (int i = 0; i <= 256; i++)
         {
             Put32(kSineTable + uint32_t(i) * 4,
                   uint32_t(int32_t(std::lround(335544.32 * std::sin(i * 6.283185307179586 / 256)))));
         }
+
         for (uint32_t i = 0; i < 100; i++)
         {
             Put8(kFadeTable + i, uint8_t(99 - i));
@@ -400,6 +406,7 @@ private:
                 bytes_.push_back(uint8_t(ch));
             }
         }
+
         bytes_.insert(bytes_.end(), args.begin(), args.end());
 
         return *this;

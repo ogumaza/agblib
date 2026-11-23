@@ -54,7 +54,7 @@ struct DriverInfo
     std::vector<PlayerSetup> players;
     std::array<int, 4> echo = {};      // the echo's settings that the game's init passes to the echo routine
     uint32_t echo_call = 0;            // the game's call that passes them
-    std::vector<std::string> log;      // detection results, as text
+    std::vector<std::string> log;      // detection results as text
     std::vector<std::string> warnings; // assumptions detection had to make
 };
 

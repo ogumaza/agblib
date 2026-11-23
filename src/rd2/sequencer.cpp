@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/agb/warnings.h"
 #include "agblib/rd2/driver.h"
 #include "sequencer_internal.h"
@@ -55,6 +56,7 @@ Lookup LookUpInstrument(const Rom& rom, const DriverInfo& info, uint16_t bank, u
         {
             entry += 4;
         }
+
         lk.region = base + rom.U16(entry + 2);
         lk.envelope = base + rom.U16(lk.region + 4);
         lk.found = true;
@@ -70,6 +72,7 @@ Lookup LookUpInstrument(const Rom& rom, const DriverInfo& info, uint16_t bank, u
     {
         lk.wave = base + rom.U16(inst + 2);
     }
+
     if (HasPsgTable(rom, lk.region))
     {
         lk.psg_table = base + rom.U16(lk.region + 2);
@@ -164,16 +167,18 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, int song, int versi
         v.prev = i > 0 ? order[i - 1] : -1;
         v.next = i + 1 < order.size() ? order[i + 1] : -1;
     }
+
     for (int i = 0; i < kPsgVoices; i++)
     {
         voices_[size_t(kSampleVoices + i)].type = uint8_t(kSquare1Type + i);
     }
+
     free_ = order[0];
 
     // The registers that init writes and the PSG voices read back.
-    registers_[kNr10 - kRegisters] = 0x08;
-    registers_[kNr12 - kRegisters] = 0xF0;
-    registers_[kNr51 - kRegisters] = 0xFF;
+    registers_[agb::kRegNr10 - agb::kRegSound1CntL] = 0x08;
+    registers_[agb::kRegNr12 - agb::kRegSound1CntL] = 0xF0;
+    registers_[agb::kRegNr51 - agb::kRegSound1CntL] = 0xFF;
 }
 
 void Sequencer::Warn(const std::string& text)
@@ -197,14 +202,13 @@ void Sequencer::Write(uint32_t address, uint8_t size, uint32_t value)
     value &= size == 1 ? 0xFFu : size == 2 ? 0xFFFFu : 0xFFFFFFFFu;
     if (unit_ != 0)
     {
-        // A grown unit's registers lie apart from the console's, and a store there restarts none of the console's
-        // channels.
+        // A grown unit's registers are apart from the console's. A store there restarts none of the console's channels.
         const uint32_t base = agb::kGrownPsgRegisters + uint32_t(unit_ - 1) * agb::kGrownPsgBytes;
-        writes_.push_back({base + (address - kRegisters), size, value});
+        writes_.push_back({base + (address - agb::kRegSound1CntL), size, value});
         std::array<uint8_t, 0x40>& registers = grown_registers_[size_t(unit_ - 1)];
         for (uint8_t i = 0; i < size; i++)
         {
-            registers[address + i - kRegisters] = uint8_t(value >> (8 * i));
+            registers[address + i - agb::kRegSound1CntL] = uint8_t(value >> (8 * i));
         }
 
         return;
@@ -213,12 +217,13 @@ void Sequencer::Write(uint32_t address, uint8_t size, uint32_t value)
     writes_.push_back({address, size, value});
     for (uint8_t i = 0; i < size; i++)
     {
-        const uint32_t at = address + i - kRegisters;
+        const uint32_t at = address + i - agb::kRegSound1CntL;
         const uint8_t byte = uint8_t(value >> (8 * i));
         if (at < registers_.size())
         {
             registers_[at] = byte;
         }
+
         for (int c = 0; c < kPsgVoices; c++)
         {
             if (address + i == kRestartRegisters[c] && (byte & kRestartBit))
@@ -235,7 +240,7 @@ uint32_t Sequencer::ReadBack(uint32_t address, uint8_t size) const
     uint32_t value = 0;
     for (uint8_t i = 0; i < size; i++)
     {
-        const uint32_t at = address + i - kRegisters;
+        const uint32_t at = address + i - agb::kRegSound1CntL;
         value |= uint32_t(at < registers.size() ? registers[at] : 0) << (8 * i);
     }
 
@@ -255,6 +260,7 @@ void Sequencer::Start()
     {
         return;
     }
+
     if (effect_)
     {
         StartEffect();
@@ -278,6 +284,7 @@ void Sequencer::Start()
         Warn("the sequence has " + std::to_string(count) + " tracks, more than a player can have");
         count = kPlayerTracks;
     }
+
     for (int i = 0; i < count; i++)
     {
         const uint32_t offset = rom_.U16(player_.sequence + 2 + 2 * uint32_t(i));
@@ -361,6 +368,7 @@ void Sequencer::StartTrack(int slot, uint32_t position, int number, uint64_t uni
         t.echo = kEffectEcho;
         t.timed_notes = 1;
     }
+
     SetBank(t, 0);
 }
 
@@ -381,6 +389,7 @@ void Sequencer::ReleaseTrackVoices(int slot)
         Release(v);
         v = next;
     }
+
     t.legato = legato;
 }
 
@@ -397,13 +406,15 @@ void Sequencer::StopPlayer()
         {
             FreeTrack(slot);
         }
+
         slot = -1;
     }
+
     player_.active = false;
 }
 
 // Sets a track's bank to entry `bank` of the player's list of banks, with the bank's first instrument and the sample
-// set it plays from, as C7 and a track's start do.
+// set it plays from as C7 and a track's start do.
 void Sequencer::SetBank(Track& t, uint16_t bank)
 {
     t.bank = bank;
@@ -462,6 +473,7 @@ void Sequencer::Step()
                 player_.tracks[i] = -1;
             }
         }
+
         if (!running)
         {
             StopPlayer();
@@ -512,11 +524,13 @@ bool Sequencer::RunTrack(int slot)
         {
             reads_.push_back({t.number, at, t.units, op, uint8_t(t.depth), t.timed_notes == 1});
         }
+
         if (op <= 0xBF)
         {
             PlayNote(slot, op);
             continue;
         }
+
         if (op == 0xC0 || op == 0xC1)
         {
             if (op == 0xC1)
@@ -529,6 +543,7 @@ bool Sequencer::RunTrack(int slot)
             t.units += wait;
             continue;
         }
+
         if ((op & 0xF0) == 0xD0)
         {
             // A slide for the next note, from or to another note.
@@ -541,6 +556,7 @@ bool Sequencer::RunTrack(int slot)
             {
                 t.slide_delay = rom_.U8(t.position++);
             }
+
             t.slide = 1;
             continue;
         }
@@ -917,6 +933,7 @@ void Sequencer::StartSlide(Track& t, Voice& x, uint8_t note, uint8_t tuning, uin
         x.slide_end = int32_t(x.base_pitch - target);
         x.base_pitch = target;
     }
+
     x.slide_step = SignedDiv(x.slide_end, int32_t(x.slide_frames));
     if (t.slide_flags & 4)
     {
@@ -926,6 +943,7 @@ void Sequencer::StartSlide(Track& t, Voice& x, uint8_t note, uint8_t tuning, uin
     {
         t.slide = 0;
     }
+
     x.slide = 0;
 }
 

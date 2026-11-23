@@ -18,7 +18,7 @@
 // The enhanced mixing mode (StartEnhancedMixing()) mixes the same voices in floating point: agb::kEnhancedFrameSamples
 // samples a frame, through ntdlib::wave::SincKernel in place of the console's nearest point, with each voice's levels
 // moving in a straight line across a frame. A note's first frame takes its levels at once. No sum wraps or saturates.
-// The echo's line holds floating-point samples for the same 18 frames. The sequencer grows its voices in the mode
+// The echo's line contains floating-point samples for the same 18 frames. The sequencer grows its voices in the mode
 // (Sequencer::GrowVoices). The mode has no anchor: no game ever ran it.
 
 #pragma once
@@ -37,12 +37,12 @@
 namespace agblib::rd2
 {
 
-// The cycles of timer 0's period. Each period takes a byte from each FIFO. A frame holds kFrameSamples of them.
+// The cycles of timer 0's period. Each period takes a byte from each FIFO. A frame contains kFrameSamples of them.
 constexpr uint32_t kFifoCycles = 1596;
 
 // The bytes that a FIFO plays between the VBlank at which a frame's mixing starts and the first byte of that mix. The
 // frame's VBlank starts the DMAs on the last frame's mix, the next VBlank starts them on this frame's, and the FIFO
-// still holds 17 bytes then.
+// still contains 17 bytes then.
 constexpr int kFifoLead = int(kFrameSamples) + 17;
 
 // The echo's delay, in frames.
@@ -64,7 +64,7 @@ public:
         return sequencer_ ? &*sequencer_ : nullptr;
     }
 
-    // Asks for the echo's level `level`, up to 31, as the game's request does. The level moves towards it by 1 a frame.
+    // Asks for the echo's level `level`, up to 31 as the game's request does. The level moves towards it by 1 a frame.
     void SetEchoGoal(uint8_t level)
     {
         echo_goal_ = level < 31 ? level : 31;
@@ -95,11 +95,11 @@ public:
         return fifo_b_;
     }
 
-    // The sound registers from agb::kRegSound1CntL up to agb::kRegFifoA, as the driver's init leaves them.
+    // The sound registers from agb::kRegSound1CntL up to agb::kRegFifoA as the driver's init leaves them.
     std::vector<uint8_t> SoundRegisters() const;
 
     // Leaves each voice of the tracks in `tracks`, a bit for each of the player's tracks, out of the frame's mix and of
-    // the echo. The sums then hold no wrap of those voices. The tracks go on as before.
+    // the echo. The sums then contain no wrap of those voices. The tracks go on as before.
     void SetMutedTracks(uint16_t tracks)
     {
         muted_ = tracks;
@@ -149,8 +149,8 @@ public:
         return enhanced_->out[1];
     }
 
-    // Whether the mixer has fallen silent: no sample voice plays, the frame's mix holds nothing and the echo's history
-    // holds nothing.
+    // Whether the mixer has fallen silent: no sample voice plays, the frame's mix contains nothing and the echo's
+    // history contains nothing.
     bool MixerSilent() const;
 
 private:

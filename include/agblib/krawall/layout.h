@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MIT
 
 // A GBA ROM with Krawall cut into pieces for an editor, and joined again, in the shapes of sar/layout.h. Each module's
-// patterns that the decoder reads (commands.h) become a sequence piece, and the ROM's other bytes become runs. The
-// module's header, which follows its patterns in the games, lies in a run, and so do the game's tables. Each address in
+// patterns that the decoder reads (commands.h) become a sequence piece, and the ROM's other bytes become runs. In the
+// games, a module's header follows its patterns. The header is in a run, and so are the game's tables. Each address in
 // a header's table of patterns is a field that names the item where its pattern starts. The pieces of a ROM join to
 // give the ROM back byte for byte.
 //
 // The player finds a module's patterns only through the table of patterns, by their addresses. A sequence can therefore
-// lie anywhere in the ROM. A sequence whose bytes fit its place stays there, with zeros after them. A sequence that
-// outgrows its place moves. Its place then holds zeros, or another sequence that moved. A sequence that moves goes,
+// be anywhere in the ROM. A sequence whose bytes fit its place stays there, with zeros after them. A sequence that
+// outgrows its place moves. Its place then contains zeros, or another sequence that moved. A sequence that moves goes,
 // largest first, into the first of these places with room for it, where neighbouring places count as one. Failing that,
 // it goes into the free space at the ROM's end, and the ROM grows when the sequences there run past its end. A moved
-// sequence lands on a multiple of 4 bytes, as the patterns' padding requires.
+// sequence lands on a multiple of 4 bytes as the patterns' padding requires.
 //
-// A module keeps its patterns: its orders and its count of patterns lie in its header, and Join writes only the
-// patterns' addresses. In the modified build, the modules lie packed in the game's music files. The cut leaves them
-// in the bytes.
+// A module keeps its patterns: its orders and its count of patterns are in its header, and Join writes only the
+// patterns' addresses. In the modified build, the modules are packed in the game's music files. The cut leaves them in
+// the bytes.
 //
-// A ROM can lack room at its end: it fills the GBA's 32 MiB. Join can then put a sequence into a run of filler bytes
+// A ROM can have no room at its end: it fills the GBA's 32 MiB. Join can then put a sequence into a run of filler bytes
 // inside the ROM (FillerRuns), where the user allows it (JoinOptions::filler). Nothing shows that the game's other code
 // doesn't read such a run.
 
@@ -27,12 +27,13 @@
 #include <span>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/sar/layout.h"
+
 #include "agblib/agb/layout.h"
 #include "agblib/agb/rom.h"
 #include "agblib/krawall/commands.h"
 #include "agblib/krawall/driver.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/sar/layout.h"
 
 namespace agblib::krawall
 {
@@ -66,7 +67,7 @@ struct Layout
     std::vector<ntdlib::commands::Sequence> sequences; // in the order of their places
     std::vector<ntdlib::sar::Piece> pieces;            // in the order of the ROM's bytes: runs and sequence pieces
 
-    // The fields of the tables of patterns, in the order of the modules and of their patterns. A field holds an
+    // The fields of the tables of patterns, in the order of the modules and of their patterns. A field contains an
     // address: the distance from its second place, the ROM's start, to its third, the item where the pattern starts,
     // plus 0x08000000.
     std::vector<ntdlib::sar::Field> fields;
@@ -74,7 +75,7 @@ struct Layout
 };
 
 // Cuts `rom`, with the player that `info` describes. Each module's patterns become a sequence piece when the decoder
-// reads them without keeping them as data, when their encoding gives their bytes back, and when their bytes lie in the
+// reads them without keeping them as data, when their encoding gives their bytes back, and when their bytes are in the
 // ROM, clear of every other sequence's and of the player's other data: the tables of modules and of what the game
 // plays, the modules' headers, the samples and instruments that their rows name, and the player's tables of waves,
 // periods, fine tunes and linear frequencies. Through its sample's relative note, a note without an instrument can
@@ -85,9 +86,9 @@ Layout Cut(const Rom& rom, const DriverInfo& info);
 
 // The ROM's bytes from its pieces and its fields. See the top of this file for where each sequence goes. Throws
 // std::invalid_argument for a piece of padding, a sequence piece without a sequence, a ROM whose first piece isn't a
-// run, a field that doesn't lie in a run or names a place that the pieces lack, an entry of a pattern that names no
-// item of its sequence, and a ROM that would outgrow kLargestRom without room in the filler runs. Throws the exceptions
-// of EncodeSequence.
+// run, a field that isn't in a run or names a place that isn't in the pieces, an entry of a pattern that names no item
+// of its sequence, and a ROM that would outgrow kLargestRom without room in the filler runs. Throws the exceptions of
+// EncodeSequence.
 std::vector<uint8_t> Join(const Traits& traits, std::span<const ntdlib::commands::Sequence> sequences,
                           std::span<const ntdlib::sar::Piece> pieces, std::span<const ntdlib::sar::Field> fields,
                           const FreeSpace& free, const JoinOptions& options = {});
@@ -96,11 +97,11 @@ std::vector<uint8_t> Join(const Traits& traits, std::span<const ntdlib::commands
 std::vector<uint8_t> Join(const Layout& layout, const JoinOptions& options = {});
 
 // The runs of filler bytes in `rom`, with the player that `info` describes: runs of 0xFF in the order of their places,
-// then runs of zeros in the order of their places. A filler run lies in a run of kLeastFillerRun or more bytes of 0xFF
-// or of zeros. A run at the ROM's end is Join's free space, and doesn't count. The filler run starts kFreeSpaceMargin
+// then runs of zeros in the order of their places. A filler run is in a run of kLeastFillerRun or more bytes of 0xFF or
+// of zeros. A run at the ROM's end is Join's free space, and doesn't count. The filler run starts kFreeSpaceMargin
 // bytes or more into the run, on a multiple of kFreeSpaceMargin, and ends kFreeSpaceMargin bytes before the run's end.
-// A run that holds a byte that the player reads doesn't count. Zeros can be data of the game, such as blank pictures.
-// Nothing shows that the game's other code doesn't read a filler run.
+// A run that contains a byte that the player reads doesn't count. Zeros can be data of the game, such as blank
+// pictures. Nothing shows that the game's other code doesn't read a filler run.
 std::vector<Span> FillerRuns(const Rom& rom, const DriverInfo& info);
 
 } // namespace agblib::krawall

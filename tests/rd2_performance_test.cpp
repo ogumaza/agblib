@@ -130,6 +130,7 @@ void CheckAgainstMidi(const Rom& rom, const DriverInfo& info, int song, const Pe
             }
         }
     }
+
     Check(in_performance == in_file, "the performance holds the MIDI file's notes");
 }
 
@@ -306,7 +307,7 @@ void TestStartedTrackMix()
 
 void TestEffect()
 {
-    // A sound effect's table has a halfword for each track: its first command lies at offset 2. A sound effect's notes
+    // A sound effect's table has a halfword for each track: its first command is at offset 2. A sound effect's notes
     // wait for their lengths from the start.
     Cart cart;
     cart.Sequences({{TrackData().End()}});

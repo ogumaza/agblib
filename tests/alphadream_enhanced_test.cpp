@@ -5,12 +5,12 @@
 // The band-limited interpolator gives such a sample back unchanged. The channel's level on a side is its volume times
 // the envelope's level over 2^16, times the point's offset from 128.
 
-#include <cmath>
 #include <cstdint>
 #include <vector>
 
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/alphadream/driver.h"
@@ -18,6 +18,7 @@
 #include "agblib/testing/agb_cart.h"
 #include "alphadream/enhanced_mix.h"
 
+using agblib::testing::agb_tests::NearLevel;
 using xsflib::testing::Check;
 
 namespace
@@ -79,11 +80,6 @@ alphadream::MixChannel Channel(uint32_t place, int level, bool once = false)
     return channel;
 }
 
-bool Near(float value, double expected)
-{
-    return std::fabs(double(value) - expected) <= 0.005 * std::fabs(expected) + 1e-6;
-}
-
 // The lead and the frames' lengths follow the console's samples. The first sample plays from the timer's first
 // overflow.
 void TestLengths()
@@ -113,23 +109,23 @@ void TestLevels()
     bool flat = true;
     for (size_t i = 0; i < mix.Out()[0].size(); i++)
     {
-        flat = flat && Near(mix.Out()[0][i], 8.0) && Near(mix.Out()[1][i], 4.0);
+        flat = flat && NearLevel(mix.Out()[0][i], 8.0) && NearLevel(mix.Out()[1][i], 4.0);
     }
 
     Check(flat, "a channel that wasn't on takes its levels at once");
-    Check(Near(mix.Parts()[2][0], 8.0) && Near(mix.Parts()[2][1], 4.0) && mix.Parts()[0][0] == 0.0f,
+    Check(NearLevel(mix.Parts()[2][0], 8.0) && NearLevel(mix.Parts()[2][1], 4.0) && mix.Parts()[0][0] == 0.0f,
           "the channel's part goes to its channel");
 
     mix.Frame({Channel(first.next >> 10, 64)}, true);
 
     const std::vector<float>& a = mix.Out()[0];
     const size_t n = a.size();
-    Check(Near(a[0], 8.0) && Near(a[n / 2], 8.0 - 4.0 * double(n / 2) / double(n)) &&
-              Near(a[n - 1], 8.0 - 4.0 * double(n - 1) / double(n)),
+    Check(NearLevel(a[0], 8.0) && NearLevel(a[n / 2], 8.0 - 4.0 * double(n / 2) / double(n)) &&
+              NearLevel(a[n - 1], 8.0 - 4.0 * double(n - 1) / double(n)),
           "a channel that goes on moves to its levels across the frame");
 
     mix.Frame({Channel(33, 128)}, true);
-    Check(Near(mix.Out()[0][0], 8.0), "a channel from another place takes its levels at once");
+    Check(NearLevel(mix.Out()[0][0], 8.0), "a channel from another place takes its levels at once");
 
     const alphadream::MixChannel unheard = Channel(Channel(33, 128).next >> 10, 128);
 
@@ -144,7 +140,7 @@ void TestLevels()
     Check(silent && mix.Parts()[2][0] == 0.0f, "a frame without samples is silent");
 
     mix.Frame({Channel(unheard.next >> 10, 64)}, true);
-    Check(Near(mix.Out()[0][0], 8.0), "after a frame without samples, a channel goes on from its levels");
+    Check(NearLevel(mix.Out()[0][0], 8.0), "after a frame without samples, a channel goes on from its levels");
 }
 
 // A sample without a loop is silent past its end: from point 32, the end comes 32 of the console's samples into the
@@ -157,7 +153,7 @@ void TestEndAndSilence()
     once.Frame({Channel(32, 128, true)}, true);
 
     const std::vector<float>& a = once.Out()[0];
-    Check(Near(a[0], 8.0) && a.back() == 0.0f, "a sample without a loop ends at its end");
+    Check(NearLevel(a[0], 8.0) && a.back() == 0.0f, "a sample without a loop ends at its end");
 
     alphadream::EnhancedMix silenced(rom, kPeriod, kLead);
     alphadream::MixChannel channel = Channel(32, 128);

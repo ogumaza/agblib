@@ -242,7 +242,7 @@ Wct2004Sequencer::Next Wct2004Sequencer::RunCommand(int track, const Command& c,
     case Op::kVolumeScale:
         // FA xx with xx other than 0 scales the track's later volumes by the game's setting, and FA 00 stops that. A
         // song request sets the setting to FF. That scales nothing. Only a game that sets it lower after the request
-        // hears FA (see DriverInfo::live_songs). A loop keeps the scale.
+        // plays FA (see DriverInfo::live_songs). A loop keeps the scale.
         t.scale = c.value != 0 ? request_.setting : 0xFF;
         break;
 

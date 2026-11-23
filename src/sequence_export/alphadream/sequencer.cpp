@@ -13,70 +13,10 @@
 
 #include "agblib/agb/rom.h"
 #include "agblib/alphadream/driver.h"
+#include "sequencer_internal.h"
 
 namespace agblib::sequence_export::alphadream
 {
-
-using agblib::alphadream::kRootKey;
-using agblib::alphadream::SampleHeader;
-using agblib::alphadream::Version;
-using agblib::sequence_export::agb::KeyHz;
-using agblib::sequence_export::agb::PsgRegisters;
-using agblib::sequence_export::agb::SquareHz;
-using agblib::sequence_export::agb::WaveShare;
-
-namespace
-{
-
-// The player that the game starts its music on.
-constexpr uint8_t kMusicPlayer = 1;
-
-// The level of a full-scale sample at volume 127 and the envelope's full level, with a full-scale FIFO sample at 128.
-// The mixer writes it as 63 of the FIFO's 128. The SoundFont's PSG samples hold the PSG's level at volume 15 against
-// it, so a PSG channel at volume 15 gets the same level.
-constexpr double kFullSampleLevel = 63;
-
-// The envelope's full level.
-constexpr double kFullEnvelope = 255;
-
-// The points that the mixer makes each frame, at 15768 Hz.
-constexpr uint32_t kFramePoints = 264;
-
-// The mixer's positions count 1024ths of a point.
-constexpr int kPositionShift = 10;
-
-// The literal that the step routine multiplies by: the share of 2^32 by which the mixer's rate falls short of
-// 16384 Hz.
-constexpr uint64_t kStepScale = 0x0A080000;
-
-// The PSG channels of the wave and the noise.
-constexpr int kWaveChannel = 2;
-constexpr int kNoiseChannel = 3;
-
-// The hardware's volume that the driver works out for a PSG channel from the envelope setting it last kept and the
-// frames since (0x0819AC14). The hardware moves the volume by 1 every `step` 64ths of a second. The driver counts
-// `step` frames for each move. Its division (0x081DAAA4) gives 0 for a step of 0.
-int DriverVolume(const PsgChannel& c)
-{
-    const int start = c.written >> 4;
-    if (!(c.written & 0xF))
-    {
-        return start;
-    }
-
-    const int step = c.written & 7;
-    const int moved = step ? c.count / step : 0;
-    return (c.written & 8) ? std::min(start + moved, 15) : std::max(start - moved, 0);
-}
-
-// Returns the hardware envelope's step that an envelope byte gives: the 64ths of a second for each move of the volume,
-// or 0 for none.
-uint8_t EnvelopeStep(uint8_t byte)
-{
-    return uint8_t((0xFF - byte) >> 5);
-}
-
-} // namespace
 
 std::array<uint8_t, 32> TrackState::Bytes() const
 {
@@ -89,6 +29,7 @@ std::array<uint8_t, 32> TrackState::Bytes() const
     {
         b[size_t(4 + i)] = uint8_t(data >> (8 * i));
     }
+
     b[8] = uint8_t(at);
     b[9] = uint8_t(at >> 8);
     b[0xA] = wait;
@@ -151,8 +92,8 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, const Song& song) :
         player_volume_ = 0;
     }
 
-    // The driver's init gives each track its channel and player (0x0819AFA8). The start gives each of the song's
-    // tracks its first settings (0x0819B040). The flags start with kMuted, so the first frame restores the channel.
+    // The driver's init gives each track its channel and player (0x0819AFA8). The start gives each of the song's tracks
+    // its first settings (0x0819B040). The flags start with kMuted, and the first frame therefore restores the channel.
     for (int t = 0; t < kTracks; t++)
     {
         TrackState& s = tracks_[size_t(t)];
@@ -163,7 +104,7 @@ Sequencer::Sequencer(const Rom& rom, const DriverInfo& info, const Song& song) :
             continue;
         }
 
-        // B85A's driver starts a track without a note, so the first frame starts none.
+        // B85A's driver starts a track without a note. The first frame therefore starts none.
         s.flags =
             info.version == Version::kHamSports ? flag::kMuted | flag::kUsed : flag::kNote | flag::kMuted | flag::kUsed;
         s.data = song.tracks[size_t(t)];
@@ -221,6 +162,7 @@ bool Sequencer::Looped(int passes) const
             {
                 return false;
             }
+
             any = true;
         }
     }
@@ -243,7 +185,7 @@ uint32_t Sequencer::LoopFrame(int pass) const
 }
 
 // The pitch of a sample channel (0x0819A79C) or a PSG channel (0x0819AA38, 0x0819AA9C). With `square`, the noise
-// takes the squares' setting too, as the restore of a PSG channel gives it (0x0819ABF8).
+// takes the squares' setting too as the restore of a PSG channel gives it (0x0819ABF8).
 void Sequencer::UpdatePitch(int index, bool square)
 {
     TrackState& t = tracks_[size_t(index)];
@@ -360,6 +302,7 @@ void Sequencer::NoteOn(int index, uint32_t command)
             c.envelope = region.envelope;
             c.duty = uint8_t(region.sample);
         }
+
         c.state = 1;
     }
 
@@ -463,6 +406,7 @@ void Sequencer::StepTrack(int index)
                 }
             }
         }
+
         if (t.flags & flag::kLevelLfo)
         {
             if (t.level_lfo.count)
@@ -492,6 +436,7 @@ void Sequencer::StepTrack(int index)
         ticks++;
         count -= uint32_t(kDefaultDivisor);
     }
+
     t.count = uint8_t(count);
     if (ticks == 0)
     {
@@ -515,6 +460,7 @@ void Sequencer::StepTrack(int index)
                 t.wait = uint8_t(-ticks);
                 return;
             }
+
             next = At::kNoteEnd;
         }
 
@@ -534,6 +480,7 @@ void Sequencer::StepTrack(int index)
                     continue;
                 }
             }
+
             next = At::kEvent;
         }
 
@@ -599,6 +546,7 @@ void Sequencer::StepTrack(int index)
                 {
                     t.at = uint16_t(t.at + jump);
                 }
+
                 continue;
             }
 
@@ -654,6 +602,7 @@ void Sequencer::StepTrack(int index)
                 {
                     goto_frames_[size_t(index)].push_back(frame_);
                 }
+
                 t.at = to;
                 continue;
             }
@@ -678,6 +627,7 @@ void Sequencer::StepTrack(int index)
             {
                 NoteOff(index);
             }
+
             t.flags = 0;
             return;
 
@@ -695,6 +645,7 @@ void Sequencer::StepTrack(int index)
         {
             t.volume = Next(t);
         }
+
         if (info_.version == Version::kHamtaro4)
         {
             UpdateLevels(index);
@@ -712,6 +663,7 @@ void Sequencer::StepTrack(int index)
                 t.flags &= uint16_t(~(flag::kLevelLfoOn | flag::kLevelLfoDown));
                 t.level_lfo.count = t.level_lfo.delay;
             }
+
             if (t.flags & flag::kPitchLfo)
             {
                 t.flags &= uint16_t(~(flag::kPitchLfoOn | flag::kPitchLfoDown));
@@ -722,6 +674,7 @@ void Sequencer::StepTrack(int index)
             {
                 UpdateLevels(index);
             }
+
             UpdatePitch(index);
             NoteOn(index, t.data + event_at);
             t.flags |= flag::kNote;
@@ -736,6 +689,7 @@ void Sequencer::StepTrack(int index)
                 t.wait = Next(t);
                 next = At::kWait;
             }
+
             continue;
         }
 
@@ -743,295 +697,13 @@ void Sequencer::StepTrack(int index)
         {
             t.flags |= flag::kRests;
         }
+
         t.wait = length;
         next = At::kWait;
     }
 
     warnings_.push_back("track " + std::to_string(index) + " runs commands without end");
     t.flags = 0;
-}
-
-// The mixer's envelopes and positions (0x0819A2F0, 0x0819A398).
-void Sequencer::RunEnvelopes()
-{
-    for (SampleChannel& c : samples_)
-    {
-        uint8_t status = c.status;
-        int level = c.level;
-        if (status == 0)
-        {
-            continue;
-        }
-
-        if (status == 0x80)
-        {
-            status = 0x81;
-            level = c.envelope[0];
-        }
-        else if (status == 0x81)
-        {
-            level += c.envelope[0];
-            if (level >= 0xFF)
-            {
-                level = 0xFF;
-                status = 0x82;
-            }
-        }
-        else if (status == 0x82)
-        {
-            // The driver compares the status, not the level, with the sustain level. A level at or above the decay's
-            // step goes to the sustain level at once.
-            if (level >= c.envelope[1] || status <= c.envelope[2])
-            {
-                status = 0x83;
-                level = c.envelope[2];
-            }
-            else
-            {
-                level = (level - c.envelope[1]) & 0xFF;
-            }
-        }
-        else if (status != 0x83)
-        {
-            if (level > c.envelope[3])
-            {
-                level -= c.envelope[3];
-            }
-            else
-            {
-                c.status = 0;
-                continue;
-            }
-        }
-
-        c.status = status;
-        c.level = uint8_t(level);
-
-        // The position, which ends a sample without a loop.
-        SampleHeader s;
-        if (!ReadSample(rom_, info_, c.sample & 0x7FFF, s))
-        {
-            c.status = 0;
-            continue;
-        }
-
-        const bool fixed = c.sample & 0x8000;
-        const int key = fixed ? kRootKey : c.pitch >> 8;
-        const int fraction = fixed ? 0 : c.pitch & 0xFF;
-        const uint8_t code = rom_.U8(info_.key_table + uint32_t(key));
-        const uint32_t note = code & 0xF;
-        const uint32_t a = rom_.U32(info_.step_table + 4 * note);
-        const uint32_t b = rom_.U32(info_.step_table + 4 * note + 4);
-        const uint32_t m = (a + uint32_t(((b - a) * uint32_t(fraction)) >> 8)) >> (code >> 4);
-        const uint32_t high = uint32_t((uint64_t(s.rate) * m) >> 32);
-        const uint32_t step = high + uint32_t((uint64_t(high) * kStepScale) >> 32);
-
-        const uint32_t end = s.end << kPositionShift;
-        uint32_t left = kFramePoints;
-        for (int guard = 0; guard < 4096 && left; guard++)
-        {
-            const uint32_t to_end = end - c.position + step - 1;
-            uint32_t n = left;
-            if (uint64_t(step) * left >= to_end && step)
-            {
-                n = to_end / step;
-            }
-
-            left -= n;
-            c.position += n * step;
-            if (int32_t(c.position) < int32_t(end))
-            {
-                break;
-            }
-            if (!s.loops)
-            {
-                c.status = 0;
-                break;
-            }
-
-            c.position += (s.loop_start - s.end) << kPositionShift;
-        }
-    }
-}
-
-// Runs a square's or the noise's envelope for a frame (0x0819AC84). The driver works the hardware's envelope in turns:
-// a rise from 0 to the channel's volume, a fall to the sustain level, the sustain, and a fall to 0 after the note's
-// end. Each turn restarts the channel with a new envelope setting, once the volume that the driver works out reaches
-// the turn's end. In between, the frequency goes to the hardware each frame.
-void Sequencer::RunPsgEnvelope(int channel)
-{
-    PsgChannel& c = psg_[size_t(channel)];
-    uint16_t& control = registers_.control[size_t(channel)];
-    uint16_t& frequency = registers_.frequency[size_t(channel)];
-
-    // A84J's driver counts the frames whether or not it has written a setting (0x0814A844).
-    if ((c.written || info_.version == Version::kHamtaro4) && c.count != 0xFF)
-    {
-        c.count++;
-    }
-
-    // Sets the hardware's envelope, keeps it in the record, and restarts the channel. The squares take their duty
-    // again with the first two turns.
-    const auto restart = [&](uint8_t setting, bool duty)
-    {
-        c.count = 0;
-        c.written = setting;
-        control = uint16_t(setting << 8 | (duty && channel != kNoiseChannel ? c.duty << 6 : control & 0xFF));
-        frequency = uint16_t(c.frequency | 0x8000);
-        registers_.restarted |= uint8_t(1 << channel);
-    };
-
-    const auto play = [&]()
-    {
-        frequency = c.frequency;
-    };
-
-    const auto silence = [&](bool keep)
-    {
-        if (!keep)
-        {
-            c.written = 0;
-        }
-        control &= 0xFF;
-        c.state = 0;
-    };
-
-    switch (c.state)
-    {
-    case 1:
-        c.state = 2;
-        if (c.envelope[0] != 0xFF)
-        {
-            restart(uint8_t(EnvelopeStep(c.envelope[0]) | 8), true);
-            return;
-        }
-        break;
-
-    case 2:
-        if (DriverVolume(c) < c.volume)
-        {
-            play();
-            return;
-        }
-        break;
-
-    case 3:
-        {
-            const int sustain = (c.volume * c.envelope[2]) >> 8;
-            if (DriverVolume(c) > sustain)
-            {
-                play();
-                return;
-            }
-
-            restart(uint8_t(sustain << 4), false);
-            c.state = 4;
-            return;
-        }
-
-    case 4:
-        play();
-        return;
-
-    case 5:
-        {
-            // The release starts from the volume that the driver works out. Without a step, or from 0, the channel
-            // goes silent at once, and the record keeps the old setting. A84J's driver checks only the step
-            // (0x0814AA18): from 0, it restarts the channel at 0 with the release's step.
-            const int volume = DriverVolume(c);
-            c.count = 0;
-            const uint8_t step = EnvelopeStep(c.envelope[3]);
-            if (!step || (!volume && info_.version != Version::kHamtaro4))
-            {
-                silence(true);
-                return;
-            }
-
-            restart(uint8_t(volume << 4 | step), false);
-            c.state = 6;
-            return;
-        }
-
-    case 6:
-        if (DriverVolume(c))
-        {
-            play();
-            return;
-        }
-
-        // A84J's driver keeps the setting in the record (0x0814AA78).
-        silence(info_.version == Version::kHamtaro4);
-        return;
-
-    default:
-        return;
-    }
-
-    // The fall from the channel's volume, after the rise or at once.
-    restart(uint8_t(EnvelopeStep(c.envelope[1]) | c.volume << 4), true);
-    c.state = 3;
-}
-
-// Runs the wave for a frame (0x0819AF18). A note's start restarts the wave at the NR32 setting for the channel's
-// volume over 4, and the note's end mutes it. A change of the channel's volume reaches the hardware with the next note.
-// The record of the wave keeps NR32 in the high byte, as SOUND3CNT_H does.
-void Sequencer::RunWave()
-{
-    PsgChannel& c = psg_[kWaveChannel];
-    uint16_t& control = registers_.control[kWaveChannel];
-    uint16_t& frequency = registers_.frequency[kWaveChannel];
-    switch (c.state)
-    {
-    case 1:
-        frequency = uint16_t(c.frequency | 0x8000);
-        control = uint16_t(rom_.U8(info_.wave_levels + uint32_t(c.volume >> 2)) << 8);
-        c.state = 2;
-        break;
-
-    case 2:
-        frequency = c.frequency;
-        break;
-
-    case 5:
-        control &= 0xFF;
-        c.state = 0;
-        break;
-
-    default:
-        break;
-    }
-}
-
-// The PSG's output for a frame (0x0819AF88): the squares' and the noise's envelopes, then the hardware's response,
-// from a model of the PSG. The wave's routine runs between the squares and the noise.
-void Sequencer::RunPsg()
-{
-    registers_.restarted = 0;
-    RunWave();
-    for (int channel : {0, 1, kNoiseChannel})
-    {
-        RunPsgEnvelope(channel);
-        const PsgRegisters r{0, registers_.control[size_t(channel)], registers_.frequency[size_t(channel)], 0,
-                             (registers_.restarted & (1 << channel)) != 0};
-        PsgModel& model = psg_models_[size_t(channel)];
-        const int start = model.Frame(r);
-        psg_volumes_[size_t(channel)] = start;
-
-        // The frame's level is the mean of the volumes at its start and its end. The volume at the end is the one
-        // that the next frame would start with if the driver wrote nothing. The envelope moves within the frame, and
-        // the level of the frame's start would lag it by half a frame.
-        PsgModel ahead = model;
-        const int end = ahead.Frame(PsgRegisters{0, r.envelope, uint16_t(r.frequency & 0x7FFF), 0, false});
-        psg_levels_[size_t(channel)] = start < 0 ? 0 : (start + std::max(end, 0)) / 2.0;
-    }
-}
-
-// Returns true while a square or the noise sounds: on, at a volume above 0 or with an envelope that rises from 0.
-bool Sequencer::PsgSounds(int channel) const
-{
-    const int volume = psg_volumes_[size_t(channel)];
-    const uint16_t envelope = registers_.control[size_t(channel)] >> 8;
-    return volume > 0 || (volume == 0 && (envelope & 8) && (envelope & 7));
 }
 
 void Sequencer::Record(int index)

@@ -12,18 +12,21 @@
 #include <utility>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/rom.h"
 #include "agblib/rd1/commands.h"
 #include "agblib/rd1/driver.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 using xsflib::testing::Check;
 
 namespace
 {
+
+using agblib::testing::agb_tests::Throws;
 
 namespace rd1 = agblib::rd1;
 using agblib::agb::kRomBase;
@@ -153,22 +156,6 @@ Sequence OneTrack(const std::vector<Command>& items)
     return sequence;
 }
 
-// Whether `body` throws an exception of type `E`.
-template <typename E, typename Body>
-bool Throws(Body body)
-{
-    try
-    {
-        body();
-    }
-    catch (const E&)
-    {
-        return true;
-    }
-
-    return false;
-}
-
 void TestChunks()
 {
     const Decoded decoded = Decodes(File({kEnd, kEnd}, 96));
@@ -202,6 +189,7 @@ void TestEveryEvent()
     {
         Check(events[i].kind == kKinds[i], ("event " + std::to_string(i) + "'s kind").c_str());
     }
+
     if (events.size() != kKinds.size())
     {
         return;
@@ -272,9 +260,34 @@ void TestOpaque()
     Check(opaque(File({kEnd}, 0)), "a division of 0");
     Check(opaque(File({kEnd}, 0x8019)), "a division in frames");
 
+    // A header chunk of 4 bytes. The driver reads the track count and the division at bytes 10 to 13 all the same, and
+    // the first track chunk's length at bytes 16 to 19, "rk\0\0". That length runs past the bytes. The file ends with
+    // the header's fields.
     std::vector<uint8_t> short_header = File({kEnd});
     short_header[7] = 4;
-    Check(opaque(short_header), "a header chunk shorter than its fields");
+    const Decoded short_decoded = DecodeSequence(short_header);
+    Check(short_decoded.opaque && short_decoded.size == 14, "a header chunk shorter than its fields");
+
+    // A header chunk of 4 bytes with two whole track chunks after it, at bytes 12 and 24, then bytes that the driver
+    // doesn't read. The driver reads the division from the first chunk's ID. The file ends with the second chunk.
+    std::vector<uint8_t> short_whole = {'M', 'T', 'h', 'd', 0, 0, 0, 4, 0, 1, 0, 2};
+    for (int t = 0; t < 2; t++)
+    {
+        short_whole.insert(short_whole.end(), {'M', 'T', 'r', 'k', 0, 0, 0, 4});
+        short_whole.insert(short_whole.end(), kEnd.begin(), kEnd.end());
+    }
+
+    short_whole.insert(short_whole.end(), kEnd.begin(), kEnd.end());
+    const Decoded whole_decoded = DecodeSequence(short_whole);
+    Check(whole_decoded.opaque && whole_decoded.size == 36,
+          "a header chunk shorter than its fields, with whole chunks");
+
+    // A header chunk that runs past the bytes: the driver reads the first track chunk at byte 48. The file ends with
+    // the header's fields.
+    std::vector<uint8_t> long_header = File({kEnd});
+    long_header[7] = 40;
+    const Decoded long_decoded = DecodeSequence(long_header);
+    Check(long_decoded.opaque && long_decoded.size == 14, "a header chunk that runs past the bytes");
 
     // A file cut short keeps its whole chunks.
     std::vector<uint8_t> cut = File({kEnd, kEnd});
@@ -301,6 +314,7 @@ void TestEdits()
             note_off = i;
         }
     }
+
     items[note_off].kind = Kind::kNote;
     items[note_off].velocity = 0x30 * kOne;
 
@@ -318,6 +332,7 @@ void TestEdits()
             program = i;
         }
     }
+
     items.insert(items.begin() + std::ptrdiff_t(program + 1), note);
 
     // A tempo of 150 beats a minute.

@@ -5,8 +5,8 @@
 //
 // A frame runs the hardware up to the per-frame routine's cycle, runs the transfers of the FIFOs' DMA that the timer's
 // samples have asked for, runs the routine and makes its stores, queues the bytes that the mixer wrote, and runs the
-// hardware to the frame's end. The FIFOs start with the bytes that lie in the rings after the init: the lead of the
-// mixer. A frame's mix therefore plays from about two frames later.
+// hardware to the frame's end. The FIFOs start with the bytes in the rings after the init: the lead of the mixer. A
+// frame's mix therefore plays from about two frames later.
 //
 // Track t's controllers set channel t, and the driver plays its notes on channel t & 15. A mute of track t leaves out
 // the voices that play channel t. Below track 16, a mute therefore leaves out the notes of track t + 16 too. From track
@@ -49,7 +49,7 @@ class EnhancedMix;
 // What the driver and the hardware start from, beyond the song.
 struct ArchivePlayerOptions
 {
-    // The cycle of each frame at which the per-frame routine runs. It lies below agb::kFrameCycles.
+    // The cycle of each frame at which the per-frame routine runs. It is below agb::kFrameCycles.
     uint32_t store_cycle = agb::kFrameCycles / 6;
 
     // The frame sequencer's phase at the song's start: see agb::Apu::SetSequencer.
@@ -63,8 +63,8 @@ struct ArchivePlayerOptions
 class ArchivePlayer
 {
 public:
-    // What Restore() takes to go back to a place in the song: the system's memories and registers, and the hardware.
-    // A snapshot shares the system's pages that hold the same bytes with the snapshot that it was saved after.
+    // What Restore() takes to go back to a place in the song: the system's memories and registers, and the hardware. A
+    // snapshot shares the system's pages that contain the same bytes with the snapshot that it was saved after.
     class Snapshot
     {
         friend class ArchivePlayer;
@@ -94,12 +94,13 @@ public:
     ~ArchivePlayer();
 
     // Starts entry `song` of the song table from the state that the driver's init leaves. The game's call of the play
-    // routine does the same. Throws std::invalid_argument when the entry holds no song, or an option is out of range.
+    // routine does the same. Throws std::invalid_argument when the entry contains no song, or an option is out of
+    // range.
     void Start(int song, const ArchivePlayerOptions& options = {});
 
     // Starts an audition: one note of program `program` of song `song`'s bank, at `key` and `velocity` (0 to 127), on
     // the song's player. The player plays a MIDI file of the note, on track 0. The note sounds until ReleaseNote() and
-    // its release, or its sample's end. Throws std::invalid_argument when the entry holds no song, or a value or an
+    // its release, or its sample's end. Throws std::invalid_argument when the entry contains no song, or a value or an
     // option is out of range.
     void StartNote(int song, uint8_t program, uint8_t key, uint8_t velocity, const ArchivePlayerOptions& options = {});
 
@@ -172,7 +173,7 @@ public:
     }
 
     // While any track is soloed, leaves every track that isn't out of the output, in the same way as a mute. A mute
-    // still holds on a soloed track.
+    // still applies on a soloed track.
     void SoloTrack(int track, bool solo);
 
     // Whether track `track` is soloed. False for a track outside 0 to kMaxChannels - 1.
@@ -256,8 +257,8 @@ private:
     std::optional<uint64_t> last_sound_; // the place among them of the last byte that wasn't 0
     bool sounding_ = false;
     int tracks_ = 0;
-    uint32_t channels_ = 0;      // the song's player's channel records
-    uint32_t track_records_ = 0; // the song's player's track records
+    uint32_t channels_ = 0;      // the channel records of the song's player
+    uint32_t track_records_ = 0; // the track records of the song's player
     bool audition_ = false;
     uint32_t muted_ = 0;
     uint32_t soloed_ = 0;

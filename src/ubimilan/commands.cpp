@@ -55,7 +55,7 @@ Decoded KeptAsData(std::span<const uint8_t> data, const std::string& reason, siz
     return decoded;
 }
 
-// The value of `item`'s field in the driver's units. Throws when the bytes can't hold it.
+// The value of `item`'s field in the driver's units. Throws when the bytes can't contain it.
 uint32_t DriverValue(ntdlib::commands::Fixed unit, uint32_t most, const char* what)
 {
     const int64_t value = FromUnit(unit, Scale{});

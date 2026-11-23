@@ -8,7 +8,7 @@
 // times the side's master volume plus 1, times 2, times the PSG's share (25%, 50% or 100%). A FIFO's sample counts 2 or
 // 4 times (50% or 100%). The sum on each side, plus the bias, clips to the 10-bit range of 0 to 1023. The output keeps
 // the top bits that the sound bias register's resolution allows: 9 at 32,768 Hz, 8 at 65,536 Hz, 7 and 6 at the higher
-// rates. The model gives each output sample less the bias, times 64, as a 16-bit sample. A channel at level 15 with
+// rates. The model gives each output sample less the bias, times 64 as a 16-bit sample. A channel at level 15 with
 // master volume 7 and the PSG's share at 100% then spans 240 of the 1,024 steps. GBATEK gives each PSG channel a
 // quarter of the range, and each FIFO the whole range. mGBA 0.11.0 gives the same steps for the PSG and the FIFOs.
 //
@@ -50,8 +50,9 @@
 #include <span>
 #include <vector>
 
-#include "agblib/agb/gba.h"
 #include "ntdlib/wave/blep.h"
+
+#include "agblib/agb/gba.h"
 
 namespace agblib::agb
 {
@@ -81,13 +82,13 @@ public:
     // SOUNDCNT_X turns it on.
     Apu();
 
-    // The registers from kRegSound1CntL up to kRegFifoA as `registers` holds them, with every channel off. The sound
+    // The registers from kRegSound1CntL up to kRegFifoA as `registers` contains them, with every channel off. The sound
     // is on when SOUNDCNT_X's bit 7 is set. The stores of a game's init leave the registers in such a state. Throws
-    // std::invalid_argument unless `registers` holds kSoundRegisterBytes bytes.
+    // std::invalid_argument unless `registers` contains kSoundRegisterBytes bytes.
     explicit Apu(std::span<const uint8_t> registers);
 
     // Stores the `size` bytes of `value` from `address` in the CPU's order: the lowest first. Each byte from
-    // kRegSound1CntL up to kRegFifoA takes effect at the model's present cycle. The model ignores other bytes. The
+    // kRegSound1CntL up to kRegFifoA takes effect at the model's current cycle. The model ignores other bytes. The
     // FIFOs take their samples through Queue().
     void Store(uint32_t address, int size, uint32_t value);
 
@@ -103,7 +104,7 @@ public:
     // An empty FIFO goes on with its last sample.
     void Queue(int fifo, std::span<const int8_t> samples);
 
-    // Puts the model in the enhanced mixing mode from its present cycle on. The FIFOs' samples in the console's mode
+    // Puts the model in the enhanced mixing mode from its current cycle on. The FIFOs' samples in the console's mode
     // stay, and no longer reach the output.
     void StartEnhanced();
     bool Enhanced() const
@@ -115,7 +116,7 @@ public:
     // An empty FIFO gives 0. Throws std::logic_error in the console's mode.
     void QueueEnhanced(int fifo, std::span<const float> samples);
 
-    // Returns the number of samples that FIFO `fifo` holds.
+    // Returns the number of samples that FIFO `fifo` contains.
     size_t Queued(int fifo) const
     {
         return fifos_[size_t(fifo)].samples.size();
@@ -135,8 +136,8 @@ public:
     }
 
     // Returns true if none of the PSG's channels, in any unit, can change the output any more: each one is off, or
-    // plays at a level of 0 without an envelope that rises from there. A stopped wave channel holds a level, and that
-    // level doesn't change.
+    // plays at a level of 0 without an envelope that rises from there. A stopped wave channel contains a level, and
+    // that level doesn't change.
     bool PsgSilent() const;
 
     // Sets the frame sequencer's phase: its step `step` (0 to 7) comes `cycles` (1 to kSequencerCycles) from now. When
@@ -151,7 +152,7 @@ public:
     // then right. Throws std::logic_error in the enhanced mode.
     void Run(uint64_t cycles, std::vector<int16_t>& out);
 
-    // In the enhanced mode, runs the hardware for `cycles` of the CPU's cycles, and adds the samples whose times lie
+    // In the enhanced mode, runs the hardware for `cycles` of the CPU's cycles, and adds the samples whose times are
     // before the run's end to `out`, left then right. Throws std::logic_error in the console's mode.
     void Run(uint64_t cycles, std::vector<float>& out);
 
@@ -168,6 +169,7 @@ public:
     {
         metering_ = on;
     }
+
     void ClearPeaks()
     {
         peaks_ = {};
@@ -222,7 +224,7 @@ private:
         uint8_t position = 0; // the digit of the 32 or 64
         uint32_t countdown = 0;
         uint16_t length = 0;
-        uint8_t held = 0; // the level that a stopped channel holds
+        uint8_t held = 0; // the level that a stopped channel keeps
         std::array<std::array<uint8_t, 16>, 2> banks{};
     };
 
@@ -257,8 +259,8 @@ private:
         uint32_t countdown = 0;
     };
 
-    // A PSG unit: its registers, laid out from kRegSound1CntL, and its channels. The console's unit holds the console's
-    // sound registers.
+    // A PSG unit: its registers, laid out from kRegSound1CntL, and its channels. The console's unit contains the
+    // console's sound registers.
     struct Psg
     {
         std::array<uint8_t, kSoundRegisterBytes> registers{};
@@ -277,11 +279,11 @@ private:
 
         std::array<ntdlib::wave::BandLimitedSteps, 2> steps; // the PSG's output on the left, then the right
         std::array<std::deque<float>, 2> fifos;
-        // Each unit's PSG channels' levels that the steps hold, and each side's steps of a 16-bit sample for each
+        // Each unit's PSG channels' levels that the steps contain, and each side's steps of a 16-bit sample for each
         // channel's level.
         std::vector<std::array<int, 4>> levels;
         std::vector<std::array<std::array<int32_t, 4>, 2>> gains;
-        uint64_t samples = 0; // the samples whose times lie before the present cycle
+        uint64_t samples = 0; // the samples whose times are before the current cycle
         bool stale = false;   // a run without output left the steps behind the channels
     };
 
@@ -290,6 +292,7 @@ private:
     {
         return psgs_[0].registers;
     }
+
     const std::array<uint8_t, kSoundRegisterBytes>& Registers() const
     {
         return psgs_[0].registers;

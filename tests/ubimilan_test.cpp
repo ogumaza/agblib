@@ -16,8 +16,10 @@
 
 #include "seqlib/testing/check.h"
 
+#include "agb_conversion_test_util.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
+#include "agblib/agb/sound_registers.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/sequence_export/agb/sf2.h"
 #include "agblib/sequence_export/ubimilan/convert.h"
@@ -47,6 +49,7 @@ using agblib::testing::agb_files::ReadMidi;
 using agblib::testing::agb_files::ReadSf2;
 using agblib::testing::agb_files::TempPath;
 using agblib::testing::agb_files::TempSettings;
+using agblib::testing::agb_tests::CheckFilesInMemory;
 using namespace agblib::testing::ubimilan_cart;
 using agblib::testing::ubimilan_image::kBank;
 using agblib::testing::ubimilan_image::kFileLookup;
@@ -78,16 +81,15 @@ using agblib::ubimilan::Note;
 using agblib::ubimilan::ReadMusic;
 using agblib::ubimilan::Sequencer;
 
-// The PSG's registers.
-constexpr uint32_t kNr13 = 0x04000064;
-constexpr uint32_t kNr21 = 0x04000068;
-constexpr uint32_t kNr23 = 0x0400006C;
-constexpr uint32_t kNr30 = 0x04000070;
-constexpr uint32_t kNr31 = 0x04000072;
-constexpr uint32_t kNr33 = 0x04000074;
-constexpr uint32_t kNr41 = 0x04000078;
-constexpr uint32_t kNr43 = 0x0400007C;
-constexpr uint32_t kWaveRam = 0x04000090;
+using agblib::agb::kRegNr13;
+using agblib::agb::kRegNr21;
+using agblib::agb::kRegNr23;
+using agblib::agb::kRegNr30;
+using agblib::agb::kRegNr31;
+using agblib::agb::kRegNr33;
+using agblib::agb::kRegNr41;
+using agblib::agb::kRegNr43;
+using agblib::agb::kRegWaveRam;
 
 // Returns the cents from frequency setting `from` to `to` on a square.
 double CentsBetween(uint16_t from, uint16_t to)
@@ -179,6 +181,7 @@ std::vector<Note> Play(const Rom& rom, const DriverInfo& info, int song, int fra
     {
         seq.Step();
     }
+
     if (warnings)
     {
         *warnings = seq.Warnings();
@@ -232,7 +235,7 @@ void TestVoices()
 }
 
 // With the game's switch of the kit off, channel 9's kit plays no notes and no note-offs, and no voice starts. The
-// PSG's notes play as before. The key outside the kit doesn't reach the kit, so it doesn't warn.
+// PSG's notes play as before. The key outside the kit doesn't reach the kit, and it therefore gives no warning.
 void TestKitSwitch()
 {
     const Cart cart;
@@ -296,6 +299,7 @@ void TestLoopingPiece()
     {
         seq.Step();
     }
+
     const std::array<uint32_t, 5> track = seq.TrackState();
 
     SEQLIB_CHECK(seq.SequenceStarts() == std::vector<uint32_t>({0, 30}));
@@ -336,6 +340,7 @@ void TestConversion()
         SEQLIB_CHECK_EQ(tick, 0);
         controls[bytes[1]] = bytes[2];
     }
+
     const std::map<int, int> setup = {{0, 9}, {7, 127}, {10, 64}, {11, 127}, {32, 0}, {91, 0}, {93, 0}};
     SEQLIB_CHECK(controls == setup);
     SEQLIB_CHECK(midi.Find(0x99).empty() && midi.Find(0xB9).empty() && midi.Find(0xC9).empty());
@@ -347,6 +352,7 @@ void TestConversion()
     {
         SEQLIB_CHECK_EQ(Le16(sf.Record("phdr", 38, 0) + 22), 9);
     }
+
     SEQLIB_CHECK_EQ(sf.Count("shdr", 46), 3);
     if (sf.Count("shdr", 46) == 3)
     {
@@ -379,6 +385,7 @@ void TestLoopMarkers()
     {
         markers += bytes.size() > 1 && bytes[1] == 0x06 ? 1 : 0;
     }
+
     SEQLIB_CHECK_EQ(markers, 2);
 }
 
@@ -406,6 +413,7 @@ std::vector<double> BendCents(const agblib::testing::agb_files::MidiEvents& midi
     {
         range = bytes[1] == 6 ? bytes[2] : range;
     }
+
     std::vector<double> cents;
     for (const auto& [at, bytes] : midi.Find(uint8_t(0xE0 | channel)))
     {
@@ -504,57 +512,62 @@ void TestPsgModel()
     {
         frames.push_back(seq.Step());
     }
+
     const auto last = [&](int f, uint32_t address)
     {
         return LastWrite(frames[size_t(f)], address);
     };
 
-    SEQLIB_CHECK_EQ(last(0, kNr13), 0x8000 | Setting(24));
-    SEQLIB_CHECK(last(1, kNr13) < 0 && last(2, kNr13) < 0);
-    SEQLIB_CHECK_EQ(last(3, kNr13), Setting(24.05));
-    SEQLIB_CHECK_EQ(last(6, kNr13), Setting(24.2));
-    SEQLIB_CHECK_EQ(last(7, kNr13), Setting(24.25));
-    SEQLIB_CHECK_EQ(last(8, kNr13), Setting(24.2));
-    SEQLIB_CHECK(last(12, kNr13) < 0);
-    SEQLIB_CHECK_EQ(last(17, kNr13), Setting(23.75));
-    SEQLIB_CHECK_EQ(last(18, kNr13), Setting(23.8));
+    SEQLIB_CHECK_EQ(last(0, kRegNr13), 0x8000 | Setting(24));
+    SEQLIB_CHECK(last(1, kRegNr13) < 0 && last(2, kRegNr13) < 0);
+    SEQLIB_CHECK_EQ(last(3, kRegNr13), Setting(24.05));
+    SEQLIB_CHECK_EQ(last(6, kRegNr13), Setting(24.2));
+    SEQLIB_CHECK_EQ(last(7, kRegNr13), Setting(24.25));
+    SEQLIB_CHECK_EQ(last(8, kRegNr13), Setting(24.2));
+    SEQLIB_CHECK(last(12, kRegNr13) < 0);
+    SEQLIB_CHECK_EQ(last(17, kRegNr13), Setting(23.75));
+    SEQLIB_CHECK_EQ(last(18, kRegNr13), Setting(23.8));
 
-    SEQLIB_CHECK(Wrote(frames[0], kNr23, 0x8000 | Setting(24)));
+    SEQLIB_CHECK(Wrote(frames[0], kRegNr23, 0x8000 | Setting(24)));
     for (int f = 0; f < 5; f++)
     {
-        SEQLIB_CHECK_EQ(last(f, kNr23), Setting(24));
+        SEQLIB_CHECK_EQ(last(f, kRegNr23), Setting(24));
     }
-    SEQLIB_CHECK(Wrote(frames[5], kNr23, 0x8000 | Setting(24)));
+
+    SEQLIB_CHECK(Wrote(frames[5], kRegNr23, 0x8000 | Setting(24)));
     for (int f = 5; f < 9; f++)
     {
-        SEQLIB_CHECK_EQ(last(f, kNr23), Setting(f + 20));
+        SEQLIB_CHECK_EQ(last(f, kRegNr23), Setting(f + 20));
     }
-    SEQLIB_CHECK(last(9, kNr23) == Setting(28) && last(19, kNr23) == Setting(28));
-    SEQLIB_CHECK_EQ(last(20, kNr21), 0x5040);
-    SEQLIB_CHECK_EQ(last(20, kNr23), 0x8000 | Setting(24));
-    SEQLIB_CHECK(last(21, kNr23) < 0);
-    SEQLIB_CHECK(last(25, kNr21) < 0);
-    SEQLIB_CHECK_EQ(last(25, kNr23), Setting(26));
+
+    SEQLIB_CHECK(last(9, kRegNr23) == Setting(28) && last(19, kRegNr23) == Setting(28));
+    SEQLIB_CHECK_EQ(last(20, kRegNr21), 0x5040);
+    SEQLIB_CHECK_EQ(last(20, kRegNr23), 0x8000 | Setting(24));
+    SEQLIB_CHECK(last(21, kRegNr23) < 0);
+    SEQLIB_CHECK(last(25, kRegNr21) < 0);
+    SEQLIB_CHECK_EQ(last(25, kRegNr23), Setting(26));
 
     std::vector<uint32_t> dac;
     std::vector<long long> wave;
     for (const RegisterWrite& w : frames[0])
     {
-        if (w.address == kNr30)
+        if (w.address == kRegNr30)
         {
             dac.push_back(w.value);
         }
-        if (w.address == kWaveRam)
+
+        if (w.address == kRegWaveRam)
         {
             wave.push_back(w.value);
         }
     }
+
     SEQLIB_CHECK(dac == std::vector<uint32_t>({0x20, 0x60, 0xA0}));
     SEQLIB_CHECK(wave == std::vector<long long>({0xFF, 0x00}));
-    SEQLIB_CHECK_EQ(last(0, kNr31), 0x2000);
-    SEQLIB_CHECK_EQ(last(0, kNr33), 0x8000 | Setting(36));
-    SEQLIB_CHECK_EQ(last(0, kNr41), 0xF01E);
-    SEQLIB_CHECK_EQ(last(0, kNr43), 0xC000);
+    SEQLIB_CHECK_EQ(last(0, kRegNr31), 0x2000);
+    SEQLIB_CHECK_EQ(last(0, kRegNr33), 0x8000 | Setting(36));
+    SEQLIB_CHECK_EQ(last(0, kRegNr41), 0xF01E);
+    SEQLIB_CHECK_EQ(last(0, kRegNr43), 0xC000);
 
     std::vector<int> keys;
     std::vector<bool> legato;
@@ -566,6 +579,7 @@ void TestPsgModel()
             legato.push_back(n.legato);
         }
     }
+
     SEQLIB_CHECK(keys == std::vector<int>({60, 64, 60, 62}));
     SEQLIB_CHECK(legato == std::vector<bool>({false, false, false, true}));
 }
@@ -600,6 +614,7 @@ void TestPsgTracks()
             found.push_back(bytes[1]);
             SEQLIB_CHECK_EQ(bytes[2], 127);
         }
+
         SEQLIB_CHECK(found == keys[size_t(c)]);
         if (!ons.empty())
         {
@@ -607,6 +622,7 @@ void TestPsgTracks()
             SEQLIB_CHECK_EQ(ControlAt(midi, c, 0, ons[0].tick), c == 3 ? kNoiseBank : PresetBank(c));
         }
     }
+
     SEQLIB_CHECK(midi.Find(0x9A).empty());
 
     const std::vector<double> square1 = BendCents(midi, 0);
@@ -626,6 +642,7 @@ void TestPsgTracks()
         const std::string name(preset, std::find(preset, preset + 20, 0));
         drums = drums || (name == "Noise drums" && Le16(preset + 20) == 0 && Le16(preset + 22) == kNoiseBank);
     }
+
     SEQLIB_CHECK(drums);
 }
 
@@ -641,14 +658,7 @@ void TestSongFiles()
     {
         const SongReport written = ConvertSong(rom, info, song, opt, nullptr);
         const SongFiles files = ConvertSongFiles(rom, info, song, opt);
-        SEQLIB_REQUIRE(written.ok && files.report.ok);
-        SEQLIB_CHECK(!written.midi_path.empty() && !written.sf2_path.empty());
-        SEQLIB_CHECK(files.report.midi_path.empty() && files.report.sf2_path.empty());
-        SEQLIB_CHECK(!files.midi.empty() && files.midi == ReadAll(written.midi_path));
-        SEQLIB_CHECK(!files.sf2.empty() && files.sf2 == ReadAll(written.sf2_path));
-        SEQLIB_CHECK(files.report.seconds == written.seconds && files.report.loop_start == written.loop_start);
-        SEQLIB_CHECK_EQ(files.report.tracks, written.tracks);
-        SEQLIB_CHECK(files.report.warnings == written.warnings);
+        CheckFilesInMemory(written, files);
     }
 
     ConvertSettings none = opt;
@@ -672,6 +682,7 @@ void TestShortLoop()
     {
         cart.Put8(kSampleAt + 16 + i, uint8_t(i * 9));
     }
+
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
     InstrumentSet set;
@@ -686,7 +697,7 @@ void TestShortLoop()
 
 // Tomb Raider's samples that play as music follow the pieces, in the cart's numbers up to 108. Another game's samples
 // don't. A sample's voice goes on looping, and each pass is a note. 4096 points are 512 of the mixer's runs of 16400
-// cycles, 29.89 frames of 280896 cycles, so the passes start on frames 30, 60 and 90.
+// cycles, 29.89 frames of 280896 cycles. The passes therefore start on frames 30, 60 and 90.
 void TestSamplesAsMusic()
 {
     const Cart cart(true);
@@ -712,6 +723,7 @@ void TestSamplesAsMusic()
     {
         looping.Step();
     }
+
     SEQLIB_CHECK(looping.SequenceStarts() == std::vector<uint32_t>({0, 30, 60, 90}));
     SEQLIB_REQUIRE_EQ(looping.Notes().size(), 4);
     SEQLIB_CHECK_EQ(looping.Notes()[0].key, kFirstSampleKey);
@@ -721,13 +733,14 @@ void TestSamplesAsMusic()
     SEQLIB_CHECK_EQ(looping.Notes()[1].on, 30);
     SEQLIB_CHECK(!looping.Notes()[3].ended);
 
-    // 4000 points are 500 runs, which end on frame 29.
+    // 4000 points are 500 runs. They end on frame 29.
     Sequencer once(rom, info, kOnceSong);
     SEQLIB_REQUIRE(once.Valid());
     for (int f = 0; f < 40; f++)
     {
         once.Step();
     }
+
     SEQLIB_REQUIRE_EQ(once.Notes().size(), 1);
     SEQLIB_CHECK_EQ(once.Notes()[0].key, kFirstSampleKey + 4);
     SEQLIB_CHECK(once.Notes()[0].ended && once.Notes()[0].off == 30);
@@ -760,8 +773,9 @@ void TestSamplesAsMusic()
     SEQLIB_CHECK(std::fabs(sum_once.seconds - 30 * double(kFrameCycles) / kSecondCycles) < 1e-9);
     SEQLIB_CHECK_EQ(ReadMidi(sum_once.midi_path).Find(0x9A).size(), 1);
 
-    // A sample with points before its loop: 514 runs to the first loop's end, then 512 to each next, which end 30.01,
-    // 59.90 and 89.79 frames in. Later passes play another key, from the loop's start, so the markers go on the second.
+    // A sample with points before its loop: 514 runs to the first loop's end, then 512 to each next. They end 30.01,
+    // 59.90 and 89.79 frames in. Later passes play another key, from the loop's start. The markers therefore go on the
+    // second pass.
     constexpr int kInsideSong = 4;
     Sequencer inside(rom, info, kInsideSong);
     SEQLIB_REQUIRE(inside.Valid());
@@ -769,6 +783,7 @@ void TestSamplesAsMusic()
     {
         inside.Step();
     }
+
     SEQLIB_CHECK(inside.SequenceStarts() == std::vector<uint32_t>({0, 30, 60}));
     SEQLIB_REQUIRE_EQ(inside.Notes().size(), 3);
     SEQLIB_CHECK(inside.Notes()[0].key == kFirstSampleKey + 1 && inside.Notes()[0].skip == 0);
@@ -804,6 +819,7 @@ void TestSamplesAsMusic()
             skipped += g.oper == sf2::kStartAddrsOffset ? int(g.amount) : 0;
         }
     }
+
     SEQLIB_CHECK_EQ(skipped, 16);
 }
 

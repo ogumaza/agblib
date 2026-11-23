@@ -47,9 +47,9 @@ inline bool RepeatsTempoAtLoopStart(const MidiEvents& midi);
 // says why.
 inline Sf2Records ReadSf2(const std::string& path);
 
-// Returns true if the SoundFont has an instrument and every instrument starts with a global zone that holds the
-// modulators of seqlib's kGlobalZoneModulators. The pitch wheel then covers the whole range that RPN 0 sets. CC10
-// gets the pan range that most synthesizers give it.
+// Returns true if the SoundFont has an instrument and every instrument starts with a global zone that contains the
+// modulators of seqlib's kGlobalZoneModulators. The pitch wheel then covers the whole range that RPN 0 sets. CC10 gets
+// the pan range that most synthesizers give it.
 inline bool HasGlobalZoneModulators(const Sf2Records& sf);
 
 // Returns true if `s` loops from point `loop_start` over `length` points, repeated as many times as it takes to reach
@@ -101,6 +101,7 @@ inline bool RepeatsTempoAtLoopStart(const MidiEvents& midi)
         {
             return bytes == tempo;
         }
+
         if (is_tempo)
         {
             tempo = bytes;
@@ -145,18 +146,15 @@ inline bool HasGlobalZoneModulators(const Sf2Records& sf)
             return false;
         }
 
-        const uint16_t first = Le16(sf.Record("ibag", 4, bag) + 2);
-        const uint16_t end = Le16(sf.Record("ibag", 4, bag + 1) + 2);
+        const std::vector<seqlib::sf2::Modulator> mods = sf.ZoneModulators(bag);
         for (const seqlib::sf2::Modulator& wanted : seqlib::sf2::kGlobalZoneModulators)
         {
-            bool found = false;
-            for (uint16_t m = first; m < end; m++)
+            const auto same = [&wanted](const seqlib::sf2::Modulator& mod)
             {
-                const uint8_t* mod = sf.Record("imod", 10, m);
-                found = found || (Le16(mod) == wanted.source && Le16(mod + 2) == wanted.dest &&
-                                  int16_t(Le16(mod + 4)) == wanted.amount && Le16(mod + 6) == wanted.amount_source &&
-                                  Le16(mod + 8) == wanted.transform);
-            }
+                return mod.source == wanted.source && mod.dest == wanted.dest && mod.amount == wanted.amount &&
+                       mod.amount_source == wanted.amount_source && mod.transform == wanted.transform;
+            };
+            const bool found = std::any_of(mods.begin(), mods.end(), same);
             if (!found)
             {
                 return false;
@@ -180,6 +178,7 @@ inline bool LengthenedLoop(const seqlib::sf2::Sample& s, uint32_t loop_start, ui
     {
         return false;
     }
+
     for (size_t i = size_t(loop_start) + length; i < s.data.size(); i++)
     {
         if (s.data[i] != s.data[i - length])

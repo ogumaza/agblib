@@ -80,8 +80,8 @@ public:
     // Removes everything added since checkpoint `c`, including samples.
     void Restore(const Checkpoint& c);
 
-    // Each returns the index of the SF2 sample for a sound source, which is created on first use and shared afterwards.
-    // DsSample() returns -1 for a sample that isn't valid.
+    // Each returns the index of the SF2 sample for a sound source. The sample is made on first use and shared
+    // afterwards. DsSample() returns -1 for a sample that isn't valid.
     int DsSample(int index);
     int SquareSample(int duty);
     int WaveSample(int wave, int volume);

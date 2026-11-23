@@ -31,11 +31,11 @@ constexpr uint16_t kBeatQuarterTicks = 480;
 uint32_t QuarterTick(double quarters);
 
 // The MIDI ticks of a song's frames: on the song's beat, as a BeatGrid works it out, or with frame timing, on the
-// frames the driver plays them in.
+// frames that the driver plays them in.
 class BeatTicks
 {
 public:
-    // Keeps a reference to `grid`, which has to outlive this.
+    // Keeps a reference to `grid`. The grid has to outlive this.
     BeatTicks(const BeatGrid& grid, bool frame_timing);
 
     // Returns the tick of a place in the song on `frame`, such as its end: on the beat if it's near it.

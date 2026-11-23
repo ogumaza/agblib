@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "agblib/agb/rom.h"
+#include "agblib/sequence_export/agb/performance_steps.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/ubimilan/driver.h"
 #include "agblib/ubimilan/sequencer.h"
@@ -33,16 +34,9 @@ struct ConvertedNote
 };
 
 // A piece as its conversion plays it.
-struct ConvertedSong
+struct ConvertedSong : agb::FrameTimes
 {
     std::vector<std::string> warnings;
-    bool truncated = false;
-    bool loops = false;
-    uint32_t loop_start = 0; // frames
-    uint32_t loop_end = 0;
-    uint32_t end_frame = 0;
-    uint32_t end_tick = 0;
-    double quarter_frames = 0;                         // the frames of a quarter note at the piece's first tempo
     std::vector<agblib::ubimilan::SequenceRead> reads; // each pass of the track through a sequence
     std::vector<ConvertedNote> notes;                  // each channel's notes in order, the channels in order
 };

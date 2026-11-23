@@ -13,6 +13,7 @@
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/sequence_export/agb/psg.h"
+#include "agblib/sequence_export/agb/psg_cycles.h"
 #include "agblib/sequence_export/agb/sf2.h"
 
 namespace agblib::sequence_export::rd2
@@ -23,22 +24,21 @@ namespace
 using agblib::agb::kFrameRate;
 using agblib::sequence_export::agb::AddLoopGuard;
 using agblib::sequence_export::agb::AddressName;
+using agblib::sequence_export::agb::AppendNoise;
+using agblib::sequence_export::agb::CenteredSquareCycle;
 using agblib::sequence_export::agb::kLoopGuard;
 using agblib::sequence_export::agb::kMiddleC;
 using agblib::sequence_export::agb::kMinLoop;
 using agblib::sequence_export::agb::LengthenLoop;
 using agblib::sequence_export::agb::MakeInstrument;
 using agblib::sequence_export::agb::MakePreset;
-using agblib::sequence_export::agb::NextLfsr;
 using agblib::sequence_export::agb::SetCycle;
 using agblib::sequence_export::agb::SquareName;
 using agblib::sequence_export::agb::Timecents;
+using agblib::sequence_export::agb::WavePatternCycle;
 
 // The longest sample read, in points.
 constexpr uint32_t kMaxSamplePoints = 1u << 24;
-
-// The Game Boy's square duties: the steps of 8 that are high.
-constexpr int kDutyHigh[4] = {1, 2, 4, 6};
 
 // The points a square sample gives each of its 8 steps.
 constexpr int kStepPoints = 8;
@@ -129,24 +129,11 @@ int SoundfontBuilder::SquareSample(int duty)
         return cached->second;
     }
 
-    // The high steps come first. The GBA's output removes the DC offset. Without it, the levels sit either side of
-    // 0. They lie as far apart as a wave's levels 0 and 15.
-    const int high = kDutyHigh[duty];
-    std::vector<int16_t> cycle;
-    for (int step = 0; step < 8; step++)
-    {
-        const double level = step < high ? 2.0 - high / 4.0 : -high / 4.0;
-        for (int i = 0; i < kStepPoints; i++)
-        {
-            cycle.push_back(int16_t(std::lround(level * psg_share_ * 32767)));
-        }
-    }
-
     sf2::Sample s;
     s.name = SquareName(duty);
     s.sample_rate = uint32_t(std::lround(8 * kStepPoints * kMiddleC));
     s.original_key = 60;
-    SetCycle(s, cycle);
+    SetCycle(s, CenteredSquareCycle(duty, kStepPoints, psg_share_));
     file_.samples.push_back(std::move(s));
     squares_[duty] = int(file_.samples.size()) - 1;
 
@@ -161,22 +148,11 @@ int SoundfontBuilder::WaveSample(uint32_t address)
         return cached->second;
     }
 
-    // The wave voice plays 32 steps of 4 bits, the high nibble of each byte first.
-    std::vector<int16_t> cycle;
-    for (uint32_t i = 0; i < 16; i++)
-    {
-        const uint8_t b = rom_.U8(address + i);
-        for (int v : {b >> 4, b & 15})
-        {
-            cycle.push_back(int16_t(std::lround((v - 7.5) / 7.5 * psg_share_ * 32767)));
-        }
-    }
-
     sf2::Sample s;
     s.name = AddressName("Wave", address);
     s.sample_rate = uint32_t(std::lround(32 * kC3));
     s.original_key = 48;
-    SetCycle(s, cycle);
+    SetCycle(s, WavePatternCycle(rom_, address, psg_share_));
     file_.samples.push_back(std::move(s));
     waves_[address] = int(file_.samples.size()) - 1;
 
@@ -198,28 +174,8 @@ int SoundfontBuilder::NoiseSample(uint8_t nr43)
     s.sample_rate = kNoiseRate;
     s.original_key = 60;
 
-    // The LFSR's clock is 524288 / r / 2^(s+1) Hz, with r = 0 counting as 0.5. Each point at 65536 Hz moves it on by
-    // 8 / ((r ? 2r : 1) << s) steps. The output is high while the LFSR's low bit is 0.
-    const int shift = nr43 >> 4;
-    const int ratio = nr43 & 7;
-    uint32_t lfsr = 0x7FFF;
-    uint32_t clock = 0;
-    for (uint32_t i = 0; i < kNoisePoints; i++)
-    {
-        s.data.push_back(shift < 14 ? int16_t(std::lround(((lfsr & 1) ? -32767 : 32767) * psg_share_)) : 0);
-        if (shift >= 14)
-        {
-            continue;
-        }
-
-        clock += 8;
-        const uint32_t den = uint32_t(ratio ? 2 * ratio : 1) << shift;
-        for (; clock >= den; clock -= den)
-        {
-            lfsr = NextLfsr(lfsr, (nr43 & 8) != 0);
-        }
-    }
-
+    // Each point at 65536 Hz moves the LFSR on by 8 steps of its clock with a divisor of 1.
+    AppendNoise(s, nr43, kNoisePoints, 524288 / kNoiseRate, psg_share_);
     s.loop_start = 0;
     s.loop_end = uint32_t(s.data.size());
     AddLoopGuard(s);

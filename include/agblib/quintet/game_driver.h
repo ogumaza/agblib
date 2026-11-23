@@ -3,7 +3,7 @@
 // A game's Quintet driver, run on the GBA's CPU (agb::System). It calls the routines that the game calls: the sound
 // init and the routines that the game calls after it, the loader of a music file where the game has one, the play
 // routine of a song or of a sound effect, and each frame the per-frame routine. It records the stores to the sound
-// registers, to DMA 1 and DMA 2, to timers 0 and 1, and to the FIFOs. It's the reference for ntdlib's model of the
+// registers, to DMA 1 and DMA 2, to timers 0 and 1, and to the FIFOs. It's the reference for the agblib model of the
 // driver (quintet::Sequencer). Neither the DMAs nor the timers run.
 
 #pragma once
@@ -31,7 +31,7 @@ struct GameRoutines
         std::vector<uint32_t> args;
     };
 
-    uint32_t image = 0;      // a program's copy in the ROM, which runs from the start of EWRAM, or 0 for the game
+    uint32_t image = 0;      // a program's copy in the ROM, run from the start of EWRAM, or 0 for the game
     uint32_t sound_init = 0; // the game's sound init, or the driver's init in a game with a loader
     std::vector<Call> init_calls;
     uint32_t loader = 0;          // the loader of a music file: r0 = the file's first word. 0 if the game has none

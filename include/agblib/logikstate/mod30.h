@@ -47,7 +47,7 @@ enum class Mod30Layout
     // A compact header: the count of orders at 0x34, a map of the samples, and the patterns' offsets.
     kB,
     // Layout B with the rate kept at 0x34 and the map and the list of orders in the other order. The patterns' table
-    // holds sizes, or in one build the offsets of layout B.
+    // contains sizes, or in one build the offsets of layout B.
     kC,
 };
 
@@ -92,7 +92,7 @@ struct Mod30Module
 {
     uint32_t address = 0;
     Mod30Layout layout = Mod30Layout::kB;
-    bool pattern_offsets = false; // the patterns' table holds offsets, not sizes
+    bool pattern_offsets = false; // the patterns' table contains offsets, not sizes
     uint32_t channels = 0;
     uint32_t order_count = 0; // the header's count: 255 in some games' modules of layout B
     uint32_t real_orders = 0; // the orders up to the first kMod30EndOfOrders, or the header's count if smaller
@@ -102,15 +102,15 @@ struct Mod30Module
     uint32_t tempo = 0;
     uint32_t speed = 0;
     std::array<uint8_t, kMod30Orders> orders = {};
-    // The address of each pattern's first block, as the load routine or the decoder works it out. A table of sizes
+    // The address of each pattern's first block as the load routine or the decoder works it out. A table of sizes
     // gives 0 to a pattern past the count.
     std::array<uint32_t, kMod30Patterns> patterns = {};
     uint32_t end = 0; // the address after the last block of the last pattern
 };
 
 // Returns the layout of the module header at `address`. The header starts with the signature. A or C if the word at
-// 0x34 is the rate of rate index 0, C if the words at 0x13C and 0x140 then hold a count of patterns and of rows, and B
-// otherwise.
+// 0x34 is the rate of rate index 0, C if the words at 0x13C and 0x140 then contain a count of patterns and of rows, and
+// B otherwise.
 Mod30Layout DetectLayout(const Rom& rom, uint32_t address);
 
 // Reads the header of the module at `address`. Returns false if no module that a driver can play starts there.
@@ -152,7 +152,7 @@ bool ReadMod30Bank(const Rom& rom, uint32_t address, uint32_t header_size, Mod30
 // if they fit and of 12 otherwise. Returns false if neither fits.
 bool FindMod30Bank(const Rom& rom, const std::vector<uint32_t>& modules, Mod30Bank& bank);
 
-// The streams of one channel's block in a pattern, decoded row by row, as the check of a module's data uses them.
+// The streams of one channel's block in a pattern, decoded row by row as the check of a module's data uses them.
 struct Mod30Cell
 {
     uint16_t note = kMod30NoNote;

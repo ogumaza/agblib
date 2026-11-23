@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of a sequence of Nintendo R&D2's GBA driver for an editor. ntdlib's model of the driver
-// (agblib::rd2::Sequencer) plays the sequence as ConvertSong does. The performance holds the notes of ConvertSong's
-// MIDI file, each with the command that started it. It also holds each track's stretches of commands, and each track's
-// changes of its volume, pan and echo.
+// The performance of a sequence of Nintendo R&D2's GBA driver for an editor. The model of the driver
+// (agblib::rd2::Sequencer) plays the sequence as ConvertSong does. The performance contains the notes of ConvertSong's
+// MIDI file, each with the command that started it. It also contains each track's stretches of commands, and each
+// track's changes of its volume, pan and echo.
 
 #pragma once
 
@@ -11,11 +11,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/rd2/driver.h"
 #include "agblib/sequence_export/agb/settings.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::rd2
 {
@@ -55,10 +56,10 @@ struct Performance : ntdlib::sequence_export::PerformanceBase
     uint32_t midi_end_tick = 0;
 
     // Each track's changes of its volume, pan and echo, in the order of their ticks. The volume is command E0's value,
-    // and 0x80 before a command sets it. The pan is command C3's value less 64: 0 lies at the centre, and 0 before a
-    // command sets it. A command's value can lie outside -64 to 63: the driver holds it to the voice's range. The send
-    // to aux bus A is command E3's value: the track's share of the echo. It is 0 before a command sets it, and 0x7F for
-    // a sound effect's track. A track that F8 starts takes the volume, pan and echo of the track that runs F8, at its
+    // and 0x80 before a command sets it. The pan is command C3's value less 64: 0 is the centre, and 0 before a command
+    // sets it. A command's value can be outside -64 to 63: the driver limits it to the voice's range. The send to aux
+    // bus A is command E3's value: the track's share of the echo. It is 0 before a command sets it, and 0x7F for a
+    // sound effect's track. A track that F8 starts takes the volume, pan and echo of the track that runs F8, at its
     // first command. A track that starts itself takes the values before a command sets them.
     std::array<std::vector<ntdlib::sequence_export::MixChange>, 16> mix;
 };

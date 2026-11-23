@@ -18,10 +18,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/wave/blep.h"
 #include "xsflib/binary.h"
 #include "xsflib/player/archive_source.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/rd2/archive_player.h"
@@ -30,10 +32,11 @@
 #include "agblib/rd2/output.h"
 #include "agblib/rd2/sequencer.h"
 #include "agblib/testing/rd2_cart.h"
-#include "ntdlib/wave/blep.h"
 
 namespace
 {
+
+using agblib::testing::agb_tests::Throws;
 
 using namespace agblib::testing::rd2_cart;
 using agblib::agb::kEnhancedFrameSamples;
@@ -57,21 +60,6 @@ constexpr int kEchoFrames = 18; // the frames of the driver's echo line
 
 // The cycle of the timer's overflow that takes the first mix's first byte.
 constexpr uint32_t kFirstByteCycle = uint32_t(kFifoLead + 1) * kFifoCycles;
-
-template <typename E, typename F>
-bool Throws(F f)
-{
-    try
-    {
-        f();
-    }
-    catch (const E&)
-    {
-        return true;
-    }
-
-    return false;
-}
 
 // A ROM and its driver, for the players' references.
 struct Game

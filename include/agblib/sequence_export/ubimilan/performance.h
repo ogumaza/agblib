@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of a piece of Ubisoft Milan's GBA driver for an editor. ntdlib's model of the driver
-// (agblib::ubimilan::Sequencer) plays the piece as ConvertSong does. The performance holds the notes of ConvertSong's
-// MIDI file, each with the command that started it. It also holds each pass of the track through a sequence.
+// The performance of a piece of Ubisoft Milan's GBA driver for an editor. The model of the driver
+// (agblib::ubimilan::Sequencer) plays the piece as ConvertSong does. The performance contains the notes of
+// ConvertSong's MIDI file, each with the command that started it. It also contains each pass of the track through a
+// sequence.
 
 #pragma once
 
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/ubimilan/driver.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::ubimilan
 {
@@ -41,7 +43,7 @@ struct PieceSequence
 // A tick is one of the driver's frames (agblib::agb::kFrameRate of them to a second). The driver's tempo never changes.
 // `timebase` is the number of whole frames nearest to a quarter note at the piece's first tempo, and the one entry of
 // `tempo` gives that many frames their time. Each of the sequence's channels plays on the track of the same number.
-// The noise that channel 9's keys up to 11 play goes on track 3, named "Noise", as in the MIDI file: no sequence
+// The noise that channel 9's keys up to 11 play goes on track 3, named "Noise" as in the MIDI file: no sequence
 // channel 3 plays notes. A note of a PSG channel is a run of frames in which the channel sounds, at the velocity 127,
 // and a noise note's key and program name its drum. A kit note's velocity gives its level. The driver has no volume,
 // pan or sends of a track. A preset is 128 times the note's bank plus its program. A piece that is a sample (a song

@@ -30,6 +30,7 @@ ChannelWriter::ChannelWriter(MidiTrack& track, int channel, int program, BankPro
         {
             track_.BendRange(0, channel_, range_);
         }
+
         program_ = -1;
         pan_ = expression_ = bend_ = -1;
         return;
@@ -86,6 +87,7 @@ void ChannelWriter::SetLevels(uint32_t at, double left, double right)
     {
         track_.Control(at, channel_, cc::kPan, pan_ = pan);
     }
+
     if (expression != expression_)
     {
         track_.Control(at, channel_, cc::kExpression, expression_ = expression);

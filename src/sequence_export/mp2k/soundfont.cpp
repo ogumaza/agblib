@@ -75,7 +75,7 @@ using agblib::sequence_export::agb::VolumeEnvelope;
 namespace
 {
 
-// The kinds of sample, which with a source make the cache's keys.
+// The kinds of sample. With a source, a kind makes a key of the cache.
 enum Kind
 {
     kDirectKind,
@@ -91,12 +91,12 @@ enum Kind
 // channel's full level of 125/256 into 4 times that much of the sample.
 constexpr int kPsgAttenuation = 63;
 
-// The PSG's envelope steps: one for each count of its counter, which counts 16 times every 15 frames.
+// The PSG's envelope steps: one for each count of its counter. The counter counts 16 times every 15 frames.
 constexpr double kPsgStepsPerSecond = kFrameRate * 16 / 15;
 
 // Returns the level of a PSG channel at its full volume against a full-scale sample. Camelot's mixer plays a sample
-// channel at 9/8 of the driver's full level, so the PSG is that much quieter against it. The samples hold the levels,
-// rather than the zones' attenuation, which FluidSynth applies at 0.4 of its value.
+// channel at 9/8 of the driver's full level. The PSG is that much quieter against it. The samples contain the levels,
+// rather than the zones' attenuation: FluidSynth applies attenuation at 0.4 of its value.
 double PsgLevel(const DriverInfo& info)
 {
     const double level = std::pow(10.0, -kPsgAttenuation / 200.0);
@@ -143,10 +143,10 @@ int SampleFadeTime(int from, int to, int rate)
     return Timecents(100.0 / decibels * frames / kFrameRate);
 }
 
-// Returns the SoundFont duration for a fade to silence lasting `seconds` that falls linearly in level, as the PSG's
-// fades and Camelot's mixer's releases do. Such a fade stays loud for most of its length, where a SoundFont's falls
-// linearly in decibels and becomes quiet sooner, so the SoundFont fade is lengthened to keep their loudness close.
-// Rare's driver fades linearly too, and its conversion lengthens its fades the same way.
+// Returns the SoundFont duration for a fade to silence lasting `seconds` that falls linearly in level. The PSG's fades
+// and the releases of Camelot's mixer fall that way. Such a fade stays loud for most of its length, where a SoundFont's
+// falls linearly in decibels and becomes quiet sooner. The SoundFont fade is therefore lengthened to keep their
+// loudness close. Rare's driver fades linearly too, and its conversion lengthens its fades the same way.
 int StraightFadeTime(double seconds)
 {
     return Timecents(FadeStretch(seconds * kFrameRate) * seconds);
@@ -198,7 +198,7 @@ int RhythmZonePan(const DriverInfo& info, int rhythm_pan, bool psg)
 constexpr double kHalfPower = 30.103;
 
 // The default modulator from CC91 to the reverb send (SoundFont 2.04, section 8.4.8) with an amount of 0. A zone that
-// holds it gets no reverb at any value of CC91.
+// contains it gets no reverb at any value of CC91.
 constexpr sf2::Modulator kNoReverb = {sf2::kController | 91, sf2::kReverbEffectsSend, 0, sf2::kNoController,
                                       sf2::kLinear};
 
@@ -207,15 +207,15 @@ constexpr sf2::Modulator kNoReverb = {sf2::kController | 91, sf2::kReverbEffects
 void AddParts(const DriverInfo& info, const Voice& voice, int sample, bool loops, const std::vector<Part>& parts,
               int rhythm_pan, bool exclusive, sf2::Instrument& instrument)
 {
-    // The samples hold the levels of the sample and PSG channels (see DirectLevel() and PsgLevel()).
+    // The samples contain the levels of the sample and PSG channels (see DirectLevel() and PsgLevel()).
     const int psg = voice.PsgChannel();
     const VolumeEnvelope env = EnvelopeFor(info, voice);
     const int exclusive_class = exclusive && psg && env.release > kExclusiveRelease ? psg : 0;
     const int pan = RhythmZonePan(info, rhythm_pan, psg != 0);
 
     // A PSG channel on one side alone plays that side at the level that each side gets in the middle. Under the RP-036
-    // pan law, a zone on one side alone plays 3 dB louder there than in the middle. The zone of such a PSG drum holds
-    // those 3 dB as attenuation.
+    // pan law, a zone on one side alone plays 3 dB louder there than in the middle. The zone of such a PSG drum takes
+    // those 3 dB off as attenuation.
     const sf2::ZoneAttenuation side = psg && pan ? sf2::ToZoneAttenuation(kHalfPower) : sf2::ZoneAttenuation{};
     for (const Part& part : parts)
     {
@@ -225,28 +225,34 @@ void AddParts(const DriverInfo& info, const Voice& voice, int sample, bool loops
         {
             z.generators.push_back(sf2::Generator::Value(sf2::kPan, pan));
         }
+
         if (side.generator)
         {
             z.generators.push_back(sf2::Generator::Value(sf2::kInitialAttenuation, side.generator));
         }
+
         if (side.modulator)
         {
             z.modulators.push_back(*side.modulator);
         }
+
         AddVolumeEnvelope(z, env);
         AddTuning(z, int(std::lround(part.cents)));
         if (part.fixed)
         {
             z.generators.push_back(sf2::Generator::Value(sf2::kScaleTuning, 0));
         }
+
         if (loops)
         {
             z.generators.push_back(sf2::Generator::Value(sf2::kSampleModes, 1));
         }
+
         if (exclusive_class)
         {
             z.generators.push_back(sf2::Generator::Value(sf2::kExclusiveClass, exclusive_class));
         }
+
         z.generators.push_back(sf2::Generator::Value(sf2::kSampleId, sample));
 
         // The driver's reverb works on the mixer's output. The PSG doesn't pass through the mixer. A PSG zone therefore
@@ -266,7 +272,7 @@ void AddParts(const DriverInfo& info, const Voice& voice, int sample, bool loops
     }
 }
 
-// Returns the index of the sample that `cache` holds under `key`, or -1 if it holds none.
+// Returns the index of the sample that `cache` keeps under `key`, or -1 if it has none.
 template <typename Key>
 int CachedSample(const std::map<Key, int>& cache, const Key& key)
 {
@@ -293,8 +299,8 @@ VolumeEnvelope EnvelopeFor(const DriverInfo& info, const Voice& voice)
 
     // A PSG voice's envelope moves through its 16 levels in steps, one every `attack`, `decay` or `release` counts of
     // its counter, with the sustain level from 0 to 15. The full volume goes with the full level of 15. The driver
-    // counts each value's whole byte. A sustain above 15 gives a sustain level at or above the full level, and the
-    // zone holds the full level.
+    // counts each value's whole byte. A sustain above 15 gives a sustain level at or above the full level, and the zone
+    // keeps the full level.
     if (voice.PsgChannel())
     {
         const int attack = voice.attack, decay = voice.decay, release = voice.release;
@@ -331,9 +337,9 @@ VolumeEnvelope EnvelopeFor(const DriverInfo& info, const Voice& voice)
         env.attack = Timecents((255.0 / voice.attack - 1) / kFrameRate);
     }
 
-    // The decay falls to the sustain level, and at a sustain of 0, the note stops when it gets there. The frame in
-    // which the attack reaches 255 plays at 255, and the decay starts on the next frame. The hold keeps the full level
-    // for that frame.
+    // The decay falls to the sustain level. At a sustain of 0, the note stops when it gets there. The frame in which
+    // the attack reaches 255 plays at 255, and the decay starts on the next frame. The hold keeps the full level for
+    // that frame.
     const int sustain = voice.sustain;
     if (sustain < 255)
     {
@@ -434,12 +440,13 @@ int SoundfontBuilder::InstrumentFor(uint32_t address, int key)
         return -1;
     }
 
-    // Voice groups often hold the same voice, so the instruments are kept by the voice's 12 bytes.
+    // Voice groups often contain the same voice. The instruments are therefore kept by the voice's 12 bytes.
     std::array<uint8_t, 12> bytes;
     for (uint32_t i = 0; i < 12; i++)
     {
         bytes[i] = rom_.U8(address + i);
     }
+
     const auto cached = instruments_.find(bytes);
     if (cached != instruments_.end())
     {
@@ -459,7 +466,7 @@ int SoundfontBuilder::InstrumentFor(uint32_t address, int key)
     else if (top.type & kVoiceDrumKit)
     {
         // Each key of a drum kit plays the kit's voice for that key, at that voice's key and pan. The Metroid games'
-        // sequencer gives the track the voice's pan instead. CC10 holds that pan.
+        // sequencer gives the track the voice's pan instead. CC10 sets that pan.
         for (int k = 0; k < 128; k++)
         {
             Voice sub;
@@ -513,8 +520,8 @@ void SoundfontBuilder::AddSynthKey(int instrument, uint32_t address, int key)
         return;
     }
 
-    // The key's voice: the voice itself, or a key split's or a drum kit's for the key, which plays at its own key and
-    // pan in a drum kit.
+    // The key's voice: the voice itself, or a key split's or a drum kit's for the key. A drum kit's voice plays at the
+    // key and pan that the voice gives.
     Voice voice;
     if (!ReadVoice(rom_, address, voice))
     {
@@ -531,6 +538,7 @@ void SoundfontBuilder::AddSynthKey(int instrument, uint32_t address, int key)
         {
             return;
         }
+
         if (drums)
         {
             fixed_key = voice.key;
@@ -538,7 +546,7 @@ void SoundfontBuilder::AddSynthKey(int instrument, uint32_t address, int key)
         }
     }
 
-    // The sample plays the key at its own pitch, so the zone needs no tuning.
+    // The sample plays the key at the sample's pitch. The zone requires no tuning.
     const Synth synth = SynthOf(rom_, info_, voice);
     if ((synth == Synth::kPulse || synth == Synth::kSaw) && voice.attack)
     {
@@ -590,6 +598,7 @@ BankProgram SoundfontBuilder::SharedPreset(int program, int instrument)
             slot = {bank, program};
         }
     }
+
     for (int i = 0; i < 128 * 128 && slot.bank < 0; i++)
     {
         if (!taken[size_t(i)])
@@ -670,6 +679,7 @@ int SoundfontBuilder::DirectSample(uint32_t address)
         {
             steps.data.push_back(int16_t(std::clamp<int64_t>(int64_t(point) * 256, -32768, 32767)));
         }
+
         steps.sample_rate = uint32_t(std::lround(info_.samples_per_frame * kFrameRate));
         steps.original_key = 60;
 
@@ -725,12 +735,13 @@ int SoundfontBuilder::DirectSample(uint32_t address)
 
         s.data.push_back(int16_t(std::lround(point * 256 * level)));
     }
+
     if (reverse)
     {
         std::reverse(s.data.begin(), s.data.end());
     }
 
-    // The sample's rate for key 60 is its header's frequency over 1024, which the zones fine-tune to.
+    // The sample's rate for key 60 is its header's frequency over 1024. The zones fine-tune to it.
     s.sample_rate = std::max<uint32_t>((wave.frequency + 512) / 1024, 1);
     s.original_key = 60;
 
@@ -788,6 +799,7 @@ int SoundfontBuilder::WaveSample(uint32_t address)
         const int point = i % 2 ? byte & 0xF : byte >> 4;
         cycle.push_back(int16_t(std::lround((point - 7.5) * 32767 / 7.5 * PsgLevel(info_))));
     }
+
     SetCycle(s, cycle);
     s.sample_rate = uint32_t(std::lround(16 * kMiddleC));
     s.original_key = 60;
@@ -828,6 +840,7 @@ int SoundfontBuilder::TriangleSample(uint32_t wave)
         const int step = 8 * i;
         cycle.push_back(int16_t(std::min((step < 256 ? step - 128 : 384 - step) * 256, 32767)));
     }
+
     SetCycle(s, cycle);
     s.sample_rate = std::max<uint32_t>((header.frequency + 512) / 1024, 1);
     s.original_key = 60;
@@ -888,7 +901,7 @@ bool SoundfontBuilder::AddZone(sf2::Instrument& instrument, const Voice& voice, 
                                int rhythm_pan)
 {
     // A sample voice with no attack never gets louder than silence. A pulse or saw synth voice gets a zone for each key
-    // it plays, as notes play them.
+    // that it plays, the way notes play them.
     const int psg = voice.PsgChannel();
     const Synth synth = SynthOf(rom_, info_, voice);
     if (psg == 0 && voice.attack == 0)
@@ -923,8 +936,8 @@ bool SoundfontBuilder::AddZone(sf2::Instrument& instrument, const Voice& voice, 
     }
     else if (psg == 4)
     {
-        // Each key has a noise setting, which keys 21 to 80 run through from slow to fast. A run of keys with the same
-        // setting shares a part.
+        // Each key has a noise setting. Keys 21 to 80 run through the settings from slow to fast. A run of keys with
+        // the same setting shares a part.
         for (int key = low; key <= high;)
         {
             const uint32_t setting = KeyToPsgFrequency(4, fixed_key >= 0 ? fixed_key : key, 0);
@@ -942,11 +955,12 @@ bool SoundfontBuilder::AddZone(sf2::Instrument& instrument, const Voice& voice, 
     {
         // The square and wave channels play the keys below 36 at the pitch of key 36. The others follow the driver's
         // frequency settings. The settings stray further from equal temperament on higher keys. Each run of keys whose
-        // settings lie the same whole cents from equal temperament shares a part.
+        // settings are the same whole cents from equal temperament shares a part.
         auto cents_for = [](int key)
         {
             return 1200.0 * std::log2(SquareFrequency(key) / kMiddleC);
         };
+
         auto tuning_for = [&cents_for](int key)
         {
             return cents_for(key) - 100.0 * (key - 60);
@@ -962,6 +976,7 @@ bool SoundfontBuilder::AddZone(sf2::Instrument& instrument, const Voice& voice, 
             {
                 parts.push_back({low, std::min(high, 35), cents_for(36), true});
             }
+
             for (int key = std::max(low, 36); key <= high;)
             {
                 int last = key;

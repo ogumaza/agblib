@@ -34,8 +34,8 @@ namespace
 constexpr int kFirstDrumKey = 36;
 constexpr int kKitDrums = 92;
 
-// The rate at which noise is rendered: the PSG's output rate under the BIOS's SOUNDBIAS setting, which the driver
-// keeps.
+// The rate at which noise is rendered: the PSG's output rate under the BIOS's SOUNDBIAS setting. The driver keeps that
+// setting.
 constexpr uint32_t kNoiseRate = 32768;
 
 } // namespace
@@ -76,8 +76,8 @@ int SoundfontBuilder::GameSampleIndex(const GameSample& sample)
     out.sample_rate = rate_;
     out.original_key = 60;
 
-    // The samples are 8-bit and signed. One that loops back to a point within it loops there; the mixer plays one that
-    // loops back outside it from there, which the SoundFont leaves out.
+    // The samples are 8-bit and signed. One that loops back to a point within it loops there. The mixer plays one that
+    // loops back outside it from there, and the SoundFont leaves that loop out.
     const uint32_t length = sample.end - sample.start;
     for (uint32_t i = 0; i < length; i++)
     {
@@ -145,7 +145,7 @@ void InstrumentSet::AddSampleKey(uint32_t set, int key, const GameSample& sample
 
 std::vector<std::string> InstrumentSet::Build(SoundfontBuilder& sf, int cents) const
 {
-    // The instruments in program order, so that the samples come in the order the songs first play them.
+    // The instruments in program order. The samples then come in the order the songs first play them.
     std::vector<const Instrument*> order(programs_.size());
     for (const auto& [inst, program] : programs_)
     {

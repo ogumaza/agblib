@@ -10,7 +10,7 @@
 // again at the buffers' start. A DMA's transfer at the cycle of a call of the game's code comes before the call.
 //
 // The player starts in the steady state of the halves: the driver's init and one frame have run, and the next swap
-// starts the DMAs again. The FIFOs then hold ArchivePlayerOptions::fifo_bytes bytes of 0. A frame's mix plays from
+// starts the DMAs again. The FIFOs then contain ArchivePlayerOptions::fifo_bytes bytes of 0. A frame's mix plays from
 // that many samples after the next swap on.
 //
 // Track t of the song's player plays sample channel t below kSampleTracks, and PSG channel t - kSampleTracks from
@@ -57,11 +57,11 @@ constexpr int kMusicPlayer = 1;
 struct ArchivePlayerOptions
 {
     // The cycle of each frame at which the per-frame routine and the mix run, after the swap at the frame's start. It
-    // lies below agb::kFrameCycles.
+    // is below agb::kFrameCycles.
     uint32_t store_cycle = agb::kFrameCycles / 16;
 
-    // The bytes that each FIFO holds when the first swap starts the DMAs again: 17 to 32. The console's phase between
-    // the DMA and the swaps depends on when the game started them.
+    // The bytes that each FIFO contains when the first swap starts the DMAs again: 17 to 32. The console's phase
+    // between the DMA and the swaps depends on when the game started them.
     int fifo_bytes = 24;
 
     // The frame sequencer's phase at the song's start: see agb::Apu::SetSequencer.
@@ -76,7 +76,7 @@ class ArchivePlayer
 {
 public:
     // What Restore() takes to go back to a place in the song: the system's memories and registers, the hardware, and
-    // the DMA's state. A snapshot shares the system's pages that hold the same bytes with the snapshot that it was
+    // the DMA's state. A snapshot shares the system's pages that contain the same bytes with the snapshot that it was
     // saved after.
     class Snapshot
     {
@@ -108,7 +108,7 @@ public:
     ~ArchivePlayer();
 
     // Starts song `song` on kMusicPlayer from the steady state after the init. The game's command 0 does the same.
-    // Throws std::invalid_argument when the song table holds no song there, or an option is out of range.
+    // Throws std::invalid_argument when the song table contains no song there, or an option is out of range.
     void Start(int song, const ArchivePlayerOptions& options = {});
 
     // Starts an audition: one note of instrument `instrument` at `key` and `velocity` (0 to 127) on track `track` of
@@ -185,7 +185,7 @@ public:
     }
 
     // While any track is soloed, leaves every track that isn't out of the output, in the same way as a mute. A mute
-    // still holds on a soloed track.
+    // still applies on a soloed track.
     void SoloTrack(int track, bool solo);
 
     bool IsTrackSoloed(int track) const

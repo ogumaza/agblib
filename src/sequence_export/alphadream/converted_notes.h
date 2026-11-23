@@ -11,6 +11,7 @@
 
 #include "agblib/agb/rom.h"
 #include "agblib/alphadream/driver.h"
+#include "agblib/sequence_export/agb/performance_steps.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/sequence_export/alphadream/sequencer.h"
 
@@ -32,18 +33,12 @@ struct ConvertedNote
 };
 
 // A song as its conversion plays it.
-struct ConvertedSong
+struct ConvertedSong : agb::FrameTimes
 {
+    // end_tick is the song's end, or a tick later for a note that starts on its last tick.
     bool valid = false; // the song table names a song that plays a track
     std::vector<std::string> warnings;
-    bool truncated = false;
     uint32_t address = 0; // the song's header
-    bool loops = false;
-    uint32_t loop_start = 0; // frames
-    uint32_t loop_end = 0;
-    uint32_t end_frame = 0;
-    uint32_t end_tick = 0; // the MIDI file's end: the song's, or a tick later for a note that starts on its last tick
-    double quarter_frames = 0; // the frames of a quarter note at the song's first tempo, or 0 for a silent song
     std::array<std::string, kTracks> track_names;
     std::vector<TrackRead> reads;     // what the tracks read, in the order that the driver read it
     std::vector<ConvertedNote> notes; // each track's notes in order, the tracks in order

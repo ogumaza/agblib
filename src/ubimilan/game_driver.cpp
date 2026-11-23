@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "agblib/agb/sound_registers.h"
+
 namespace agblib::ubimilan
 {
 namespace
@@ -23,8 +25,7 @@ constexpr uint32_t kVoiceLoops = 0x24;
 constexpr uint32_t kMixerPointer = 0x03000270;
 constexpr uint32_t kMixerFlag = 0x0300026C;
 
-// SOUNDBIAS, and what the BIOS leaves there.
-constexpr uint32_t kSoundBias = 0x04000088;
+// What the BIOS leaves in SOUNDBIAS.
 constexpr uint32_t kBiosBias = 0x0200;
 
 } // namespace
@@ -32,7 +33,7 @@ constexpr uint32_t kBiosBias = 0x0200;
 GameDriver::GameDriver(const Rom& rom, const GameRoutines& routines) : routines_(routines), system_(rom)
 {
     // The BIOS leaves the bias that the game's start adds to.
-    system_.Store(kSoundBias, 2, kBiosBias);
+    system_.Store(agb::kRegSoundBias, 2, kBiosBias);
     system_.on_io_write = [this](uint32_t address, int size, uint32_t value)
     {
         if (address >= agb::kRegSound1CntL && address < agb::kRegFifoA)

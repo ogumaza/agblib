@@ -17,7 +17,7 @@ namespace agblib::agb
 
 // Raises each side's peak in `peaks`, the left side's first, to the largest magnitude of that side's samples from
 // `first` on: the 16-bit samples of `out`, or, where `out` is null, the samples of `enhanced_out` at 16 bits. The
-// samples hold the left and the right side in turn.
+// samples alternate between the left and the right side.
 inline void KeepOutputPeaks(std::array<int32_t, 2>& peaks, const std::vector<int16_t>* out,
                             const std::vector<float>* enhanced_out, size_t first)
 {

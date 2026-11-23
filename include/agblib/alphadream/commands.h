@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 // The songs of AlphaDream's GBA driver in the common form of `ntdlib::commands`, for its three versions. A sequence
-// holds one song: its header, then its tracks' bytes in the order of their places. The header is a 16-bit mask of the
-// tracks that the song plays, then a 16-bit offset from the song's start for each of tracks 0 to 11 in the mask, in
+// contains one song: its header, then its tracks' bytes in the order of their places. The header is a 16-bit mask of
+// the tracks that the song plays, then a 16-bit offset from the song's start for each of tracks 0 to 11 in the mask, in
 // order. A track's bytes are commands, and its jumps go by 16-bit offsets from after the command.
 //
 // The decoder follows each track as the driver does, through both sides of each counted jump. Each command that a
@@ -17,13 +17,13 @@
 //   kOpenTrack       a track's offset in the header: `index` is the track and `target` the item where it starts
 //   kNote            a byte below 0xE0 or another byte that isn't a command: the note's length in ticks in `value`,
 //                    then its key in `key`. A length of 0 ties the note to the next. The next note then changes the
-//                    pitch without starting the note again. kRestFlag in `encoding.opcode` holds the key byte's bit 7.
-//                    In B85A's and A84J's versions, the track's volume follows the key, in `velocity`
+//                    pitch without starting the note again. kRestFlag in `encoding.opcode` contains the key byte's
+//                    bit 7. In B85A's and A84J's versions, the track's volume follows the key, in `velocity`
 //   kWait            with `encoding.opcode` 0xF6: F6, a rest. Without an opcode, a byte of ticks that a note's bytes
 //                    lead the driver to: the rest after a note that isn't tied, once a note that isn't tied has had
 //                    bit 7 in its key; or the wait after a tied note with bit 7 in its key
 //   kOther           E0 and E3, the pitch and the level LFO's depth, period and delay in `bytes`; E1, E2, E4 and E5,
-//                    which turn them on and off. The opcode is in `encoding.opcode`
+//                    the LFOs' switches. The opcode is in `encoding.opcode`
 //   kJumpIfGreater   E8 to EB: adds 1 to counter `index` (0 to 3), and goes to `target` once the counter passes the
 //                    count in `value`. While it doesn't, the counter goes back to 0
 //   kJumpIfLessOrEqual  EC to EF: adds 1 to counter `index`, and goes to `target` and sets the counter to 0 while the
@@ -53,11 +53,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+
 #include "agblib/agb/encoded.h"
 #include "agblib/agb/rom.h"
 #include "agblib/alphadream/driver.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace agblib::alphadream
 {
@@ -104,15 +105,15 @@ Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence);
 using Encoded = agb::Encoded;
 
 // Encodes `sequence` for the driver's version `version`. Throws std::invalid_argument for a command that the version's
-// bytes can't hold, for a target missing from the sequence, for a sequence that doesn't start with its header, for an
-// offset past 16 bits, and for a song that the driver wouldn't read as its items say: a track that reaches the header,
-// data, a byte of ticks without its note or the end of the items, a note without the byte of ticks that it takes after
-// it, a note that takes a rest on one path and not on another, and a track that reads or jumps outside the 64 KiB from
-// its start. Items that no track reaches stay in the bytes. The driver doesn't read them.
+// bytes can't contain, for a target missing from the sequence, for a sequence that doesn't start with its header, for
+// an offset past 16 bits, and for a song that the driver wouldn't read as its items say: a track that reaches the
+// header, data, a byte of ticks without its note or the end of the items, a note without the byte of ticks that it
+// takes after it, a note that takes a rest on one path and not on another, and a track that reads or jumps outside the
+// 64 KiB from its start. Items that no track reaches stay in the bytes. The driver doesn't read them.
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Version version);
 
 // The offset of each item of `sequence` in its bytes, then the end. Throws std::invalid_argument for a command that the
-// version's bytes can't hold.
+// version's bytes can't contain.
 std::vector<uint32_t> ItemOffsets(const ntdlib::commands::Sequence& sequence, Version version);
 
 // The scale of the value of a command of `kind` (ntdlib::commands::UnitOf): every value stays in the driver's units.

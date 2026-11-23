@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <utility>
 
+#include "agblib/agb/sound_registers.h"
 #include "sequencer_internal.h"
 
 namespace agblib::rd2
@@ -30,6 +31,7 @@ void Sequencer::UpdatePsgVoices()
         {
             Release(index);
         }
+
         if (v.state == kVoiceFree)
         {
             continue;
@@ -79,18 +81,18 @@ void Sequencer::UpdatePsgVoices()
 void Sequencer::WritePan(int channel, uint8_t pan)
 {
     const uint8_t both = uint8_t(0x11 << channel);
-    const uint8_t kept = uint8_t(ReadBack(kNr51, 1) & ~both);
+    const uint8_t kept = uint8_t(ReadBack(agb::kRegNr51, 1) & ~both);
     if (pan == kCentre)
     {
-        Write(kNr51, 1, kept | both);
+        Write(agb::kRegNr51, 1, kept | both);
     }
     else if (pan < kCentre)
     {
-        Write(kNr51, 1, kept | uint8_t(0x10 << channel));
+        Write(agb::kRegNr51, 1, kept | uint8_t(0x10 << channel));
     }
     else
     {
-        Write(kNr51, 1, kept | uint8_t(1 << channel));
+        Write(agb::kRegNr51, 1, kept | uint8_t(1 << channel));
     }
 }
 
@@ -107,7 +109,7 @@ void Sequencer::FadeReleasedWave(int index, uint8_t pan)
         return;
     }
 
-    Write(kNr32, 1, rom_.U8(info_.wave_volumes + std::min<uint32_t>(volume, 4)));
+    Write(agb::kRegNr32, 1, rom_.U8(info_.wave_volumes + std::min<uint32_t>(volume, 4)));
 }
 
 // Returns the duty or noise width for a PSG voice's frame, from the region's table of them, or 0xFF without a table.
@@ -126,42 +128,44 @@ void Sequencer::WriteChannel(const Voice& v, uint32_t pitch, uint8_t envelope, u
         // As in the driver, square 1 writes its pitch between restarts only if its NR10 is 8 (no sweep).
         if (envelope != kNoEnvelope)
         {
-            Write(kNr12, 1, envelope);
-            Write(kNr13, 2, pitch | 0x8000);
+            Write(agb::kRegNr12, 1, envelope);
+            Write(agb::kRegNr13, 2, pitch | 0x8000);
         }
         else if (RegionSweep(rom_, v.region) == 8)
         {
-            Write(kNr13, 2, pitch);
+            Write(agb::kRegNr13, 2, pitch);
         }
-        Write(kNr11, 1, ReadBack(kNr11, 1) & 0xC0);
+
+        Write(agb::kRegNr11, 1, ReadBack(agb::kRegNr11, 1) & 0xC0);
         if (duty != 0xFF)
         {
-            Write(kNr11, 1, uint32_t(duty) << 6);
+            Write(agb::kRegNr11, 1, uint32_t(duty) << 6);
         }
         break;
 
     case kSquare2Type:
         if (envelope != kNoEnvelope)
         {
-            Write(kNr22, 1, envelope);
-            Write(kNr23, 2, pitch | 0x8000);
+            Write(agb::kRegNr22, 1, envelope);
+            Write(agb::kRegNr23, 2, pitch | 0x8000);
         }
         else
         {
-            Write(kNr23, 2, pitch);
+            Write(agb::kRegNr23, 2, pitch);
         }
-        Write(kNr21, 1, ReadBack(kNr21, 1) & 0xC0);
+
+        Write(agb::kRegNr21, 1, ReadBack(agb::kRegNr21, 1) & 0xC0);
         if (duty != 0xFF)
         {
-            Write(kNr21, 1, uint32_t(duty) << 6);
+            Write(agb::kRegNr21, 1, uint32_t(duty) << 6);
         }
         break;
 
     case kWaveType:
-        Write(kNr33, 2, (ReadBack(kNr33, 2) & 0x4000) | (pitch & 0xFFFF));
+        Write(agb::kRegNr33, 2, (ReadBack(agb::kRegNr33, 2) & 0x4000) | (pitch & 0xFFFF));
         if (envelope != kNoEnvelope)
         {
-            Write(kNr32, 1, rom_.U8(info_.wave_volumes + envelope));
+            Write(agb::kRegNr32, 1, rom_.U8(info_.wave_volumes + envelope));
         }
         break;
 
@@ -169,18 +173,18 @@ void Sequencer::WriteChannel(const Voice& v, uint32_t pitch, uint8_t envelope, u
         {
             if (envelope != kNoEnvelope)
             {
-                Write(kNr42, 1, envelope);
-                Write(kNr44, 1, 0x80);
+                Write(agb::kRegNr42, 1, envelope);
+                Write(agb::kRegNr44, 1, 0x80);
             }
 
             const uint8_t shape = NoiseShape(pitch);
             if (duty != 0xFF)
             {
-                Write(kNr43, 1, shape | (duty ? 8 : 0));
+                Write(agb::kRegNr43, 1, shape | (duty ? 8 : 0));
             }
             else
             {
-                Write(kNr43, 1, (ReadBack(kNr43, 1) & 8) | shape);
+                Write(agb::kRegNr43, 1, (ReadBack(agb::kRegNr43, 1) & 8) | shape);
             }
             break;
         }
@@ -196,47 +200,50 @@ void Sequencer::StartPsgVoice(Voice& v, uint8_t envelope)
     switch (v.type)
     {
     case kSquare1Type:
-        Write(kNr10, 1, RegionSweep(rom_, v.region));
-        Write(kNr13, 2, v.base_pitch | 0x8000);
-        Write(kNr12, 1, envelope);
-        Write(kNr11, 1, uint32_t(FirstDuty(v)) << 6);
-        Write(kNr13, 2, v.base_pitch | 0x8000);
+        Write(agb::kRegNr10, 1, RegionSweep(rom_, v.region));
+        Write(agb::kRegNr13, 2, v.base_pitch | 0x8000);
+        Write(agb::kRegNr12, 1, envelope);
+        Write(agb::kRegNr11, 1, uint32_t(FirstDuty(v)) << 6);
+        Write(agb::kRegNr13, 2, v.base_pitch | 0x8000);
         break;
 
     case kSquare2Type:
         // As in the driver, square 2 takes its first duty from v.psg's low byte even when v.psg is a table's address.
-        Write(kNr22, 1, envelope);
-        Write(kNr23, 2, v.base_pitch | 0x8000);
-        Write(kNr21, 1, uint32_t(uint8_t(v.psg)) << 6);
+        Write(agb::kRegNr22, 1, envelope);
+        Write(agb::kRegNr23, 2, v.base_pitch | 0x8000);
+        Write(agb::kRegNr21, 1, uint32_t(uint8_t(v.psg)) << 6);
         break;
 
     case kWaveType:
         if (v.psg != CurrentWave())
         {
-            Write(kNr30, 1, 0);
+            Write(agb::kRegNr30, 1, 0);
             for (uint32_t i = 0; i < 16; i += 2)
             {
-                Write(kWaveRam + i, 2, rom_.U16(v.psg + i));
+                Write(agb::kRegWaveRam + i, 2, rom_.U16(v.psg + i));
             }
+
             CurrentWave() = v.psg;
         }
-        Write(kNr30, 1, 0xC0);
-        Write(kNr33, 2, v.base_pitch | 0x8000);
-        Write(kNr32, 1, rom_.U8(info_.wave_volumes + envelope));
-        Write(kNr31, 1, 0);
+
+        Write(agb::kRegNr30, 1, 0xC0);
+        Write(agb::kRegNr33, 2, v.base_pitch | 0x8000);
+        Write(agb::kRegNr32, 1, rom_.U8(info_.wave_volumes + envelope));
+        Write(agb::kRegNr31, 1, 0);
         break;
 
     case kNoiseType:
         {
-            Write(kNr42, 1, envelope);
+            Write(agb::kRegNr42, 1, envelope);
             uint8_t shape = NoiseShape(v.base_pitch);
             if (FirstDuty(v) != 0)
             {
                 shape |= 8;
             }
-            Write(kNr43, 1, shape);
-            Write(kNr44, 1, 0x80);
-            Write(kNr41, 1, 0);
+
+            Write(agb::kRegNr43, 1, shape);
+            Write(agb::kRegNr44, 1, 0x80);
+            Write(agb::kRegNr41, 1, 0);
             break;
         }
 
@@ -293,27 +300,31 @@ void Sequencer::UpdateSampleVoices()
             pitch = v.pitch;
         }
 
-        // The Super Mario Advance 2 revision multiplies the step by the frame's points and divides it by them again,
-        // which changes it only where the product wraps.
+        // The Super Mario Advance 2 revision multiplies the step by the frame's points and divides it by them again.
+        // That changes the step only where the product wraps.
         uint32_t step = UnsignedDiv((pitch >> 2) * rom_.U32(v.sample + 4), kMixRate);
         if (traits_.wrapped_step)
         {
             step = UnsignedDiv(step * kFrameSamples, kFrameSamples);
         }
+
         step >>= 5;
         if (keep_mixes_)
         {
             mixes_.push_back({index, v.sample, level, step, pan, v.echo, starts, uint32_t(mix_runs_.size()), 0});
         }
+
         const bool ended = MixVoice(v, step);
         if (keep_mixes_)
         {
             mixes_.back().runs = uint32_t(mix_runs_.size()) - mixes_.back().run;
         }
+
         if (ended)
         {
             StopVoice(index);
         }
+
         index = next;
     }
 
@@ -394,6 +405,7 @@ bool Sequencer::MixVoice(Voice& v, uint32_t step)
         {
             position -= loop_length;
         }
+
         left -= part;
         first += part;
     }

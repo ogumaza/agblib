@@ -8,17 +8,20 @@
 #include <string>
 #include <vector>
 
-#include "xsflib/testing/check.h"
-
-#include "agblib/rare/commands.h"
-#include "agblib/rare/song.h"
 #include "ntdlib/commands/sequence.h"
 #include "ntdlib/commands/units.h"
+#include "xsflib/testing/check.h"
+
+#include "agb_test_util.h"
+#include "agblib/rare/commands.h"
+#include "agblib/rare/song.h"
 
 using xsflib::testing::Check;
 
 namespace
 {
+
+using agblib::testing::agb_tests::Throws;
 
 namespace rare = agblib::rare;
 using ntdlib::commands::Command;
@@ -45,6 +48,7 @@ std::vector<Command> CommandsOf(const Decoded& decoded)
             commands.push_back(item);
         }
     }
+
     return commands;
 }
 
@@ -77,22 +81,6 @@ std::vector<uint8_t> BytesOf(const Command& item, const Traits& traits)
     return {bytes.begin(), bytes.end() - 1};
 }
 
-// Whether `body` throws std::invalid_argument.
-template <typename Body>
-bool Throws(Body body)
-{
-    try
-    {
-        body();
-    }
-    catch (const std::invalid_argument&)
-    {
-        return true;
-    }
-
-    return false;
-}
-
 // Every command of the channel-byte format, with the channel in a byte after the command's.
 void TestChannelByte()
 {
@@ -108,7 +96,7 @@ void TestChannelByte()
             0x07, 0x03, 1,    20,   // modulation
             0x07, 0x03, 7,    100,  // volume
             0x07, 0x03, 100,  5,    // controller 100
-            0x07, 0x03, 20,   4,    // controller 20, which this revision ignores
+            0x07, 0x03, 20,   4,    // controller 20: this revision ignores it
             0x08, 0x03, 9,          // program
             0x09, 0x03, 0x11,       // channel pressure
             0x0A, 0x03, 0x00, 0x30, // bend 0x3000
@@ -171,8 +159,10 @@ void TestChannelNibble()
     // The older revision of the format reads them as controllers without a kind, and can't write the envelope.
     const Decoded older = Decodes({0x37, 20, 5, 0x0B}, kNibble);
     Check(CommandsOf(older)[0].kind == Kind::kOther, "controller 20 in the older revision");
-    Check(Throws([] { BytesOf(NewCommand(Kind::kAttack, 5), kNibble); }), "the older revision has no attack");
-    Check(Throws([] { BytesOf(NewCommand(Kind::kNote, 0, 16), kNibble); }), "a channel past the nibble");
+    Check(Throws<std::invalid_argument>([] { BytesOf(NewCommand(Kind::kAttack, 5), kNibble); }),
+          "the older revision has no attack");
+    Check(Throws<std::invalid_argument>([] { BytesOf(NewCommand(Kind::kNote, 0, 16), kNibble); }),
+          "a channel past the nibble");
 }
 
 // A track ends at its end, or at its loop's end after its loop's start. The bytes after it stay as data, and so do
@@ -238,11 +228,13 @@ void TestNewCommands()
     note.velocity = 127 * kOne;
     Check(BytesOf(note, kByte) == std::vector<uint8_t>({0x05, 0x01, 64, 127}), "a note on");
 
-    Check(Throws([] { BytesOf(NewCommand(Kind::kWait, 0x1000000), kByte); }), "a delay past three bytes");
-    Check(Throws([] { BytesOf(NewCommand(Kind::kNote, 10), kByte); }), "a note with a length");
-    Check(Throws([] { BytesOf(NewCommand(Kind::kLoopStart, 2), kByte); }), "a loop that ends");
-    Check(Throws([] { BytesOf(NewCommand(Kind::kWait, 1, 3), kByte); }), "a channel on a delay");
-    Check(Throws([] { BytesOf(NewCommand(Kind::kTranspose, 1), kByte); }), "a kind that the driver lacks");
+    Check(Throws<std::invalid_argument>([] { BytesOf(NewCommand(Kind::kWait, 0x1000000), kByte); }),
+          "a delay past three bytes");
+    Check(Throws<std::invalid_argument>([] { BytesOf(NewCommand(Kind::kNote, 10), kByte); }), "a note with a length");
+    Check(Throws<std::invalid_argument>([] { BytesOf(NewCommand(Kind::kLoopStart, 2), kByte); }), "a loop that ends");
+    Check(Throws<std::invalid_argument>([] { BytesOf(NewCommand(Kind::kWait, 1, 3), kByte); }), "a channel on a delay");
+    Check(Throws<std::invalid_argument>([] { BytesOf(NewCommand(Kind::kTranspose, 1), kByte); }),
+          "a kind that the driver lacks");
 
     // A track that reaches data.
     ntdlib::commands::Sequence sequence;
@@ -251,9 +243,10 @@ void TestNewCommands()
     data.bytes = {0x0C};
     sequence.items = {NewCommand(Kind::kWait, 1), data, NewCommand(Kind::kEnd)};
     const std::vector<uint32_t> entries = {0};
-    Check(Throws([&] { EncodeSequence(sequence, entries, kByte); }), "a track that reaches data");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(sequence, entries, kByte); }),
+          "a track that reaches data");
     const std::vector<uint32_t> past = {3};
-    Check(Throws([&] { EncodeSequence(sequence, past, kByte); }), "an entry past the items");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(sequence, past, kByte); }), "an entry past the items");
 }
 
 // The offsets of the items, without a sequence that reads back.

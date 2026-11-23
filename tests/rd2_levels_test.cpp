@@ -30,6 +30,7 @@
 #include "agblib/testing/agb_cart.h"
 #include "agblib/testing/agb_files.h"
 #include "agblib/testing/rd2_cart.h"
+#include "rd2_test_util.h"
 
 namespace agblib::sequence_export::rd2
 {
@@ -41,9 +42,7 @@ using namespace agblib::testing::rd2_cart;
 namespace cc = seqlib::midi::cc;
 using agblib::agb::kFrameRate;
 using agblib::agb::Rom;
-using agblib::rd2::DetectDriver;
 using agblib::rd2::DriverInfo;
-using agblib::rd2::DriverOverrides;
 using agblib::rd2::Revision;
 using agblib::sequence_export::agb::ConvertSettings;
 using agblib::sequence_export::agb::LevelsToControllers;
@@ -56,16 +55,7 @@ using agblib::testing::agb_files::ReadMidi;
 using agblib::testing::agb_files::ReadSf2;
 using agblib::testing::agb_files::Sf2Records;
 using agblib::testing::agb_files::TempSettings;
-
-// Returns the driver's tables in `rom`. The ROM must have them.
-DriverInfo Detect(const Rom& rom)
-{
-    DriverInfo info;
-    std::string error;
-    SEQLIB_CHECK(DetectDriver(rom, DriverOverrides(), info, error));
-
-    return info;
-}
+using agblib::testing::rd2_tests::Detect;
 
 void TestPsgTables()
 {
@@ -98,11 +88,13 @@ void TestPsgTables()
         {
             squares.push_back(trimmed);
         }
+
         if (trimmed.rfind("Noise ", 0) == 0)
         {
             noises.push_back(std::stoi(trimmed.substr(6), nullptr, 16));
         }
     }
+
     SEQLIB_CHECK(squares == std::vector<std::string>{"Square 75%"});
     SEQLIB_CHECK(noises.size() == 1 && (noises[0] & 8) == 0);
 }
@@ -150,6 +142,7 @@ void TestPsgTuning()
     {
         cart.Put16(kFrequencyTable + 2 * uint32_t(i), uint16_t(setting(i)));
     }
+
     const Rom rom = cart.ToRom();
     const DriverInfo info = Detect(rom);
     ConvertSettings opt = TempSettings("rd2_psg_tuning");
@@ -256,14 +249,13 @@ void TestDrumPanAndWave()
 
     auto keeps_pan = [&](size_t zone)
     {
-        bool found = false;
-        for (size_t m = Le16(sf.Record("ibag", 4, zone) + 2); m < Le16(sf.Record("ibag", 4, zone + 1) + 2); m++)
+        const std::vector<sf2::Modulator> mods = sf.ZoneModulators(zone);
+        const auto pan = [](const sf2::Modulator& mod)
         {
-            const uint8_t* mod = sf.Record("imod", 10, m);
-            found = found || (Le16(mod) == 0x028A && Le16(mod + 2) == sf2::kPan && Le16(mod + 4) == 0);
-        }
+            return mod.source == 0x028A && mod.dest == sf2::kPan && mod.amount == 0;
+        };
 
-        return found;
+        return std::any_of(mods.begin(), mods.end(), pan);
     };
     const std::vector<size_t> drums = ZonesOf(sf, " instrument 3"), plain = ZonesOf(sf, " instrument 1");
     const std::vector<size_t> wave = ZonesOf(sf, " instrument 9");
@@ -350,6 +342,27 @@ size_t ConstantZones(const Sf2Records& sf)
     return zones;
 }
 
+// Returns the number of zones of the SoundFont's first instrument after its global zone. Checks that each of them plays
+// at a constant level until its release: no attenuation, and an envelope with only the release.
+size_t ReleaseOnlyZones(const Sf2Records& sf)
+{
+    size_t zones = 0;
+    for (size_t z = Le16(sf.Record("inst", 22, 0) + 20) + 1; z < Le16(sf.Record("inst", 22, 1) + 20); z++)
+    {
+        const auto gens = sf.ZoneGens(z);
+        for (uint16_t op :
+             {sf2::kInitialAttenuation, sf2::kAttackVolEnv, sf2::kHoldVolEnv, sf2::kDecayVolEnv, sf2::kSustainVolEnv})
+        {
+            SEQLIB_CHECK(!gens.count(op));
+        }
+
+        SEQLIB_CHECK(gens.count(sf2::kReleaseVolEnv));
+        zones++;
+    }
+
+    return zones;
+}
+
 void TestPsgPan()
 {
     // The PSG plays a note on both sides at the centre pan, 0x40. At any other pan, the driver doubles the note's
@@ -386,6 +399,7 @@ void TestPsgPan()
     {
         pans.push_back(value.second);
     }
+
     SEQLIB_CHECK((pans == std::vector<int>{0, 64, 127}));
     const std::vector<std::pair<uint32_t, int>> loudness = ControllerValues(midi, 0, cc::kExpression);
     std::vector<int> starts;
@@ -395,10 +409,12 @@ void TestPsgPan()
         starts.push_back(ValueAt(loudness, uint32_t(note_on.tick)));
         ons.push_back(uint32_t(note_on.tick));
     }
+
     for (const auto& note_off : midi.Find(0x80))
     {
         offs.push_back(uint32_t(note_off.tick));
     }
+
     SEQLIB_REQUIRE_EQ(starts.size(), 3);
     SEQLIB_CHECK((starts == std::vector<int>{VolumeExpression(15, true), VolumeExpression(15, false),
                                              VolumeExpression(15, true)}));
@@ -448,6 +464,7 @@ void TestPsgVolume()
             }
             volumes.push_back(volume);
         }
+
         SEQLIB_REQUIRE(volumes.size() >= 2);
         SEQLIB_CHECK(volumes.front() == 15 && volumes.back() == 0 && loudness.back().second == 0);
         for (size_t i = 1; i < volumes.size(); i++)
@@ -455,12 +472,14 @@ void TestPsgVolume()
             const int step = volumes[i - 1] - volumes[i];
             SEQLIB_CHECK(step == 1 || (channel == 1 && step == 2));
         }
+
         SEQLIB_CHECK_EQ(loudness[0].first, uint32_t(ons[0].tick));
         SEQLIB_CHECK(loudness[1].first >= ons[0].tick + 4 * 150);
         for (size_t i = 2; i < loudness.size(); i++)
         {
             SEQLIB_CHECK(loudness[i].first - loudness[i - 1].first <= 2 * 150);
         }
+
         const double period = (channel == 0 ? 2 : 1) * kFrameRate / 64;
         SEQLIB_CHECK(std::fabs((loudness.back().first - loudness[1].first) / 150.0 - 14 * period) <= 1);
         SEQLIB_CHECK_EQ(uint32_t(offs[0].tick), loudness.back().first);
@@ -504,19 +523,7 @@ void TestSampleEnvelope()
 
     // The zones play at a constant level until the release.
     const Sf2Records sf = ReadSf2(sum.sf2_path);
-    size_t zones = 0;
-    for (size_t z = Le16(sf.Record("inst", 22, 0) + 20) + 1; z < Le16(sf.Record("inst", 22, 1) + 20); z++)
-    {
-        const auto gens = sf.ZoneGens(z);
-        for (uint16_t op :
-             {sf2::kInitialAttenuation, sf2::kAttackVolEnv, sf2::kHoldVolEnv, sf2::kDecayVolEnv, sf2::kSustainVolEnv})
-        {
-            SEQLIB_CHECK(!gens.count(op));
-        }
-        SEQLIB_CHECK(gens.count(sf2::kReleaseVolEnv));
-        zones++;
-    }
-    SEQLIB_CHECK(zones > 0);
+    SEQLIB_CHECK(ReleaseOnlyZones(sf) > 0);
 }
 
 void TestSampleLegato()
@@ -558,6 +565,7 @@ void TestSampleLegato()
     {
         peak = std::max(peak, value.second);
     }
+
     const int first = ValueAt(loudness, uint32_t(ons[0].tick));
     const int second = ValueAt(loudness, uint32_t(ons[1].tick));
     SEQLIB_CHECK(first > 0 && first < peak && second > first && second < peak);
@@ -567,19 +575,7 @@ void TestSampleLegato()
     const Sf2Records sf = ReadSf2(sum.sf2_path);
     SEQLIB_REQUIRE_EQ(sf.Count("phdr", 38), 2);
     SEQLIB_CHECK(std::string(reinterpret_cast<const char*>(sf.Record("phdr", 38, 0))) == "Bank 0 instrument 0");
-    size_t zones = 0;
-    for (size_t z = Le16(sf.Record("inst", 22, 0) + 20) + 1; z < Le16(sf.Record("inst", 22, 1) + 20); z++)
-    {
-        const auto gens = sf.ZoneGens(z);
-        for (uint16_t op :
-             {sf2::kInitialAttenuation, sf2::kAttackVolEnv, sf2::kHoldVolEnv, sf2::kDecayVolEnv, sf2::kSustainVolEnv})
-        {
-            SEQLIB_CHECK(!gens.count(op));
-        }
-        SEQLIB_CHECK(gens.count(sf2::kReleaseVolEnv));
-        zones++;
-    }
-    SEQLIB_CHECK(zones > 0);
+    SEQLIB_CHECK(ReleaseOnlyZones(sf) > 0);
 }
 
 void TestWaveVolume()
@@ -629,13 +625,16 @@ void TestWaveVolume()
                 values.push_back(value);
             }
         }
+
         for (double share : kShares[i])
         {
             expected.push_back(VolumeExpression(15 * share, false));
         }
+
         SEQLIB_CHECK(values == expected);
         SEQLIB_CHECK_EQ(offs[i].tick - ons[i].tick, uint64_t(150 * (6 + kShares[i].size() - 2)));
     }
+
     SEQLIB_CHECK_EQ(ConstantZones(ReadSf2(sum.sf2_path)), size_t(1));
 }
 
@@ -665,6 +664,7 @@ void TestPsgRunOut()
             ends.push_back(uint32_t(tick));
         }
     }
+
     SEQLIB_REQUIRE(!ends.empty());
     const uint32_t end = *std::max_element(ends.begin(), ends.end());
 
@@ -678,10 +678,12 @@ void TestPsgRunOut()
     {
         values.push_back(value);
     }
+
     for (int volume = 15; volume >= 1; volume--)
     {
         expected.push_back(VolumeExpression(volume, false));
     }
+
     SEQLIB_CHECK(values == expected);
     SEQLIB_REQUIRE(!square.empty());
     const uint32_t last_step = uint32_t(square_offs[0].tick) - square.back().first;
@@ -698,11 +700,13 @@ void TestPsgRunOut()
     {
         values.push_back(value);
     }
+
     expected.clear();
     for (double share : {1.0, 0.5, 0.25, 0.0})
     {
         expected.push_back(VolumeExpression(15 * share, false));
     }
+
     SEQLIB_CHECK(values == expected);
     SEQLIB_CHECK_EQ(wave_offs[0].tick - wave_ons[0].tick, uint64_t(8 * 150));
 }
@@ -734,6 +738,7 @@ void TestSilentEndAfterLastSound()
             last = std::max(last, e.tick);
         }
     }
+
     SEQLIB_CHECK(midi.Find(0x90).size() == 1 && last < 40 * 150);
 }
 
@@ -767,6 +772,7 @@ void TestPsgPanPasses()
             markers.emplace_back(uint32_t(tick), std::string(bytes.begin() + 3, bytes.end()));
         }
     }
+
     const std::vector<std::pair<uint32_t, std::string>> kMarkers = {{0, "loopStart"}, {1800, "loopEnd"}};
     SEQLIB_CHECK(markers == kMarkers);
 }
@@ -800,6 +806,7 @@ void TestLevelOrder()
             expression.emplace_back(uint32_t(e.tick), e.bytes[2]);
         }
     }
+
     SEQLIB_CHECK(!expression.empty() && expression.back() == std::make_pair(600u, 0));
 }
 
@@ -832,6 +839,7 @@ void TestHighVelocities()
                 found.push_back(e.bytes[2]);
             }
         }
+
         return found;
     };
     SEQLIB_CHECK(velocities(0) == std::vector<int>({127, int(std::lround(127 * std::sqrt(127 / 255.0)))}));

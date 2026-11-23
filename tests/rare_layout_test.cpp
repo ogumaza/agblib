@@ -8,21 +8,26 @@
 #include <variant>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+#include "seqlib/testing/check.h"
 #include "xsflib/bytes.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/rom.h"
 #include "agblib/rare/commands.h"
 #include "agblib/rare/driver.h"
 #include "agblib/rare/layout.h"
 #include "agblib/rare/song.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 using xsflib::testing::Check;
 
 namespace
 {
+
+using agblib::testing::agb_tests::RomOf;
+using seqlib::testing::Throws;
 
 namespace rare = agblib::rare;
 using agblib::agb::kRomBase;
@@ -65,6 +70,7 @@ public:
         {
             bytes[kProgramMap + p] = p == 0 ? 0 : 0xFF;
         }
+
         put32(kInstruments, kRomBase + kInstrument);
         put32(kInstrument, 0x20);
         put32(kInstrument + 4, 1);
@@ -103,6 +109,7 @@ public:
                     bytes.insert(bytes.end(), track.begin(), track.end());
                 }
             }
+
             for (size_t k = 0; k < starts.size(); k++)
             {
                 put32(list + 4 * uint32_t(k), starts[k]);
@@ -131,13 +138,6 @@ rare::DriverInfo InfoOf(int tunes)
     info.tune_table = kRomBase + kTuneTable;
     info.tune_count = tunes;
     return info;
-}
-
-Rom RomOf(const std::vector<uint8_t>& bytes)
-{
-    Rom rom;
-    rom.Assign(bytes);
-    return rom;
 }
 
 // A track of a note and a wait.
@@ -214,6 +214,7 @@ void TestGrowAndShrink()
             field.to.offset--;
         }
     }
+
     const Rom shrunk = RomOf(rare::Join(small));
     Check(shrunk.U32(kRomBase + kTrackLists) == kRomBase + kTracks, "the shrunk tune keeps its place");
     Check(shrunk.U32(kRomBase + kTrackLists + 4) == kRomBase + kTracks + 10, "its second track moves up");
@@ -269,28 +270,14 @@ void TestRefusals()
 
     rare::Layout bad = layout;
     bad.pieces.push_back(ntdlib::sar::Padding{4});
-    bool threw = false;
-    try
-    {
-        rare::Join(bad);
-    }
-    catch (const std::invalid_argument&)
-    {
-        threw = true;
-    }
+    bool threw = Throws<std::invalid_argument>([&] { rare::Join(bad); });
+
     Check(threw, "padding");
 
     bad = layout;
     bad.fields[0].to.offset = 99;
-    threw = false;
-    try
-    {
-        rare::Join(bad);
-    }
-    catch (const std::invalid_argument&)
-    {
-        threw = true;
-    }
+    threw = Throws<std::invalid_argument>([&] { rare::Join(bad); });
+
     Check(threw, "an entry past the items");
 }
 

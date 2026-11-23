@@ -105,6 +105,7 @@ inline std::vector<uint8_t> Song(std::vector<std::vector<uint8_t>> channels)
         offsets.push_back(uint16_t(14 + data.size()));
         data.insert(data.end(), c.begin(), c.end());
     }
+
     if (data.size() % 2)
     {
         data.push_back(0);
@@ -122,6 +123,7 @@ inline std::vector<uint8_t> Song(std::vector<std::vector<uint8_t>> channels)
     {
         put16(o);
     }
+
     song.insert(song.end(), data.begin(), data.end());
 
     return song;
@@ -224,9 +226,11 @@ public:
             {
                 Put8(at + 6 + uint32_t(i), uint8_t(pcm[i]));
             }
+
             data.push_back(at + 6);
             at += size;
         }
+
         Put32(at, 0);
         if (at + 4 > FileAddress(file + 1))
         {
@@ -254,6 +258,7 @@ public:
                 {
                     data.insert(data.end(), s.begin(), s.end());
                 }
+
                 data.resize(data.size() + 2, 0);
             }
             else if (p >= 5)
@@ -261,6 +266,7 @@ public:
                 // A sample's size, its rate and its 4 points, and a size of 0 after it.
                 data = {10, 0, 0, 0, 0x00, 0x20, 1, 2, 3, 4, 0, 0, 0, 0};
             }
+
             data.resize((data.size() + 3) & ~size_t(3), 0);
 
             Put32(at, uint32_t(data.size()));
@@ -443,6 +449,7 @@ private:
             at = PassFile(at, kSfxMacroFile, sfx_macro_setter);
             at = PassFile(at, kSfxSampleFile, sample_setters_[1]);
         }
+
         if (revision_ == Revision::kS)
         {
             // The S revision's game loads the music file's address and skips to the song before its call: ldr r0,

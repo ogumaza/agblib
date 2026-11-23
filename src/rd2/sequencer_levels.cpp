@@ -12,6 +12,28 @@
 namespace agblib::rd2
 {
 
+namespace
+{
+
+// Moves a voice's slide on by a frame. The slide waits out its delay, then adds its step each frame up to its end.
+void AdvanceSlide(Voice& v)
+{
+    if (v.slide_delay != 0)
+    {
+        v.slide_delay--;
+    }
+    else if (v.slide_frames != 0)
+    {
+        v.slide += v.slide_step;
+        if (--v.slide_frames == 0)
+        {
+            v.slide = v.slide_end;
+        }
+    }
+}
+
+} // namespace
+
 // Returns a voice's pitch for a note: a sample's step from the pitch table, a square or wave's frequency setting, or a
 // noise voice's index into the noise table, at the note's pitch index.
 uint32_t Sequencer::PitchStep(uint8_t type, uint8_t note, uint8_t tuning) const
@@ -29,8 +51,8 @@ uint32_t Sequencer::PitchStep(uint8_t type, uint8_t note, uint8_t tuning) const
     return rom_.U16(info_.frequency_table + 2 * uint32_t(index));
 }
 
-// Moves a voice's envelope on by a frame, starting its next segment when one ends. A point with a negative length holds
-// the level of the point before it. Returns the new level.
+// Moves a voice's envelope on by a frame, starting its next segment when one ends. A point with a negative length
+// contains the level of the point before it. Returns the new level.
 int32_t Sequencer::EnvelopeStep(Voice& v)
 {
     if (v.segment == 0)
@@ -107,6 +129,7 @@ uint32_t Sequencer::ApplyLfo(Voice& v, const Track& t, uint32_t pitch)
     {
         return pitch;
     }
+
     if (v.lfo_delay != 0)
     {
         v.lfo_delay--;
@@ -136,6 +159,7 @@ uint32_t Sequencer::ApplyLfo(Voice& v, const Track& t, uint32_t pitch)
         {
             period = ((0x800 - pitch) * (uint32_t(-sine) * depth + 0x80000)) >> 19;
         }
+
         pitch = 0x800 - period;
     }
 
@@ -217,6 +241,7 @@ uint8_t Sequencer::PsgEnvelope(Voice& v, bool panned)
     {
         start = 0xF;
     }
+
     v.volume = (v.volume * uint32_t(v.target)) >> 25;
     if (v.volume & ~0xFu)
     {
@@ -235,6 +260,7 @@ uint8_t Sequencer::PsgEnvelope(Voice& v, bool panned)
     {
         return uint8_t((start << 4) | 8);
     }
+
     if (period & 0xFFF8)
     {
         period = 7;
@@ -266,6 +292,7 @@ uint32_t Sequencer::PsgLevel(const Voice& v, bool panned) const
     {
         level <<= 1;
     }
+
     level <<= 15;
     level = (level * t.volume) >> 14;
     level = (level * t.volume2) >> 7;

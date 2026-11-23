@@ -6,10 +6,10 @@
 
 #include <compare>
 #include <cstdint>
-#include <map>
 
 #include "agblib/agb/rom.h"
 #include "agblib/logikstate/driver.h"
+#include "agblib/sequence_export/agb/module_conversion.h"
 #include "agblib/sequence_export/agb/sf2.h"
 
 namespace agblib::sequence_export::logikstate
@@ -17,6 +17,7 @@ namespace agblib::sequence_export::logikstate
 
 using agblib::agb::Rom;
 using agblib::logikstate::Module;
+using agblib::sequence_export::agb::ModuleInstruments;
 using agblib::sequence_export::agb::Sf2File;
 
 // The pitch that a sample without a fine tune plays at its SoundFont sample's rate, and the MIDI key that the SoundFont
@@ -62,13 +63,7 @@ public:
     Sf2File Build(const Rom& rom) const;
 
 private:
-    struct Instrument
-    {
-        int number = 0;
-        int program = 0;
-    };
-
-    std::map<PlayedSample, Instrument> programs_;
+    ModuleInstruments<PlayedSample> instruments_;
 };
 
 // Returns the rate in hertz at which the player plays kRootPitch of a sample with fine tune `fine_tune` in `module`.

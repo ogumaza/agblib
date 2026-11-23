@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 
-// Plays a piece of a GBA ROM with Krawall on ntdlib's models: the player and its mixer (krawall::Player) on the GBA's
+// Plays a piece of a GBA ROM with Krawall on the agblib models: the player and its mixer (krawall::Player) on the GBA's
 // sound hardware (agb::Apu), frame by frame. In stereo, FIFO A plays the left side's mix and FIFO B the right side's,
 // each on its side alone. In mono, FIFO A plays the left side's mix on both sides. Timer 0 plays a byte of each at the
 // mixer's rate (DriverInfo::mix_rate).
 //
 // The game mixes DriverInfo::frame_samples samples at a time, into a ring of buffers that the DMA plays. A frame mixes
-// once while the DMA has caught up with the mix, as the game's worker does when getDmaAddress() hands it a buffer. The
-// player queues each mix behind the ones before it, and mixes in a frame while the FIFOs hold less than two mixes. In
-// the other frames, the worker returns at once, and the player runs no tick (Player::SkipFrame()). The FIFOs start with
-// a mix of silence. The output's resolution is the sound bias register's default: 9 bits at 32,768 Hz. Rate() gives it.
+// once while the DMA has caught up with the mix as the game's worker does when getDmaAddress() hands it a buffer. The
+// player queues each mix behind the ones before it, and mixes in a frame while the FIFOs contain less than two mixes.
+// In the other frames, the worker returns at once, and the player runs no tick (Player::SkipFrame()). The FIFOs start
+// with a mix of silence. The output's resolution is the sound bias register's default: 9 bits at 32,768 Hz. Rate()
+// gives it.
 //
 // In the enhanced mixing mode (ArchivePlayerOptions::enhanced), the output comes in floating point at
 // agb::kEnhancedRate. Each mixer channel's sample plays at that rate, interpolated between its points, at its volume,
@@ -17,8 +18,8 @@
 // has no anchor: no game ever ran it.
 //
 // The tracks are the module's channels. A track's mute leaves out the mixer channels that play its notes: their points
-// and their part of the middle that the mixer takes off. The mix's sums wrap, so a mute changes the carries between
-// the other channels' samples where the sums are that loud.
+// and their part of the middle that the mixer takes off. The mix's sums wrap. A mute therefore changes the carries
+// between the other channels' samples where the sums are that loud.
 
 #pragma once
 
@@ -59,7 +60,7 @@ public:
     void Start(int song, const ArchivePlayerOptions& options = {});
 
     // Starts an audition: one note on the first channel of piece `song`'s module, with `note` (from 1 for C-0) and
-    // `instrument` (from 1), as Player::Audition() plays it. The module's rows don't play. The note sounds until
+    // `instrument` (from 1) as Player::Audition() plays it. The module's rows don't play. The note sounds until
     // ReleaseNote(), its sample's end or its envelope's. Throws std::invalid_argument when the piece can't be played.
     void StartNote(int song, uint16_t instrument, uint8_t note, const ArchivePlayerOptions& options = {});
 
@@ -80,7 +81,7 @@ public:
     void RunFrame();
 
     // Whether the piece still sounds: while the player plays its rows, while a mixer channel plays, and for the mixes
-    // that the FIFOs hold after that. A module that loops plays for ever. An audition sounds while its note plays.
+    // that the FIFOs contain after that. A module that loops plays for ever. An audition sounds while its note plays.
     bool Busy() const;
 
     uint64_t Frames() const
@@ -88,7 +89,7 @@ public:
         return frames_;
     }
 
-    // The player's ticks so far, which count every pass through a loop.
+    // The player's ticks so far, with every pass through a loop.
     uint64_t Tick() const;
 
     // The output's rate in Hz: agb::kEnhancedRate in the enhanced mode, or else from the resolution in the sound bias
@@ -126,7 +127,7 @@ public:
     }
 
     // While any track is soloed, leaves every track that isn't out of the output, in the same way as a mute. A mute
-    // still holds on a soloed track.
+    // still applies on a soloed track.
     void SoloTrack(int track, bool solo);
     bool IsTrackSoloed(int track) const
     {
@@ -161,7 +162,7 @@ public:
         bool enhanced_ = false;
     };
 
-    // Takes a snapshot. `previous` is there for the interface that ntdlib's archive players share: a snapshot stands
+    // Takes a snapshot. `previous` is there for the interface that the agblib archive players share: a snapshot stands
     // alone. Throws std::logic_error before a start.
     Snapshot Save(const Snapshot* previous = nullptr) const;
 

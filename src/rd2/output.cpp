@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "agblib/agb/gba.h"
-#include "ntdlib/wave/sinc.h"
+#include "agblib/agb/sinc_mix.h"
 
 namespace agblib::rd2
 {
@@ -30,8 +30,6 @@ constexpr uint32_t kSampleLength = 0;
 constexpr uint32_t kSampleLoopStart = 8;
 constexpr uint32_t kSampleLoopEnd = 12;
 constexpr uint32_t kSamplePoints = 16;
-
-constexpr double kUnit = 4294967296.0; // the enhanced mode's positions in a point
 
 } // namespace
 
@@ -191,6 +189,7 @@ void Output::MixVoice(const VoiceMix& mix, bool to_echo)
             {
                 buffer_[at] = int16_t(buffer_[at] + part_left);
             }
+
             if (at + kSide < buffer_.size())
             {
                 buffer_[at + kSide] = int16_t(buffer_[at + kSide] + part_right);
@@ -301,7 +300,7 @@ void Output::MixConsole()
     }
     else
     {
-        // After the level leaves the echo's range, the echo's frames run on until the history holds nothing.
+        // After the level leaves the echo's range, the echo's frames run on until the history contains nothing.
         if (echo_level_ <= kLastEchoLevel)
         {
             echo_counter_ = kEchoFrames;
@@ -377,11 +376,6 @@ void Output::MixEnhancedVoice(const VoiceMix& mix, bool to_echo)
     }
 
     const size_t samples = agb::kEnhancedFrameSamples;
-    const ntdlib::wave::SincKernel& kernel =
-        ntdlib::wave::SincKernel::ForStep(double(move) / (double(samples) * kUnit));
-    const int64_t width = kernel.HalfWidth();
-    const int64_t first = int64_t(start >> 32) - (width - 1);
-    const int64_t last = int64_t((start + move) >> 32) + width;
     const int64_t length = rom_.U32(mix.sample + kSampleLength);
     const int64_t loop_start = rom_.U32(mix.sample + kSampleLoopStart);
     const int64_t loop_end = rom_.U32(mix.sample + kSampleLoopEnd);
@@ -413,20 +407,13 @@ void Output::MixEnhancedVoice(const VoiceMix& mix, bool to_echo)
         return float(rom_.S8(data + uint32_t(at)));
     };
 
-    std::vector<float> input(size_t(last - first + 1));
-    for (int64_t n = first; n <= last; n++)
-    {
-        input[size_t(n - first)] = point_of(n);
-    }
-
+    const agb::SincPoints points(agb::FrameKernel(move, samples), start, move, point_of);
     std::array<std::vector<float>, 2>& target = to_echo ? e.wet : e.out;
     const std::array<float, 2> slopes = {(to[0] - from[0]) / float(samples), (to[1] - from[1]) / float(samples)};
     const int track = voice_tracks_[size_t(mix.voice)];
     for (size_t i = 0; i < samples; i++)
     {
-        const uint64_t position = start + uint64_t(i) * (move / samples);
-        const int64_t point = int64_t(position >> 32);
-        const float value = kernel.At(&input[size_t(point - (width - 1) - first)], uint32_t(position >> 16) & 0xFFFF);
+        const float value = points.At(start + uint64_t(i) * (move / samples));
         const float left = value * (from[0] + float(i) * slopes[0]);
         const float right = value * (from[1] + float(i) * slopes[1]);
         target[0][i] += left;

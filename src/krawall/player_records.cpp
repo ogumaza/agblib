@@ -12,6 +12,7 @@
 
 #include "agblib/krawall/build.h"
 #include "agblib/krawall/player.h"
+#include "player_shared.h"
 
 namespace agblib::krawall
 {
@@ -42,6 +43,7 @@ std::vector<uint8_t> Player::PlayerRecord() const
         r[0x13] = uint8_t(goto_order_);
         xsflib::StoreLe16(&r[0x18], uint16_t(goto_row_));
     }
+
     xsflib::StoreLe32(&r[0x14], data_);
     r[0x1A] = uint8_t(loop_row_);
     r[0x1B] = uint8_t(loop_count_);
@@ -152,19 +154,7 @@ std::vector<uint8_t> Player::MixRecord(const MixChannel& m) const
     }
 
     std::vector<uint8_t> r(0x2C);
-    r[0x00] = m.volume;
-    r[0x01] = uint8_t(m.pan);
-    r[0x02] = m.status;
-    r[0x03] = m.loop;
-    xsflib::StoreLe32(&r[0x04], m.start);
-    xsflib::StoreLe32(&r[0x08], m.pos);
-    xsflib::StoreLe32(&r[0x0C], m.end);
-    xsflib::StoreLe32(&r[0x10], m.loop_length);
-    xsflib::StoreLe32(&r[0x14], uint32_t(m.inc));
-    xsflib::StoreLe32(&r[0x18], m.handle);
-    xsflib::StoreLe16(&r[0x1C], m.frac);
-    r[0x1E] = m.left;
-    r[0x1F] = m.right;
+    StoreMixFields(m, r);
     r[0x20] = m.hq;
     r[0x21] = m.mix;
     r[0x22] = m.hq_sample;

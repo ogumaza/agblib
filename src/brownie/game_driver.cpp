@@ -10,6 +10,8 @@
 
 #include "ntdlib/arm/cpu.h"
 
+#include "agblib/agb/sound_registers.h"
+
 namespace agblib::brownie
 {
 namespace
@@ -20,7 +22,6 @@ constexpr uint32_t kDma2Control = 0x040000D2;
 constexpr uint32_t kTimer0Control = 0x04000102;
 constexpr uint32_t kTimerStride = 4;
 constexpr uint32_t kInterruptEnable = 0x04000200;
-constexpr uint32_t kFifoA = 0x040000A0;
 constexpr uint16_t kTimerOn = 0x0080;
 constexpr uint16_t kDmaOn = 0x8000;
 
@@ -47,7 +48,7 @@ GameDriver::GameDriver(const Rom& rom, const GameRoutines& routines) : routines_
     system_.Store(agb::kRegSoundBias, 2, kBiosBias);
     system_.on_io_write = [this](uint32_t address, int size, uint32_t value)
     {
-        if (address >= agb::kRegSound1CntL && address < kFifoA)
+        if (address >= agb::kRegSound1CntL && address < agb::kRegFifoA)
         {
             sound_writes_.push_back({address, uint8_t(size), value});
         }
@@ -63,9 +64,9 @@ GameDriver::GameDriver(const Rom& rom, const GameRoutines& routines) : routines_
             }
         }
 
-        if (address >= kFifoA && address < kFifoA + 8)
+        if (address >= agb::kRegFifoA && address < agb::kRegFifoA + 8)
         {
-            OnFifoStore(int((address - kFifoA) / 4), size, value);
+            OnFifoStore(int((address - agb::kRegFifoA) / 4), size, value);
         }
 
         if (size == 2 && address >= kTimer0Control && address <= kTimer0Control + kTimerStride &&

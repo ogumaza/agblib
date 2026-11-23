@@ -116,10 +116,10 @@ struct Flow
 // Walks song `song` of the bank at `bank` as the driver's tick and row routines play it: the order list, the restart
 // order, commands B, D and F and the parameter byte that a command without one reuses. A loop is the first entry of an
 // order that comes after an entry of the same or a later order, where the song entered that order before. The walk
-// stops there, so an F00 after it never counts. The loop's start is the order's entry, not a repeat of the channels'
-// state: a command or a note left from the last pattern can play on into the next pass, and the state can first repeat
-// an order or two later. The walk also stops after `max_samples`. A song without patterns or with a tempo that makes a
-// tick 0 samples long gives kUnknown at once.
+// stops there. An F00 after it therefore never counts. The loop's start is the order's entry, not a repeat of the
+// channels' state: a command or a note left from the last pattern can play on into the next pass, and the state can
+// first repeat an order or two later. The walk also stops after `max_samples`. A song without patterns or with a tempo
+// that makes a tick 0 samples long gives kUnknown at once.
 Flow WalkSong(const Rom& rom, uint32_t bank, const Song& song, uint64_t max_samples);
 
 // The frames and the seconds that `samples` samples of the driver's mix take.

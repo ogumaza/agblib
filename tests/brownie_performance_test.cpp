@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
 #include "seqlib/midi/reader.h"
 #include "seqlib/testing/check.h"
 #include "xsflib/testing/check.h"
@@ -19,7 +20,6 @@
 #include "agblib/sequence_export/brownie/convert.h"
 #include "agblib/sequence_export/brownie/performance.h"
 #include "agblib/testing/brownie_cart.h"
-#include "ntdlib/sequence_export/performance.h"
 
 namespace
 {
@@ -304,6 +304,7 @@ void TestMidiFile()
         SEQLIB_CHECK_EQ(starts[n], perf.midi_places[n].on);
         SEQLIB_CHECK(perf.midi_places[n].on < perf.midi_places[n].off);
     }
+
     SEQLIB_CHECK_EQ(file.tracks.at(1).end_tick, perf.midi_end_tick);
 }
 

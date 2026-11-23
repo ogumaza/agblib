@@ -23,7 +23,6 @@
 
 namespace agblib::konami
 {
-
 namespace
 {
 
@@ -42,24 +41,24 @@ constexpr uint8_t kLoopKeptFlags = kTrackOn | kTrackRestarts | 0x10 | 0x08;
 
 // The first quarter of the driver's vibrato waveform, trunc(4096 * sin(2 * pi * i / 256)) for i = 0 to 64; the rest
 // follows by symmetry. The values are written out because a table computed with std::sin would only reach 4096 if sin()
-// returned exactly 1 at the peak, which isn't guaranteed on every platform.
+// returned exactly 1 at the peak. Not every platform guarantees that.
 constexpr int16_t kQuarterSine[65] = {0,    100,  200,  301,  401,  501,  601,  700,  799,  897,  995,  1092, 1189,
                                       1284, 1379, 1474, 1567, 1659, 1751, 1841, 1930, 2018, 2105, 2191, 2275, 2358,
                                       2439, 2519, 2598, 2675, 2750, 2824, 2896, 2966, 3034, 3101, 3166, 3229, 3289,
                                       3348, 3405, 3460, 3513, 3563, 3612, 3658, 3702, 3744, 3784, 3821, 3856, 3889,
                                       3919, 3947, 3973, 3996, 4017, 4035, 4051, 4065, 4076, 4084, 4091, 4094, 4096};
 
-// Returns the driver's vibrato waveform at `phase`, which runs through one cycle in 256 steps.
-int VibratoSine(uint8_t phase)
+// Returns the driver's vibrato waveform at `phase`. The phase runs through one cycle in 256 steps.
+[[maybe_unused]] int VibratoSine(uint8_t phase)
 {
     const int i = phase & 0x7F;
     const int value = kQuarterSine[i <= 64 ? i : 128 - i];
     return (phase & 0x80) ? -value : value;
 }
 
-// Routes DirectSound voice `voice` to echo bus `bus` - 1, or takes it off buses 0 and 1 if `bus` is 0, as F9 does in
+// Routes DirectSound voice `voice` to echo bus `bus` - 1, or takes it off buses 0 and 1 if `bus` is 0 as F9 does in
 // the Ultimate Masters and WCT 2004 revisions.
-void RouteEcho(std::array<EchoBus, 3>& echo, int voice, int bus)
+[[maybe_unused]] void RouteEcho(std::array<EchoBus, 3>& echo, int voice, int bus)
 {
     if (voice > 11)
     {
@@ -98,14 +97,14 @@ bool Scales(uint8_t scale)
 
 // Returns volume `vol` (0-15) of a WCT 2004 note or volume command with FA scale `scale` applied: `vol` × `scale` / 16,
 // rounded down.
-int ScaledVolume(uint8_t scale, int vol)
+[[maybe_unused]] int ScaledVolume(uint8_t scale, int vol)
 {
     return Scales(scale) ? (vol * scale) >> 4 : vol;
 }
 
 // Returns entry `entry` of the table of samples that a request gave F6, or 0 for none. The driver plays no sample from
-// entry 0, or from an entry that holds 0.
-uint16_t TableSample(const std::vector<uint16_t>& samples, int entry)
+// entry 0, or from an entry that contains 0.
+[[maybe_unused]] uint16_t TableSample(const std::vector<uint16_t>& samples, int entry)
 {
     return entry > 0 && size_t(entry) < samples.size() ? samples[size_t(entry)] : 0;
 }
@@ -158,7 +157,7 @@ void Rest(Track& t, TrackOutput& o)
 
 // Outputs the pitch of Dungeon Dice Monsters track `t` at volume `vol` through its output `o`, for notes and rests. A
 // rest plays at volume 0. The first frame of a track starts with one.
-void Play(DungeonDiceTrack& t, TrackOutput& o, int vol)
+[[maybe_unused]] void Play(DungeonDiceTrack& t, TrackOutput& o, int vol)
 {
     o.pitch = t.pitch;
     o.flags = kOutDungeonDiceNote;
@@ -273,6 +272,7 @@ Sequencer::Result TrackSequencer<TrackState>::RunTrack(int track, Revision revis
             {
                 return next == Next::kRestart ? Result::kRestart : Result::kContinue;
             }
+
             if (next == Next::kReadDelay)
             {
                 CountInCall(t, pos);
@@ -301,6 +301,7 @@ Sequencer::Result TrackSequencer<TrackState>::RunTrack(int track, Revision revis
             read.delay = delay;
             LogRead(track, read);
         }
+
         t.pos = uint16_t(pos);
         pos = t.pos;
         t.delay = uint16_t((kTempo * delay) >> 8);

@@ -10,7 +10,7 @@
 namespace agblib::agb
 {
 
-// The bytes of a sequence, and each item's offset in them. `offsets` holds one more entry than the sequence has items:
+// The bytes of a sequence, and each item's offset in them. `offsets` has one more entry than the sequence has items:
 // the end.
 struct Encoded
 {

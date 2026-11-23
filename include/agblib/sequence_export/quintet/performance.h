@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of a song of Quintet's GBA driver for an editor. ntdlib's model of the driver
-// (agblib::quintet::Sequencer) plays the song as ConvertSong does. The performance holds the notes of ConvertSong's
-// MIDI file, each with the command that started it. It also holds each channel's stretches of commands, and the changes
-// of each channel's volume.
+// The performance of a song of Quintet's GBA driver for an editor. The agblib model of the driver
+// (agblib::quintet::Sequencer) plays the song as ConvertSong does. The performance contains the notes of ConvertSong's
+// MIDI file, each with the command that started it. It also contains each channel's stretches of commands, and the
+// changes of each channel's volume.
 
 #pragma once
 
@@ -11,11 +11,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/quintet/driver.h"
 #include "agblib/sequence_export/agb/settings.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::quintet
 {
@@ -37,7 +38,7 @@ struct Performance : ntdlib::sequence_export::PerformanceBase
     // wait, and keeps the entry of the stretch before it. Its depth counts the repeats that the channel is in at its
     // first command. `note_commands[i].stretch` counts in the stretches of the note's track.
     //
-    // A stretch therefore holds at most one wait, at its end, with the notes or rests that D4 ties to it. Every note
+    // A stretch therefore contains at most one wait, at its end, with the notes or rests that D4 ties to it. Every note
     // waits for its length (Stretch::note_wait). The driver reads a stretch's commands in one frame. The commands
     // before its wait run at its tick. The MIDI file's tempo follows the first channel. A channel at another tempo T
     // plays each of its ticks in 37 × T0 / T of the file's ticks. T0 is the first channel's tempo. 7F starts a

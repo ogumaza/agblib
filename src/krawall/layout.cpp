@@ -13,11 +13,11 @@
 #include <utility>
 #include <vector>
 
-#include "xsflib/bytes.h"
+#include "ntdlib/commands/units.h"
 
+#include "agblib/agb/cut_steps.h"
 #include "agblib/krawall/commands.h"
 #include "agblib/krawall/instruments.h"
-#include "ntdlib/commands/units.h"
 
 namespace agblib::krawall
 {
@@ -41,7 +41,7 @@ constexpr uint32_t kSequenceAlignment = 4;
 
 using agb::Reached;
 
-// A sequence that the cut looks at, what the decoder made of it, and the module whose patterns it holds.
+// A sequence that the cut looks at, what the decoder made of it, and the module whose patterns it contains.
 struct CutSequence
 {
     Decoded decoded;
@@ -84,31 +84,20 @@ std::map<uint32_t, CutSequence> ReadSequences(const Rom& rom, const DriverInfo& 
             continue;
         }
 
-        for (const ntdlib::commands::Command& item : sequence.decoded.sequence.items)
+        const auto encode = [&]()
         {
-            if (item.kind == ntdlib::commands::Kind::kData)
-            {
-                sequence.size += uint32_t(item.bytes.size());
-            }
-        }
-        try
-        {
-            const Encoded encoded = EncodeSequence(sequence.decoded.sequence, sequence.decoded.entries, traits);
-            sequence.size = uint32_t(encoded.bytes.size());
-            sequence.usable = !sequence.decoded.opaque && rom.Contains(address, sequence.size) &&
-                              std::equal(encoded.bytes.begin(), encoded.bytes.end(), rom.Ptr(address));
-        }
-        catch (const std::invalid_argument&)
-        {
-            // The sequence stays among the ROM's bytes, up to the end of its data.
-        }
+            return EncodeSequence(sequence.decoded.sequence, sequence.decoded.entries, traits);
+        };
+        const agb::CutSize cut = agb::SizeOfCut(rom, address, sequence.decoded, encode);
+        sequence.size = cut.size;
+        sequence.usable = cut.usable;
         sequences.emplace(address, std::move(sequence));
     }
 
     return sequences;
 }
 
-// The spans of the ROM that hold the player's data, collected one piece at a time. A sample comes with its entry of
+// The spans of the ROM that contain the player's data, collected one piece at a time. A sample comes with its entry of
 // the game's table, once.
 class DataSpans
 {
@@ -175,6 +164,7 @@ void AddNamedInstruments(const Rom& rom, const Rom& source, const DriverInfo& in
             {
                 instrument = item.sample.value_or(0);
             }
+
             if (instrument <= 0 || !instruments.emplace(sequence.module, instrument).second)
             {
                 continue;
@@ -185,14 +175,17 @@ void AddNamedInstruments(const Rom& rom, const Rom& source, const DriverInfo& in
             {
                 continue;
             }
+
             if (found->address)
             {
                 if (!module.instruments_at)
                 {
                     spans.Add(info.instruments + 4 * uint32_t(instrument - 1), 4);
                 }
+
                 spans.Add(found->address, kInstrumentSize);
             }
+
             for (const Region& region : found->regions)
             {
                 spans.AddSample(region.sample);
@@ -240,7 +233,7 @@ std::map<uint32_t, std::map<int, ChannelNotes>> NotesOf(const std::map<uint32_t,
 // Adds the entries of the map of `instrument` at `address` that `channel` reads, and the samples they pick. A note
 // without an instrument looks its sample up again in the channel's instrument. The entry is the note less 1 plus the
 // relative note of the channel's sample, modulo 256. Past the map's 96 notes, the player reads the instrument's other
-// bytes, or the bytes after it, as a sample's number. A note off with an instrument reads entry 126: its note of 127,
+// bytes, or the bytes after it as a sample's number. A note off with an instrument reads entry 126: its note of 127,
 // less 1. Each sample that an entry picks becomes the channel's sample. Its relative note moves the channel's next
 // notes.
 void AddMapEntries(const Rom& source, const DriverInfo& info, uint32_t address, const ChannelNotes& channel,
@@ -262,8 +255,10 @@ void AddMapEntries(const Rom& source, const DriverInfo& info, uint32_t address, 
             spans.Add(at, 2);
             spans.AddSample(source.U16(at));
         }
+
         pending.push_back(source.U16(at));
     };
+
     for (const int entry : entries)
     {
         read(entry);
@@ -287,7 +282,7 @@ void AddMapEntries(const Rom& source, const DriverInfo& info, uint32_t address, 
     }
 }
 
-// The spans of the ROM that hold the player's data other than the sequences, from 0x08000000.
+// The spans of the ROM that contain the player's data other than the sequences, from 0x08000000.
 std::vector<Span> DriverDataOf(const Rom& rom, const DriverInfo& info, const std::map<uint32_t, CutSequence>& sequences)
 {
     DataSpans spans(rom, info);
@@ -297,6 +292,7 @@ std::vector<Span> DriverDataOf(const Rom& rom, const DriverInfo& info, const std
     {
         spans.Add(info.play_table, kPlayEntryBytes * uint64_t(info.table_count));
     }
+
     for (const uint32_t address : info.modules)
     {
         ModuleInfo module;
@@ -339,61 +335,27 @@ std::vector<Span> DriverDataOf(const Rom& rom, const DriverInfo& info, const std
     return spans.Take();
 }
 
-// Whether `size` bytes from `address` meet one of `spans`.
-bool Touches(std::span<const Span> spans, uint32_t address, uint32_t size)
-{
-    for (const Span& span : spans)
-    {
-        if (address < uint64_t(span.start) + span.size && span.start < uint64_t(address) + size)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 // The bytes that the driver reads, with `sequences`.
 Reached ReachedBytes(const Rom& rom, const DriverInfo& info, const std::map<uint32_t, CutSequence>& sequences)
 {
-    Reached reached(rom);
-    for (const Span& span : DriverDataOf(rom, info, sequences))
-    {
-        reached.Mark(span.start, span.size);
-    }
-    for (const auto& [address, sequence] : sequences)
-    {
-        reached.Mark(address, sequence.size);
-    }
-
-    return reached;
+    return agb::ReachedOf(rom, DriverDataOf(rom, info, sequences), sequences);
 }
 
 // Marks the sequences that stay among the ROM's bytes, in the order of the sequences' bytes. A sequence stays when
-// another reads any of its bytes, or when it holds the player's other data (`data`): the other reader would lose them
-// when the sequence moved. The ROM's first bytes stay in a run, which the fields count from.
+// another reads any of its bytes, or when it contains the player's other data (`data`): the other reader would lose
+// them when the sequence moved. The ROM's first bytes stay in a run, and the fields count from that run.
 void MarkUnmovable(std::map<uint32_t, CutSequence>& sequences, std::span<const Span> data)
 {
-    auto reader = sequences.end(); // the sequence that reads furthest
-    uint32_t read_to = 0;          // where that sequence's bytes end
-    for (auto it = sequences.begin(); it != sequences.end(); ++it)
+    const auto size = [](const CutSequence& sequence)
     {
-        const uint32_t end = it->first + it->second.size;
-        if (Touches(data, it->first, it->second.size) || it->first == kRomBase)
-        {
-            it->second.usable = false;
-        }
-        if (reader != sequences.end() && it->first < read_to)
-        {
-            it->second.usable = false;
-            reader->second.usable = false;
-        }
-        if (reader == sequences.end() || end > read_to)
-        {
-            reader = it;
-            read_to = end;
-        }
-    }
+        return sequence.size;
+    };
+
+    const auto stays = [&](uint32_t address, uint32_t bytes)
+    {
+        return agb::SpansTouch(data, address, bytes) || address == kRomBase;
+    };
+    agb::MarkReadTwice(sequences, size, stays);
 }
 
 // The place in the pieces of `layout` of an address in a run.
@@ -470,6 +432,7 @@ Layout Cut(const Rom& rom, const DriverInfo& info)
         layout.sequences.push_back(sequence.decoded.sequence);
         at = address + sequence.size;
     }
+
     agb::AddRomRun(rom, at, rom.End(), layout.pieces);
 
     AddPatternFields(info, sequences, pieces_of, layout);
@@ -487,13 +450,10 @@ std::vector<uint8_t> Join(const Traits& traits, std::span<const ntdlib::commands
     {
         return EncodeSequence(sequences[sequence], entries[piece], traits);
     };
+
     agb::JoinedRom rom(pieces, sequences.size(), fields, free,
                        {.alignment = kSequenceAlignment, .run_first = true, .filler = options.filler}, encode);
-    for (const ntdlib::sar::Field& field : fields)
-    {
-        uint8_t* at = rom.FieldBytes(field, 4);
-        xsflib::StoreLe32(at, uint32_t(rom.Position(field.to) - rom.Position(field.from) + kRomBase));
-    }
+    agb::WriteAddressFields(rom, fields);
 
     return rom.TakeImage();
 }

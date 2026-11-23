@@ -80,14 +80,17 @@ void ListTrack(const Rom& rom, const DriverInfo& info, uint32_t sequence, uint32
             length = uint16_t(c.ticks);
             velocity = c.velocity;
         }
+
         if (c.has_length && c.wait)
         {
             wait = uint16_t(c.ticks);
         }
+
         if (c.wait || (c.note && timed))
         {
             tick += c.ticks;
         }
+
         timed = c.op == 0xC8 ? true : c.op == 0xC9 ? false : timed;
 
         if (c.end)
@@ -96,10 +99,12 @@ void ListTrack(const Rom& rom, const DriverInfo& info, uint32_t sequence, uint32
             {
                 break;
             }
+
             address = stack.back();
             stack.pop_back();
             continue;
         }
+
         if (c.op == 0xF0)
         {
             address = sequence + c.target;
@@ -108,14 +113,17 @@ void ListTrack(const Rom& rom, const DriverInfo& info, uint32_t sequence, uint32
                 text += "; loops\n";
                 break;
             }
+
             continue;
         }
+
         if (c.op == 0xF4 && stack.size() < size_t(kMaxDepth))
         {
             stack.push_back(address + c.size);
             address = sequence + c.target;
             continue;
         }
+
         if (c.op == 0xF8 && c.track < kPlayerTracks)
         {
             starts.push_back({sequence + c.target, c.track, address});
@@ -152,6 +160,7 @@ bool DecodeTimed(const Rom& rom, uint32_t address, uint16_t length, uint8_t velo
         c.text = text;
         return true;
     }
+
     if (op == 0xC0 || op == 0xC1)
     {
         c.wait = true;
@@ -167,6 +176,7 @@ bool DecodeTimed(const Rom& rom, uint32_t address, uint16_t length, uint8_t velo
         c.text = "wait " + std::to_string(wait);
         return true;
     }
+
     if ((op & 0xF0) == 0xD0)
     {
         // A slide for the next note: between it and another note, over a share of the note's frames.

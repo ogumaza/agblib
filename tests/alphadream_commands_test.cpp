@@ -10,18 +10,21 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/alphadream/commands.h"
 #include "agblib/alphadream/driver.h"
 #include "agblib/testing/agb_cart.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace
 {
+
+using agblib::testing::agb_tests::Throws;
 
 namespace alphadream = agblib::alphadream;
 using agblib::agb::kRomBase;
@@ -75,21 +78,6 @@ bool RoundTrips(const Decoded& decoded, const std::vector<uint8_t>& bytes, Versi
     const alphadream::Encoded encoded = EncodeSequence(decoded.sequence, version);
 
     return encoded.bytes == bytes && encoded.offsets.back() == bytes.size();
-}
-
-template <typename F>
-bool Throws(F f)
-{
-    try
-    {
-        f();
-    }
-    catch (const std::invalid_argument&)
-    {
-        return true;
-    }
-
-    return false;
 }
 
 // A88E: tracks 0 and 2. Track 0 sets its instrument, volume and pan, plays a note and a rest, and jumps back to the
@@ -283,21 +271,26 @@ void TestLimits()
 
     ntdlib::commands::Sequence edited = decoded.sequence;
     edited.items[2].value.value = Value(0xF0);
-    Check(Throws([&] { EncodeSequence(edited, Version::kSuperstarSaga); }), "a length that reads as a command");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kSuperstarSaga); }),
+          "a length that reads as a command");
 
     edited = decoded.sequence;
     edited.items[2].velocity = Value(1);
-    Check(Throws([&] { EncodeSequence(edited, Version::kSuperstarSaga); }), "a volume in A88E's note");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kSuperstarSaga); }),
+          "a volume in A88E's note");
 
     edited = decoded.sequence;
     edited.items[2].kind = Kind::kPriority;
-    Check(Throws([&] { EncodeSequence(edited, Version::kSuperstarSaga); }), "a priority in A88E");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kSuperstarSaga); }),
+          "a priority in A88E");
     edited.items[2].kind = Kind::kVolume;
-    Check(Throws([&] { EncodeSequence(edited, Version::kHamSports); }), "a volume command in B85A");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kHamSports); }),
+          "a volume command in B85A");
 
     edited = decoded.sequence;
     edited.items[0].value.value = Value(3);
-    Check(Throws([&] { EncodeSequence(edited, Version::kSuperstarSaga); }), "a mask without an offset for each track");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kSuperstarSaga); }),
+          "a mask without an offset for each track");
 
     // The encoder follows the tracks as the driver does.
     const std::vector<uint8_t> kSaga = {
@@ -310,25 +303,30 @@ void TestLimits()
     edited = two.sequence;
     edited.items[8] = Command{};
     edited.items[8].kind = Kind::kNoteOff;
-    Check(Throws([&] { EncodeSequence(edited, Version::kSuperstarSaga); }), "a track that runs into data");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kSuperstarSaga); }),
+          "a track that runs into data");
 
     edited = two.sequence;
     edited.items[13].kind = Kind::kJump;
     edited.items[13].target = 6;
-    Check(Throws([&] { EncodeSequence(edited, Version::kSuperstarSaga); }), "a jump before its track's start");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kSuperstarSaga); }),
+          "a jump before its track's start");
 
     edited = two.sequence;
     edited.items.erase(edited.items.begin() + 11);
-    Check(Throws([&] { EncodeSequence(edited, Version::kSuperstarSaga); }), "a tie with bit 7 and no wait");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kSuperstarSaga); }),
+          "a tie with bit 7 and no wait");
 
     edited = two.sequence;
     edited.items[11].kind = Kind::kNoteOff;
     edited.items[11].value = {};
     edited.items[10].encoding.opcode = 0;
     edited.items[12].encoding.opcode = kRestFlag;
-    Check(Throws([&] { EncodeSequence(edited, Version::kSuperstarSaga); }), "a note with bit 7 and no rest");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kSuperstarSaga); }),
+          "a note with bit 7 and no rest");
     edited.items[11].kind = Kind::kWait;
-    Check(Throws([&] { EncodeSequence(edited, Version::kSuperstarSaga); }), "a byte of ticks without its note");
+    Check(Throws<std::invalid_argument>([&] { EncodeSequence(edited, Version::kSuperstarSaga); }),
+          "a byte of ticks without its note");
 
     // A new note in B85A writes its volume after its key.
     edited = decoded.sequence;

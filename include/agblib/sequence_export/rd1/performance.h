@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-// The performance of a song of Nintendo R&D1's GBA driver for an editor. ntdlib's model of the driver
-// (agblib::rd1::Sequencer) plays the song as ConvertSong does. The performance holds the notes of ConvertSong's MIDI
-// file, each with the event that started it. It also holds each track's stretches of events, and each track's changes
-// of its volume and pan.
+// The performance of a song of Nintendo R&D1's GBA driver for an editor. The model of the driver
+// (agblib::rd1::Sequencer) plays the song as ConvertSong does. The performance contains the notes of ConvertSong's MIDI
+// file, each with the event that started it. It also contains each track's stretches of events, and each track's
+// changes of its volume and pan.
 
 #pragma once
 
@@ -11,12 +11,13 @@
 #include <cstdint>
 #include <vector>
 
+#include "ntdlib/sequence_export/performance.h"
+#include "ntdlib/sequence_export/performance_base.h"
+
 #include "agblib/agb/rom.h"
 #include "agblib/rd1/commands.h"
 #include "agblib/rd1/driver.h"
 #include "agblib/sequence_export/agb/settings.h"
-#include "ntdlib/sequence_export/performance.h"
-#include "ntdlib/sequence_export/performance_base.h"
 
 namespace agblib::sequence_export::rd1
 {
@@ -33,7 +34,7 @@ struct MidiPlace
 // A recorded song: PerformanceBase, with the records for an editor.
 //
 // A tick is one of the ticks of the song's MIDI file, counted through every pass of the loop. `timebase` is the file's
-// division. The driver plays the notes of track t on channel t & 15, and the performance's track t & 15 holds them.
+// division. The driver plays the notes of track t on channel t & 15, and the performance's track t & 15 contains them.
 // `note_tracks` gives the track of each note. A preset is 128 times the bank of the song's record plus the note's
 // program. A note's velocity is the file's, from 1 to 127. Offsets count from `base`: the address of the song's MIDI
 // file. agblib::rd1::DecodeRomSequence decodes the file. agblib::rd1::SequenceOfSong gives the sequence.

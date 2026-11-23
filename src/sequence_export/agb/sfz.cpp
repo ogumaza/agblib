@@ -17,13 +17,12 @@
 #include <utility>
 #include <vector>
 
+#include "ntdlib/sequence_export/sfz_bank_file.h"
 #include "seqlib/file_name.h"
 #include "seqlib/sfz/opcodes.h"
 #include "seqlib/sfz/text.h"
 #include "seqlib/sfz/track_file.h"
 #include "seqlib/wav.h"
-
-#include "ntdlib/sequence_export/sfz_bank_file.h"
 
 namespace agblib::sequence_export::agb
 {
@@ -121,12 +120,14 @@ public:
                 stem += c;
             }
         }
+
         stem = seqlib::SafeFileName(stem);
         std::string name = stem + ".wav";
         if (taken_.contains(name))
         {
             name = stem + "_" + std::to_string(index) + ".wav";
         }
+
         taken_.insert(name);
         files_.push_back({name, seqlib::WavFile(sample.data, sample.sample_rate)});
 
@@ -165,6 +166,7 @@ std::string RegionLine(const RegionValues& values, const sf2::Sample& sample, co
         start = sample.loop_start;
         end = sample.loop_end;
     }
+
     s += sfz::LoopOpcodes(loop, start, loop ? end - 1 : 0);
 
     return s + "\n";
@@ -197,6 +199,7 @@ std::string PresetRegions(const Sf2File& sf, std::size_t preset, SfzSamples& sam
                     throw std::invalid_argument(
                         "An instrument's global zone holds generators. The SFZ files can't hold them.");
                 }
+
                 continue;
             }
 
@@ -259,10 +262,13 @@ seqlib::sfz::Instruments TrackSfz(const Sf2File& sf, std::span<const SfzTrack> t
             {
                 s += " locc0=" + std::to_string(preset.bank & 0x7F) + " hicc0=" + std::to_string(preset.bank & 0x7F);
             }
+
             s += "\n" + PresetRegions(sf, p, samples);
         }
+
         out.files.push_back({seqlib::SafeFileName(track.name) + ".sfz", std::move(s)});
     }
+
     out.samples = samples.Take();
 
     return out;
@@ -292,6 +298,7 @@ seqlib::sfz::Instruments PresetSfz(const Sf2File& sf, const std::string& title, 
 
         out.files.push_back({ntdlib::sequence_export::SfzBankFileName(title, number(preset), last), std::move(s)});
     }
+
     out.samples = samples.Take();
 
     return out;

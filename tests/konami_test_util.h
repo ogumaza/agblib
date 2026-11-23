@@ -88,13 +88,15 @@ inline DriverInfo SongsAt(uint32_t song_table, bool bend_kept = true)
 }
 
 // Detects the driver in `rom` with its tables given by hand: `song_count` songs in the song table at `song_table`, the
-// sample table at kSampleTable and a mixer rate of 16000 Hz. Fills in `info`, and returns false if the detection fails.
-inline bool DetectGiven(const Rom& rom, uint32_t song_table, int song_count, DriverInfo& info)
+// sample table at `sample_table` (0 to let detection find it) and a mixer rate of 16000 Hz. Fills in `info`, and
+// returns false if the detection fails.
+inline bool DetectGiven(const Rom& rom, uint32_t song_table, int song_count, DriverInfo& info,
+                        uint32_t sample_table = kSampleTable)
 {
     DriverOverrides ov;
     ov.song_table = song_table;
     ov.song_count = song_count;
-    ov.sample_table = kSampleTable;
+    ov.sample_table = sample_table;
     ov.mix_rate = 16000;
     std::string err;
 
@@ -126,6 +128,7 @@ inline std::vector<MidiEvent> ReadEvents(const std::string& path)
             {
                 tempos.emplace_back(tick, uint32_t(bytes[3] << 16 | bytes[4] << 8 | bytes[5]));
             }
+
             if (bytes[0] < 0xF0)
             {
                 events.push_back({names[t], 0, bytes[0], bytes[1], uint8_t(bytes.size() > 2 ? bytes[2] : 0)});
@@ -152,6 +155,7 @@ inline std::vector<MidiEvent> ReadEvents(const std::string& path)
             at = when;
             tempo = value;
         }
+
         seconds += double(ticks[e] - at) * tempo / division / 1e6;
         events[e].frame = uint32_t(std::lround(seconds / FrameSeconds(1)));
     }

@@ -3,7 +3,7 @@
 // A game's MP2K driver, run on the GBA's CPU (agb::System). It calls the routines that the game calls: the init,
 // the routine that starts a song, and each frame the routine that restarts the sound DMA and the driver's main
 // routine. It reads what the driver leaves in memory: the mixer's output and the sound channels. It's the reference
-// for ntdlib's model of the driver.
+// for agblib's model of the driver.
 
 #pragma once
 
@@ -28,7 +28,7 @@ struct GameRoutines
     uint32_t song_start = 0; // m4aSongNumStart
     uint32_t main = 0;       // SoundMain: the routine that m4aSoundMain calls in the game's VBlank interrupt
     uint32_t vsync = 0;      // m4aSoundVSync: the routine that restarts the sound DMA at the buffer's end
-    uint32_t sound_mode = 0; // m4aSoundMode, which the init calls with DriverInfo::sound_mode, or 0 if it wasn't found
+    uint32_t sound_mode = 0; // m4aSoundMode (the init calls it with DriverInfo::sound_mode), or 0 if it wasn't found
 
     // Camelot's version of the driver, and 0 for the SDK's. The game's boot code copies `copy_size` bytes from
     // `copy_source` to `copy_destination` in IWRAM: Camelot's mixer among them. The game's VBlank interrupt copies the
@@ -47,14 +47,14 @@ struct GameRoutines
 
 // Finds the routines by their shapes. SoundMain and m4aSoundVSync open by loading kSoundInfoPointer and checking the
 // SoundInfo's ident. m4aSoundVSync then counts down the SoundInfo's DMA counter. The init is the routine that calls
-// m4aSoundMode with the mode that detection found, or else the routine before m4aSoundMain. A game can hold more than
-// one copy of the driver: the copy nearest to the routine that starts a song counts. Returns false and sets `error`
-// when a routine has no copy of its shape.
+// m4aSoundMode with the mode that detection found, or else the routine before m4aSoundMain. A game can contain more
+// than one copy of the driver: the copy nearest to the routine that starts a song counts. Returns false and sets
+// `error` when a routine has no copy of its shape.
 //
 // Camelot's version of the driver keeps its SoundMain, its m4aSoundVSync and its mixer in the game's code. Its
 // SoundMain loads the stack's limit, the ident and kSoundInfoPointer from a literal pool with adr and ldm, and jumps to
 // the mixer in IWRAM with ldr r3, =mixer and bx r3. A DMA3 transfer of the boot code copies the mixer there: its
-// literal pool holds the source, the destination and the control. The VBlank interrupt calls SoundMain, and then the
+// literal pool contains the source, the destination and the control. The VBlank interrupt calls SoundMain, and then the
 // output stage with mov lr, r3 and the second half of a BL alone. The game's init calls m4aSoundInit first.
 bool FindGameRoutines(const Rom& rom, const DriverInfo& info, GameRoutines& routines, std::string& error);
 
@@ -62,7 +62,7 @@ bool FindGameRoutines(const Rom& rom, const DriverInfo& info, GameRoutines& rout
 constexpr uint32_t kSoundInfoPointer = 0x03007FF0; // the driver keeps its SoundInfo's address here
 constexpr uint32_t kSoundInfoDmaCounter = 0x04;    // the frames left before the sound DMA starts the buffer again
 constexpr uint32_t kSoundInfoMaxChannels = 0x06;
-constexpr uint32_t kSoundInfoDmaPeriod = 0x0B;   // the frames that the buffer holds
+constexpr uint32_t kSoundInfoDmaPeriod = 0x0B;   // the frames that the buffer contains
 constexpr uint32_t kSoundInfoFramePoints = 0x10; // the mixer's points a frame
 constexpr uint32_t kSoundInfoCgbChannels = 0x1C; // the four PSG channels' structures
 constexpr uint32_t kSoundInfoChannels = 0x50;    // the DirectSound channels' structures
@@ -108,7 +108,7 @@ public:
     // Whether the song's player has tracks that haven't ended, or any channel still sounds.
     bool Playing();
 
-    // The number of the track at `address` among the song's player's tracks, or -1.
+    // The number of the track at `address` among the tracks of the song's player, or -1.
     int TrackOf(uint32_t address) const;
 
     // Runs a frame as the game's interrupts do: the routine that restarts the sound DMA, then the main routine, with
@@ -129,7 +129,7 @@ public:
     // for each of its mixer's.
     double Rate();
 
-    // The DirectSound channels up to the driver's limit, then the four PSG channels. Each holds what the last frame
+    // The DirectSound channels up to the driver's limit, then the four PSG channels. Each contains what the last frame
     // left in it.
     std::vector<GameChannel> Channels();
 

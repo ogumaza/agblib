@@ -100,6 +100,7 @@ std::optional<Instrument> ReadInstrument(const Rom& rom, const DriverInfo& info,
         {
             return std::nullopt;
         }
+
         out.regions.push_back({1, kInstrumentNotes, instrument - 1});
         return out;
     }
@@ -109,6 +110,7 @@ std::optional<Instrument> ReadInstrument(const Rom& rom, const DriverInfo& info,
     {
         return std::nullopt;
     }
+
     for (int note = 1; note <= kInstrumentNotes; note++)
     {
         const int sample = source.U16(out.address + 2 * uint32_t(note - 1));
@@ -142,6 +144,7 @@ std::optional<Lookup> LookUpInstrument(const Rom& rom, const DriverInfo& info, c
         {
             return std::nullopt;
         }
+
         lookup.sample = source.U16(lookup.instrument + 2 * uint32_t(note - 1));
     }
     else

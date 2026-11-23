@@ -11,11 +11,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+#include "seqlib/testing/check.h"
 #include "xsflib/testing/check.h"
 
 #include "agblib/mp2k/commands.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 using xsflib::testing::Check;
 
@@ -59,16 +60,11 @@ bool EncodesBack(const Decoded& decoded, const std::vector<uint8_t>& bytes)
 
 bool Throws(const ntdlib::commands::Sequence& sequence, int note_arguments = 3)
 {
-    try
+    const auto encode = [&]
     {
         static_cast<void>(EncodeSequence(sequence, kBase, note_arguments));
-    }
-    catch (const std::invalid_argument&)
-    {
-        return true;
-    }
-
-    return false;
+    };
+    return seqlib::testing::Throws<std::invalid_argument>(encode);
 }
 
 // A track's settings, notes and waits, with running statuses and notes that leave out their arguments.
@@ -271,7 +267,7 @@ void TestUnreached()
 // Two tracks that reach a note with other keys: the note leaves its key out. The song stays data.
 void TestOpaque()
 {
-    // Track 1 at 0 plays Cn3 and track 2 at 8 plays Dn3. Both go to the note at 16, which leaves its key out.
+    // Track 1 at 0 plays Cn3 and track 2 at 8 plays Dn3. Both go to the note at 16. That note leaves its key out.
     std::vector<uint8_t> song = {0xE7, 0x3C, 0x64, 0xB2};
     Put32(song, At(16));
     song.insert(song.end(), {0xE7, 0x3E, 0x64, 0xB2});
@@ -340,8 +336,8 @@ void TestShortNotes()
     }
 }
 
-// What the encoder refuses: values its bytes can't hold, a running status that the kind has none of, and a note that
-// leaves out an argument before a byte below 0x80.
+// What the encoder refuses: values that its bytes can't express, a running status that the kind has none of, and a note
+// that leaves out an argument before a byte below 0x80.
 void TestRefusals()
 {
     Command note;

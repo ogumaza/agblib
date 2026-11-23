@@ -15,6 +15,35 @@ namespace agblib::rd1
 
 using agblib::agb::Rom;
 
+uint32_t RecordBytes(InstrumentKind kind)
+{
+    switch (kind)
+    {
+    case InstrumentKind::kSample:
+    case InstrumentKind::kFixed:
+        return 32;
+    case InstrumentKind::kPsg:
+        return 36;
+    case InstrumentKind::kDrums:
+        return 8;
+    case InstrumentKind::kKeySplit:
+        return 12;
+    case InstrumentKind::kNone:
+        break;
+    }
+
+    return 0;
+}
+
+SamplePoints PointsOfSample(const Rom& rom, uint32_t header)
+{
+    SamplePoints points;
+    points.address = rom.U32(header + 0x14);
+    points.count = std::min(std::max(rom.U32(header), rom.U32(header + 0x10)), kMaxSamplePoints);
+
+    return points;
+}
+
 int KeyPitch(const Rom& rom, const DriverInfo& info, int key)
 {
     return rom.U16(info.pitch_table + 2 * uint32_t(std::clamp(key, 0, 127)));

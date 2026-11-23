@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// A model of the driver playing a sequence: the music player, its tracks and the voices they play, frame by frame, as
+// A model of the driver playing a sequence: the music player, its tracks and the voices they play, frame by frame as
 // the driver's per-frame routine runs them.
 
 #pragma once
@@ -64,7 +64,7 @@ constexpr uint8_t kCentre = 0x40;
 constexpr uint8_t kEffectPriority = 12;
 constexpr uint8_t kEffectEcho = 0x7F;
 
-// The states of a voice, as the driver keeps them in the voice's byte 0x01.
+// The states of a voice as the driver keeps them in the voice's byte 0x01.
 constexpr uint8_t kVoiceFree = 0;
 constexpr uint8_t kVoicePlaying = 1;
 constexpr uint8_t kVoiceReleased = 2;
@@ -218,7 +218,7 @@ bool HasPsgTable(const Rom& rom, uint32_t region);
 // table is a halfword count, then a byte for each frame from the note's first. The last entry stays after that.
 uint8_t PsgTableEntry(const Rom& rom, uint32_t table, uint32_t frame);
 
-// Returns the last entry of a table of duties or widths. The voice holds it after the others.
+// Returns the last entry of a table of duties or widths. The voice contains it after the others.
 uint8_t LastPsgTableEntry(const Rom& rom, uint32_t table);
 
 // Returns the NR43 that the noise table gives pitch index `index`. An index past the table gets the table's last entry.
@@ -269,7 +269,7 @@ struct Event
     Lookup lookup;
     uint8_t type = 0;     // the voice's type
     uint32_t sample = 0;  // a sample voice's sample
-    uint32_t psg = 0;     // a PSG voice's setting, as the voice has it
+    uint32_t psg = 0;     // a PSG voice's setting as the voice has it
     uint32_t command = 0; // the address of the note's command
 };
 
@@ -287,7 +287,7 @@ struct TrackRead
 // The most voices of a sequencer that grows them (Sequencer::GrowVoices): the sample voices and the PSG voices.
 constexpr int kMostVoices = 256;
 
-// A run of a sample voice's points in a frame, as the mixer's inner loop adds them: `points` points from `position`, in
+// A run of a sample voice's points in a frame as the mixer's inner loop adds them: `points` points from `position`, in
 // 1/256 points from the sample's first point, moving on by the voice's step. The run's first point goes to `first` of
 // the frame's 176 places. Near a sample's end, the loop can run on a little past a side's 176 places, or start before
 // the place where the last run ended.
@@ -344,16 +344,16 @@ public:
 
     // From the next note on, gives a note a voice past the console's when `on` and the driver would give it a voice
     // whose note hasn't reached its release, or none: a grown voice of the note's kind whose note has ended, or a new
-    // one, up to kMostVoices. A new note still takes a voice whose note is in its release, as on the console. No note
+    // one, up to kMostVoices. A new note still takes a voice whose note is in its release as on the console. No note
     // then cuts another before its release, and no priority leaves a note out. A grown sample voice mixes as the
-    // console's do. A grown PSG voice writes the registers of a grown PSG unit (agb::kGrownPsgRegisters), as the driver
+    // console's do. A grown PSG voice writes the registers of a grown PSG unit (agb::kGrownPsgRegisters) as the driver
     // writes the PSG's. The enhanced mixing mode's hosts grow the voices.
     void GrowVoices(bool on)
     {
         growing_ = on;
     }
 
-    // Keeps the time at which each track first read each of its commands when `on`, as it does from the start. A jump's
+    // Keeps the time at which each track first read each of its commands when `on` as it does from the start. A jump's
     // event then gives the time of the command that it goes to (Event::target_units). A player has no use for that, and
     // a track's record stays small without it.
     void KeepTimes(bool on)
@@ -530,7 +530,7 @@ private:
     uint16_t unit_ = 0; // the PSG unit that the voice in hand writes to
     std::vector<std::array<uint8_t, 0x40>> grown_registers_;
     std::vector<uint32_t> grown_waves_;
-    std::array<uint8_t, 0x40> registers_ = {}; // 0x04000060 on, as last written
+    std::array<uint8_t, 0x40> registers_ = {}; // 0x04000060 on as last written
     uint8_t restarted_ = 0;                    // bit c: the frame started PSG channel c again
     uint64_t elapsed_ = 0;
     uint32_t next_id_ = 1;

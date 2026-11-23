@@ -10,18 +10,22 @@
 #include <variant>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/rom.h"
 #include "agblib/rd1/commands.h"
 #include "agblib/rd1/driver.h"
 #include "agblib/rd1/layout.h"
-#include "ntdlib/commands/sequence.h"
 
 using xsflib::testing::Check;
 
 namespace
 {
+
+using agblib::testing::agb_tests::RomOf;
+using agblib::testing::agb_tests::Throws;
 
 namespace rd1 = agblib::rd1;
 using agblib::agb::kRomBase;
@@ -76,6 +80,7 @@ std::vector<uint8_t> TestImage()
             Store32(image, record + 12, kRomBase + kNames);
         }
     }
+
     image[kNames] = 'm';
 
     // A bank whose first program plays a sample of 16 points.
@@ -108,30 +113,6 @@ rd1::DriverInfo TestInfo()
     info.bank_count = 1;
 
     return info;
-}
-
-Rom RomOf(std::vector<uint8_t> image)
-{
-    Rom rom;
-    rom.Assign(std::move(image));
-
-    return rom;
-}
-
-// Whether `body` throws an exception of type `E`.
-template <typename E, typename Body>
-bool Throws(Body body)
-{
-    try
-    {
-        body();
-    }
-    catch (const E&)
-    {
-        return true;
-    }
-
-    return false;
 }
 
 void TestRoundTrip()

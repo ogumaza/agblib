@@ -6,10 +6,10 @@
 // starts. Each command becomes an item of its kind, and the bytes that no track reaches stay as data. The encoder
 // writes the items back, and gives the same bytes for a sequence that the decoder read.
 //
-// A music sequence's header holds a signed count of tracks and a byte of 0. The two stay a kData item of 2 bytes. A
-// halfword for each track follows. A sound effects' sequence holds only the halfwords, up to the place where its first
-// track starts. Each halfword is an item of kOpenTrack, with kHeaderEntry in `encoding.opcode` and the track's number
-// in `index`. An offset of 0 names no track: its item has `target_outside` set and `target` 0.
+// A music sequence's header contains a signed count of tracks and a byte of 0. The two stay a kData item of 2 bytes. A
+// halfword for each track follows. A sound effects' sequence contains only the halfwords, up to the place where its
+// first track starts. Each halfword is an item of kOpenTrack, with kHeaderEntry in `encoding.opcode` and the track's
+// number in `index`. An offset of 0 names no track: its item has `target_outside` set and `target` 0.
 //
 // The kinds:
 //   kNote             00-5F and 60-BF: `key` is the note, `velocity` its velocity and `value` its length
@@ -44,7 +44,7 @@
 // A note of 00-5F and a wait of C0 take their values from the track's last note and wait, and such an item has
 // `encoding.repeated` set. Its values are those that the track's first reading of it gives. The encoder ignores them
 // and writes the one byte. An edit of such a value clears `repeated` too, and the encoder then writes the values. A
-// length takes a byte, or two with the first byte's top bit set. `encoding.value_bytes` holds 2 where a length takes
+// length takes a byte, or two with the first byte's top bit set. `encoding.value_bytes` contains 2 where a length takes
 // two bytes and requires one.
 //
 // A pan's unit is a position from the centre, at 64. A bend's unit is a fraction of the bend's range, and a transpose's
@@ -57,11 +57,12 @@
 #include <string>
 #include <vector>
 
+#include "ntdlib/commands/sequence.h"
+#include "ntdlib/commands/units.h"
+
 #include "agblib/agb/encoded.h"
 #include "agblib/agb/rom.h"
 #include "agblib/rd2/driver.h"
-#include "ntdlib/commands/sequence.h"
-#include "ntdlib/commands/units.h"
 
 namespace agblib::rd2
 {
@@ -78,18 +79,18 @@ struct Decoded
     ntdlib::commands::Sequence sequence;
     std::vector<uint32_t> entries; // the item where each track of the header starts, or kNoEntry
 
-    // The sequence can't be read safely: a header that names more tracks than a player holds or a place outside the
+    // The sequence can't be read safely: a header that names more tracks than a player contains or a place outside the
     // bytes, commands that overlap, a track that reaches the header or that runs past the bytes. The decoder then keeps
     // the whole sequence as data, split at the entries, and `reason` says why.
     bool opaque = false;
     std::string reason;
 };
 
-// Decodes `data`, a sequence's bytes from its start, as a sound effects' sequence with `effects`. Throws
+// Decodes `data`, a sequence's bytes from its start as a sound effects' sequence with `effects`. Throws
 // std::invalid_argument for empty bytes.
 Decoded DecodeSequence(std::span<const uint8_t> data, Revision revision, bool effects = false);
 
-// The sequences that a ROM's driver holds: the sequences, then the sound effects' sequences.
+// The sequences that a ROM's driver contains: the sequences, then the sound effects' sequences.
 int SequenceCount(const DriverInfo& info);
 
 // The address of sequence `sequence`. Throws std::out_of_range past SequenceCount().
@@ -98,12 +99,12 @@ uint32_t SequenceAddress(const DriverInfo& info, int sequence);
 // Whether sequence `sequence` is one of the sound effects' sequences.
 bool IsEffectSequence(const DriverInfo& info, int sequence);
 
-// The sequence that holds song `song`: a music sequence, or for a sound effect the sequence of its track. Throws
-// std::out_of_range for a song that the driver lacks.
+// The sequence that contains song `song`: a music sequence, or for a sound effect the sequence of its track. Throws
+// std::out_of_range for a song that the driver doesn't have.
 int SequenceOfSong(const DriverInfo& info, int song);
 
 // Decodes sequence `sequence`. Its bytes run from its start to the last byte that a track reads, and on to the next
-// sequence's start where that lies less than kSequenceGap bytes further: a sequence can hold a few bytes that no track
+// sequence's start where that is less than kSequenceGap bytes further: a sequence can contain a few bytes that no track
 // reaches after its tracks. Throws std::out_of_range past SequenceCount(), and std::invalid_argument for a sequence
 // that names no byte of the ROM.
 Decoded DecodeRomSequence(const Rom& rom, const DriverInfo& info, int sequence);
@@ -116,13 +117,14 @@ inline constexpr uint32_t kSequenceGap = 16;
 using Encoded = agb::Encoded;
 
 // Encodes `sequence`, in the console's values nearest its units. Throws std::invalid_argument for a command that the
-// revision's bytes can't hold, a target more than 0xFFFF bytes from the sequence's start, and a sequence that the
-// driver wouldn't read as its items say: a track that reaches data, or that reads a command that the items don't hold.
+// revision's bytes can't contain, a target more than 0xFFFF bytes from the sequence's start, and a sequence that the
+// driver wouldn't read as its items say: a track that reaches data, or that reads a command that the items don't
+// contain.
 Encoded EncodeSequence(const ntdlib::commands::Sequence& sequence, Revision revision);
 
 // The offset of each item of `sequence` in its bytes, then the end. The offsets don't depend on where the tracks start,
 // and the items don't have to read back as a sequence. Throws std::invalid_argument for a command that the revision's
-// bytes can't hold.
+// bytes can't contain.
 std::vector<uint32_t> ItemOffsets(const ntdlib::commands::Sequence& sequence, Revision revision);
 
 // The scale of the value of a command of `kind` (ntdlib::commands::UnitOf). A note's velocity takes the unchanged

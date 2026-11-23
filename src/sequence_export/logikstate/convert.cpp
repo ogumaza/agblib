@@ -3,26 +3,20 @@
 #include "agblib/sequence_export/logikstate/convert.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <map>
 #include <string>
-#include <tuple>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
-#include "agblib/agb/files.h"
 #include "agblib/agb/rom.h"
 #include "agblib/agb/song_plan.h"
 #include "agblib/logikstate/driver.h"
 #include "agblib/logikstate/mod1_player.h"
 #include "agblib/logikstate/mod30_player.h"
 #include "agblib/logikstate/player.h"
-#include "agblib/sequence_export/agb/midi.h"
-#include "agblib/sequence_export/agb/module_bars.h"
+#include "agblib/sequence_export/agb/module_conversion.h"
 #include "agblib/sequence_export/agb/settings.h"
 #include "agblib/sequence_export/agb/sf2.h"
 #include "agblib/sequence_export/logikstate/soundfont.h"
@@ -31,47 +25,27 @@ namespace agblib::sequence_export::logikstate
 {
 
 using agblib::agb::LoopStart;
-using agblib::agb::PassComparison;
-using agblib::agb::WriteFile;
 using agblib::logikstate::Build;
 using agblib::logikstate::Channel;
 using agblib::logikstate::Format;
-using agblib::logikstate::kMixChannels;
-using agblib::logikstate::kMod30Records;
 using agblib::logikstate::Mod1Player;
 using agblib::logikstate::Mod30Channel;
 using agblib::logikstate::Mod30Player;
 using agblib::logikstate::Mod30Settings;
 using agblib::logikstate::Player;
 using agblib::logikstate::Song;
-using agblib::sequence_export::agb::BarStarts;
-using agblib::sequence_export::agb::BarTicks;
-using agblib::sequence_export::agb::BendRangeFor;
-using agblib::sequence_export::agb::ChannelWriter;
-using agblib::sequence_export::agb::ChooseMeter;
-using agblib::sequence_export::agb::kSmallBend;
-using agblib::sequence_export::agb::MelodicChannel;
-using agblib::sequence_export::agb::Meter;
-using agblib::sequence_export::agb::MidiFile;
-using agblib::sequence_export::agb::MidiTrack;
-using agblib::sequence_export::agb::ModuleStep;
-using agblib::sequence_export::agb::NumberedPreset;
-using agblib::sequence_export::agb::OrderRun;
-using agblib::sequence_export::agb::OrderRuns;
-using agblib::sequence_export::agb::SongNumber;
-using agblib::sequence_export::agb::SongStem;
-using agblib::sequence_export::agb::WriteBarSignatures;
+using agblib::sequence_export::agb::kModuleMaxSeconds;
+using agblib::sequence_export::agb::LoopPassesBend;
+using agblib::sequence_export::agb::LoopPassSamples;
+using agblib::sequence_export::agb::ModuleRecorder;
+using agblib::sequence_export::agb::ModuleRow;
+using agblib::sequence_export::agb::ModuleSimulation;
+using agblib::sequence_export::agb::RunModuleConversion;
+using agblib::sequence_export::agb::Sounding;
+using agblib::sequence_export::agb::TrimVoices;
 
 namespace
 {
-
-// The MIDI ticks of a row. The ticks of the player's effects don't keep step with the rows. Each one therefore falls on
-// the MIDI tick nearest its place in its row.
-constexpr uint32_t kRowTicks = 120;
-
-// The cents by which a note's pitch can miss its key before its bend makes up the difference: more than the table of
-// periods misses equal temperament by in the octaves that modules use.
-constexpr double kTuningCents = 3;
 
 // The level of a channel at which a SoundFont sample plays at full scale: two FIFOs play each channel's points times
 // its volume over 256. One FIFO plays them at half that level.
@@ -81,13 +55,11 @@ constexpr int kFullFifos = 2;
 // The share of that level that a game plays once it has switched the sound off: both FIFOs at half volume.
 constexpr double kHalfVolume = 0.5;
 
-// The longest conversion, in seconds.
-constexpr uint64_t kMaxSeconds = 60 * 60;
-
-// The most channels of a module of any format.
-constexpr size_t kMaxVoices = std::max(size_t(kMixChannels), size_t(kMod30Records));
-
-// A channel of the mixer after a row or a tick.
+// A channel of the mixer after a row or a tick. Both of the mixer's sides play the channel alike.
+//
+// A note plays from the row that starts it, or from the row or tick at which its volume rises from 0. The mixer of the
+// build with short records leaves a channel at volume 0 alone, and the sample waits at its point. In the build with
+// long records, the sample moves on in silence. A note then lasts through its rows at volume 0, at level 0.
 struct Voice
 {
     bool playing = false;
@@ -95,46 +67,11 @@ struct Voice
     PlayedSample sample; // with the point that the channel plays as its offset
     int number = 0;      // the sample's number in the module, from 1
     double rate = 0;     // Hz
-    double level = 0;    // where kFullLevel is full scale
+    double left = 0;     // where kFullLevel is full scale
+    double right = 0;
 };
 
-// What the conversion keeps of a row or of a tick of effects.
-struct StepData
-{
-    uint64_t time = 0; // the mixer's samples from the song's start
-    size_t row = 0;    // the row that it belongs to: a place in the rows
-    std::array<Voice, kMaxVoices> voices;
-};
-
-// A row that the player played.
-struct RowData
-{
-    size_t step = 0; // its place in the steps
-    int order = 0;
-    int pattern_row = 0;  // its number in its pattern
-    uint32_t samples = 0; // its length
-};
-
-// The stretch of a song that the conversion covers, in rows.
-struct Plan
-{
-    bool loops = false;
-    size_t loop_start = 0; // the first row whose place in the module comes back
-    size_t loop_end = 0;   // where it comes back
-    size_t end = 0;
-};
-
-// The model's output for the stretch of a song that the plan covers.
-struct Simulation
-{
-    std::vector<StepData> steps; // up to and including the plan's last row
-    std::vector<RowData> rows;
-    Plan plan;
-    uint32_t channels = 0;
-    uint32_t rate = 0;
-    bool truncated = false; // cut off without a loop
-    std::vector<std::string> warnings;
-};
+using Simulation = ModuleSimulation<Voice>;
 
 // A song, the build of the driver that plays it, the music's volume that the game plays it at, the FIFOs that play
 // the mix, and whether the game plays its FIFOs at half volume. A GBAMOD30 module plays with the game's settings of
@@ -233,6 +170,7 @@ Voice VoiceOf(const Rom& rom, const P& player, int number, double scale)
         v.playing = false;
         return v;
     }
+
     if (point >= ch.length)
     {
         v.sample.offset = LoopOffset(v.sample);
@@ -244,20 +182,20 @@ Voice VoiceOf(const Rom& rom, const P& player, int number, double scale)
 
     v.number = ch.sample + 1;
     v.rate = double(ch.step) * player.Header().rate / 4096.0;
-    v.level = std::min(player.MixVolume(ch, number) * scale, kFullLevel);
+    v.left = v.right = std::min(player.MixVolume(ch, number) * scale, kFullLevel);
 
     // At each turn of a loop, the mixer masks the place with kEndPlaceMask. The mask is 0, and the place's fraction is
     // lost. A turn of L points at the step s then takes ceil(L × 4096 / s) samples, not L × 4096 / s, and a short loop
-    // plays flat. A loop over the whole sample plays its first pass that way too. A difference below kTuningCents is
-    // left out, as at a note's start.
+    // plays flat. A loop over the whole sample plays its first pass that way too. A difference below kModuleTuningCents
+    // is left out as at a note's start.
     const bool whole_loop = ch.whole_loop_start == 0 && ch.whole_loop_length == ch.whole_length;
     if (Loops(ch.whole_loop_length) && int32_t(ch.step) > 0 && (in_loop || point >= ch.length || whole_loop))
     {
         static_assert(agblib::logikstate::kEndPlaceMask == 0);
         const uint64_t span = uint64_t(ch.whole_loop_length) << 12;
-        const uint64_t samples = (span + ch.step - 1) / ch.step;
+        const uint64_t samples = LoopPassSamples(span, ch.step, 1);
         const double turn = double(span) / (double(samples) * ch.step);
-        if (-1200 * std::log2(turn) >= kTuningCents)
+        if (LoopPassesBend(turn))
         {
             v.rate *= turn;
         }
@@ -271,7 +209,7 @@ Voice VoiceOf(const Rom& rom, const P& player, int number, double scale)
         if (int32_t(ch.step) <= 0)
         {
             v.rate = 0;
-            v.level = 0;
+            v.left = v.right = 0;
         }
     }
 
@@ -305,6 +243,7 @@ Voice VoiceOf(const Rom&, const Mod30Player& player, int number, double scale)
         v.playing = false;
         return v;
     }
+
     if (ch.position >= ch.length)
     {
         v.sample.offset = LoopOffset(v.sample);
@@ -316,32 +255,13 @@ Voice VoiceOf(const Rom&, const Mod30Player& player, int number, double scale)
 
     v.number = ch.sample + 1;
     v.rate = double(ch.step) * player.Rate() / 4096.0;
-    v.level = std::min(player.MixVolume(ch) * scale, kFullLevel);
+    v.left = v.right = std::min(player.MixVolume(ch) * scale, kFullLevel);
 
     return v;
 }
 
-// Returns whether a channel sounds in the rows from `first` up to `last`.
-bool Sounds(const Simulation& sim, size_t first, size_t last)
-{
-    for (size_t i = sim.rows[first].step; i < sim.rows[last].step; i++)
-    {
-        for (uint32_t c = 0; c < sim.channels; c++)
-        {
-            if (sim.steps[i].voices[c].playing && sim.steps[i].voices[c].level > 0)
-            {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
 // Runs the model until a row revisits an earlier place in the module with the same speed, tempo and pattern-loop
-// state, and the module has played the loop between them `loops` times in all. A loop in which no channel sounds is
-// the wait after a jingle: the song then has no loop and ends where that loop starts. From LoopStart::kSecondPass, the
-// loop starts at the module's second pass through it. The module then plays the first pass before it.
+// state, and the module has played the loop between them `loops` times in all (ModuleRecorder).
 //
 // A song of the GBAMOD1 build also ends at the first row whose order is past the module's last. The driver then clears
 // the channels at each frame, and reads rows from the bytes after the module's orders. A song that plays once ends
@@ -357,6 +277,7 @@ Simulation Simulate(const Rom& rom, const Play& play, int loops, LoopStart start
         sim.warnings = player.Warnings();
         return sim;
     }
+
     sim.channels = ChannelCount(player);
     sim.rate = MixerRate(player);
 
@@ -367,63 +288,50 @@ Simulation Simulate(const Rom& rom, const Play& play, int loops, LoopStart start
     {
         repeat_orders = player.RepeatOrders();
     }
-    std::map<std::tuple<int, int, std::vector<uint32_t>>, size_t> places;
-    size_t end = SIZE_MAX;
+
+    ModuleRecorder recorder(sim, loops, start_pass);
     const double scale = FifoScale(play);
     const auto record = [&](bool row)
     {
-        if (!sim.rows.empty() && sim.rows.size() > end)
+        if (recorder.Full())
         {
             return;
         }
 
         // A row past the module's last order ends the song.
-        if (row && end == SIZE_MAX && uint32_t(player.RowOrder()) >= player.Header().order_count)
+        if (row && !recorder.Ended() && uint32_t(player.RowOrder()) >= player.Header().order_count)
         {
-            end = sim.rows.size();
+            recorder.EndAt(sim.rows.size());
         }
 
-        // The first row that comes back to an earlier row's place starts the loop's second pass.
-        if (row && end == SIZE_MAX)
-        {
-            const int order = int(uint32_t(player.RowOrder()) % repeat_orders);
-            const auto key = std::make_tuple(order, player.RowNumber(), player.RepeatState());
-            const auto [it, added] = places.emplace(key, sim.rows.size());
-            if (!added)
-            {
-                const size_t length = sim.rows.size() - it->second;
-                const size_t skip = start_pass == LoopStart::kSecondPass ? length : 0;
-                sim.plan.loops = true;
-                sim.plan.loop_start = it->second + skip;
-                sim.plan.loop_end = sim.rows.size() + skip;
-                end = sim.plan.loop_start + size_t(std::max(loops, 1)) * length;
-            }
-        }
         if (row)
         {
-            sim.rows.push_back({sim.steps.size(), player.RowOrder(), player.RowNumber(), player.RowSamples()});
+            const int order = int(uint32_t(player.RowOrder()) % repeat_orders);
+            recorder.Visit({order, player.RowNumber(), player.RepeatState()});
+            recorder.AddRow(player.RowOrder(), player.RowNumber(), player.RowSamples());
         }
+
         if constexpr (std::is_same_v<P, Mod1Player>)
         {
-            if (row && end == SIZE_MAX && play.song.plays_once && player.RowJumped())
+            if (row && !recorder.Ended() && play.song.plays_once && player.RowJumped())
             {
-                end = sim.rows.size() - 1;
+                recorder.EndAt(sim.rows.size() - 1);
             }
         }
 
-        StepData d;
-        d.time = player.Elapsed();
-        d.row = sim.rows.size() - 1;
+        bool sounds = false;
         for (uint32_t c = 0; c < sim.channels; c++)
         {
-            d.voices[c] = VoiceOf(rom, player, int(c), scale);
+            sim.voices.push_back(VoiceOf(rom, player, int(c), scale));
+            sounds = sounds || Sounding(sim.voices.back());
         }
-        sim.steps.push_back(d);
+
+        recorder.AddStep(player.Elapsed(), sounds);
     };
     player.OnStep(record);
 
-    const uint64_t most = kMaxSeconds * uint64_t(sim.rate);
-    while (player.Playing() && (sim.rows.empty() || sim.rows.size() <= end) && player.Elapsed() < most)
+    const uint64_t most = kModuleMaxSeconds * uint64_t(sim.rate);
+    while (player.Playing() && recorder.Wants() && player.Elapsed() < most)
     {
         player.Frame();
     }
@@ -435,324 +343,36 @@ Simulation Simulate(const Rom& rom, const Play& play, int loops, LoopStart start
     }
 
     // A GBAMOD30 module without the loop flag stops after its last order's last row. The mixer plays on what the
-    // channels hold, and the song ends where that row ends.
+    // channels contain, and the song ends where that row ends.
     if constexpr (std::is_same_v<P, Mod30Player>)
     {
-        if (end == SIZE_MAX && !player.Playing() && player.Valid())
+        if (!recorder.Ended() && !player.Playing() && player.Valid())
         {
-            const RowData last = sim.rows.back();
-            StepData d;
-            d.time = sim.steps[last.step].time + last.samples;
-            d.row = sim.rows.size();
-            sim.rows.push_back({sim.steps.size(), last.order, last.pattern_row + 1, last.samples});
-            sim.steps.push_back(d);
+            const ModuleRow last = sim.rows.back();
+            const uint64_t time = sim.steps[last.step].time + last.samples;
+            recorder.AddRow(last.order, last.pattern_row + 1, last.samples);
+            sim.voices.resize(sim.voices.size() + sim.channels);
+            recorder.AddStep(time, false);
         }
     }
 
-    // A loop whose first pass doesn't end within the limit doesn't count. The passes after one that does end there.
-    if (end != SIZE_MAX && sim.rows.size() <= end)
-    {
-        if (sim.plan.loops && sim.plan.loop_end >= sim.rows.size())
-        {
-            sim.plan = {};
-            end = SIZE_MAX;
-        }
-        else
-        {
-            end = sim.rows.size() - 1;
-        }
-    }
-
-    // A module that the player can't play on ends where it stops, and one that doesn't loop within the limit is cut
-    // off.
-    if (end == SIZE_MAX)
-    {
-        end = sim.rows.size() - 1;
-        if (player.Playing())
-        {
-            sim.warnings.push_back("found no loop within an hour, so the module is cut off there");
-            sim.truncated = true;
-        }
-    }
-
-    sim.rows.resize(std::min(sim.rows.size(), end + 1));
-    if (sim.plan.loops && !Sounds(sim, sim.plan.loop_start, std::min(sim.plan.loop_end, sim.rows.size() - 1)))
-    {
-        sim.plan.loops = false;
-        sim.rows.resize(sim.plan.loop_start + 1);
-    }
-    sim.plan.end = sim.rows.size() - 1;
-    sim.steps.resize(sim.rows.back().step + 1);
+    recorder.Finish(player.Playing(), "found no loop within an hour, so the module is cut off there");
+    TrimVoices(sim);
 
     return sim;
 }
 
-// A row or a tick of a note: how far its pitch is from the note's key, in semitones, and its level.
-struct Sound
-{
-    size_t step = 0;
-    double bend = 0;
-    double level = 0;
-};
-
-// A note: a sample that a channel plays from the row that starts it, or from the row or tick at which its volume rises
-// from 0, until it stops, another starts, its volume falls to 0, or the song ends. The mixer of the build with short
-// records leaves a channel at volume 0 alone, and the sample waits at its point. In the build with long records, the
-// sample moves on in silence. A note then lasts through its rows at volume 0, at level 0.
-struct Note
-{
-    size_t on = 0; // in steps
-    size_t off = 0;
-    int key = 0;
-    int program = 0;
-    std::vector<Sound> sounds;
-};
-
-// Returns the notes of channel `c`, adding their instruments to `instruments`.
-std::vector<Note> MakeNotes(const Simulation& sim, uint32_t c, InstrumentSet& instruments)
-{
-    std::vector<Note> notes;
-    bool open = false;
-    double start_rate = 0, tuning = 0;
-    const size_t end = sim.steps.size() - 1;
-    for (size_t i = 0; i <= end; i++)
-    {
-        const Voice& v = sim.steps[i].voices[c];
-        const Voice* last = i > 0 ? &sim.steps[i - 1].voices[c] : nullptr;
-        const bool started = v.playing && (!last || !last->playing || v.starts != last->starts);
-        if (open && (!v.playing || started || i == end))
-        {
-            notes.back().off = i;
-            open = false;
-        }
-        if (i == end)
-        {
-            break;
-        }
-
-        // A note's key is the one nearest its pitch, and a pitch that misses it by more than the table of periods does
-        // starts with a bend.
-        if (v.playing && !open && v.rate > 0)
-        {
-            Note n;
-            n.on = i;
-            n.program = instruments.Program(v.sample, v.number);
-            const double semitones = 12 * std::log2(v.rate / v.sample.rate);
-            n.key = std::clamp(int(std::lround(kRootKey + semitones)), 0, 127);
-            tuning = semitones - (n.key - kRootKey);
-            if (std::fabs(tuning) * 100 < kTuningCents)
-            {
-                tuning = 0;
-            }
-            start_rate = v.rate;
-            notes.push_back(n);
-            open = true;
-        }
-
-        // Each row and tick of the note: its pitch in a bend from its key, and its level.
-        if (open)
-        {
-            Sound s;
-            s.step = i;
-            s.bend = notes.back().sounds.empty() ? tuning : notes.back().sounds.back().bend;
-            if (v.rate > 0)
-            {
-                s.bend = tuning + 12 * std::log2(v.rate / start_rate);
-            }
-            s.level = v.level;
-            notes.back().sounds.push_back(s);
-        }
-    }
-
-    return notes;
-}
-
-// MIDI timing. Each row lasts kRowTicks MIDI ticks, and the tempo sets its length.
-struct Timing
-{
-    Meter meter;                                       // in MIDI ticks
-    std::vector<uint32_t> rows;                        // the MIDI tick of each row, and of the end
-    std::vector<uint32_t> steps;                       // the MIDI tick of each step
-    std::vector<std::pair<uint32_t, uint32_t>> tempos; // MIDI tick and microseconds a quarter note
-    std::vector<uint32_t> bars;                        // the MIDI ticks that start a bar
-};
-
-Timing MakeTiming(const Simulation& sim)
-{
-    // The rows, and the row of the commonest length.
-    Timing t;
-    std::vector<ModuleStep> rows;
-    std::map<uint32_t, size_t> lengths;
-    for (size_t r = 0; r < sim.rows.size(); r++)
-    {
-        t.rows.push_back(uint32_t(r) * kRowTicks);
-        rows.push_back({true, sim.rows[r].order, sim.rows[r].pattern_row, kRowTicks});
-        lengths[sim.rows[r].samples]++;
-    }
-    t.rows.push_back(uint32_t(sim.rows.size()) * kRowTicks);
-
-    const auto fewer = [](const auto& a, const auto& b)
-    {
-        return a.second < b.second;
-    };
-    const uint32_t usual = std::max_element(lengths.begin(), lengths.end(), fewer)->first;
-
-    // The beat, from the commonest length of row, and the bars.
-    const std::vector<OrderRun> runs = OrderRuns(rows);
-    t.meter = ChooseMeter(t.rows, runs, kRowTicks, double(usual) / sim.rate / kRowTicks);
-    t.bars = BarStarts(rows, t.rows, runs, BarTicks(t.meter));
-
-    // A tempo that sets the length of each row.
-    uint32_t tempo = 0;
-    for (size_t r = 0; r < sim.rows.size(); r++)
-    {
-        const double seconds = double(sim.rows[r].samples) / sim.rate * t.meter.quarter_ticks / kRowTicks;
-        const uint32_t micros = uint32_t(std::lround(seconds * 1e6));
-        if (micros != tempo)
-        {
-            t.tempos.push_back({t.rows[r], micros});
-            tempo = micros;
-        }
-    }
-
-    // Each step's MIDI tick: its row's, plus its share of the row.
-    for (const StepData& d : sim.steps)
-    {
-        const RowData& row = sim.rows[d.row];
-        const uint64_t within = d.time - sim.steps[row.step].time;
-        const uint64_t ticks = row.samples ? (within * kRowTicks + row.samples / 2) / row.samples : 0;
-        t.steps.push_back(t.rows[d.row] + uint32_t(std::min<uint64_t>(ticks, kRowTicks)));
-    }
-
-    return t;
-}
-
-// Returns true if the notes of the song's second pass through its loop start as those of its first do: on the same
-// channels and MIDI ticks from the pass's start, with the same sample, start point, key, bend and level, in rows of the
-// same length. A channel keeps its volume, its sample and its slide when the module comes back to its loop. The
-// first pass can therefore play unlike the later ones. `sim` has to contain two passes of the loop.
-bool FirstPassRepeats(const Simulation& sim)
-{
-    const Timing timing = MakeTiming(sim);
-    const Plan& plan = sim.plan;
-    PassComparison passes(timing.rows[plan.loop_start], timing.rows[plan.loop_end] - timing.rows[plan.loop_start]);
-    InstrumentSet instruments;
-    for (uint32_t c = 0; c < sim.channels; c++)
-    {
-        for (const Note& n : MakeNotes(sim, c, instruments))
-        {
-            const Sound& s = n.sounds.front();
-            const double row_samples = sim.rows[sim.steps[n.on].row].samples;
-            passes.Add(timing.steps[n.on], int(c), n.key, {double(n.program), s.bend, s.level, row_samples});
-        }
-    }
-
-    return passes.Alike();
-}
-
-// The MIDI file's bytes: a conductor track with the tempo map, then a track for each channel that plays notes.
-std::vector<uint8_t> MidiBytes(const std::string& title, const std::string& about, const Simulation& sim,
-                               const Timing& timing, const std::vector<std::vector<Note>>& notes)
-{
-    const Plan& plan = sim.plan;
-    const uint32_t end = timing.rows[plan.end];
-    MidiFile midi(uint16_t(timing.meter.quarter_ticks));
-    MidiTrack& conductor = midi.AddTrack();
-    conductor.Name(title);
-    conductor.Meta(0, 0x01, about);
-    WriteBarSignatures(conductor, timing.bars, timing.meter);
-    for (const auto& [tick, micros] : timing.tempos)
-    {
-        conductor.Tempo(tick, micros);
-    }
-    if (plan.loops)
-    {
-        conductor.Meta(timing.rows[plan.loop_start], 0x06, "loopStart");
-        conductor.Meta(timing.rows[plan.loop_end], 0x06, "loopEnd");
-    }
-    conductor.SetEnd(end);
-
-    // The loop's start, from which each channel writes its settings again, unless the loop starts with the song.
-    const uint32_t loop_start = plan.loops ? timing.rows[plan.loop_start] : 0;
-    for (size_t c = 0; c < notes.size(); c++)
-    {
-        const std::vector<Note>& list = notes[c];
-        if (list.empty())
-        {
-            continue;
-        }
-
-        MidiTrack& mt = midi.AddTrack();
-        mt.Name("Channel " + std::to_string(c + 1));
-        mt.SetEnd(end);
-
-        // The pitch bend range covers the channel's largest bend.
-        double widest = 0;
-        for (const Note& n : list)
-        {
-            for (const Sound& s : n.sounds)
-            {
-                widest = std::max(widest, std::fabs(s.bend));
-            }
-        }
-        const int range = BendRangeFor(widest, kSmallBend);
-
-        ChannelWriter writer(mt, MelodicChannel(int(c)), list[0].program, NumberedPreset(list[0].program), range,
-                             loop_start);
-        for (const Note& n : list)
-        {
-            const uint32_t on = timing.steps[n.on];
-            const uint32_t off = timing.steps[n.off];
-            if (on >= off)
-            {
-                continue;
-            }
-
-            // Each row's and tick's level and bend. Both of the mixer's sides play the channel alike.
-            writer.SetProgram(on, n.program, NumberedPreset(n.program));
-            for (const Sound& s : n.sounds)
-            {
-                const uint32_t at = timing.steps[s.step];
-                writer.SetLevels(at, s.level, s.level);
-                writer.SetBend(at, s.bend);
-            }
-            writer.Note(on, off, n.key);
-        }
-    }
-
-    return midi.Encode();
-}
-
-// Plays a song as the conversion does: the model's rows and ticks, and the notes of each channel that the track mask
-// picks, with their instruments in `instruments`. Returns false where the model played no row. The function writes
-// the warnings and the count of tracks to the report. `P` is the player of the song's format.
+// Converts a song as Run() does with the player of the song's format.
 template <typename P>
-bool PlaySong(const Rom& rom, const Play& entry, const ConvertSettings& settings, InstrumentSet& instruments,
-              Simulation& sim, std::vector<std::vector<Note>>& notes, SongReport& report)
+SongReport RunWith(const Rom& rom, const Play& play, int song, int count, const std::string& source,
+                   const ConvertSettings& settings, InstrumentSet* shared, bool write, SongFiles* files)
 {
-    // The marked loop starts at the song's second pass if its first plays unlike it.
-    sim = Simulate<P>(rom, entry, settings.loops, LoopStart::kFirstPass);
-    if (sim.plan.loops && !FirstPassRepeats(Simulate<P>(rom, entry, 2, LoopStart::kFirstPass)))
+    const auto simulate = [&](int loops, LoopStart start_pass)
     {
-        sim = Simulate<P>(rom, entry, settings.loops, LoopStart::kSecondPass);
-    }
-    report.warnings = sim.warnings;
-    if (sim.rows.empty())
-    {
-        return false;
-    }
+        return Simulate<P>(rom, play, loops, start_pass);
+    };
 
-    notes.assign(sim.channels, {});
-    for (uint32_t c = 0; c < sim.channels; c++)
-    {
-        if ((settings.track_mask >> c) & 1)
-        {
-            notes[c] = MakeNotes(sim, c, instruments);
-            report.tracks += notes[c].empty() ? 0 : 1;
-        }
-    }
-
-    return true;
+    return RunModuleConversion(rom, song, count, source, kRootKey, simulate, settings, shared, write, files);
 }
 
 // Converts a song, writing its files if `write` is set. With `files`, the files' bytes go there instead of to files,
@@ -760,104 +380,31 @@ bool PlaySong(const Rom& rom, const Play& entry, const ConvertSettings& settings
 SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSettings& settings, InstrumentSet* shared,
                bool write, SongFiles* files = nullptr)
 {
-    SongReport report;
     if (song < 0 || size_t(song) >= info.songs.size())
     {
+        SongReport report;
         report.warnings.push_back("there's no song " + std::to_string(song));
         return report;
     }
 
     const Song& entry = info.songs[size_t(song)];
-    InstrumentSet own;
-    InstrumentSet& instruments = shared ? *shared : own;
-    Simulation sim;
-    std::vector<std::vector<Note>> notes;
     const Play play = {entry, info.build, info.music_volume, info.fifos, info.sound_off_call != 0, info.mod30};
-    bool played = false;
+    const int count = int(info.songs.size());
+    char source[64];
+    std::snprintf(source, sizeof source, "module at 0x%08X from order %d", unsigned(entry.module), entry.order);
     switch (info.format)
     {
     case Format::kGbaMod1:
-        played = PlaySong<Mod1Player>(rom, play, settings, instruments, sim, notes, report);
-        break;
+        return RunWith<Mod1Player>(rom, play, song, count, source, settings, shared, write, files);
 
     case Format::kGbaMod30:
-        played = PlaySong<Mod30Player>(rom, play, settings, instruments, sim, notes, report);
-        break;
+        return RunWith<Mod30Player>(rom, play, song, count, source, settings, shared, write, files);
 
     case Format::kGbaMod2:
-        played = PlaySong<Player>(rom, play, settings, instruments, sim, notes, report);
         break;
     }
-    if (!played)
-    {
-        return report;
-    }
 
-    const Timing timing = MakeTiming(sim);
-    const double rate = sim.rate;
-    const auto seconds = [&](size_t row)
-    {
-        return double(sim.steps[sim.rows[row].step].time) / rate;
-    };
-    report.seconds = seconds(sim.plan.end);
-    if (sim.plan.loops)
-    {
-        report.loop_start = seconds(sim.plan.loop_start);
-        report.loop_end = seconds(sim.plan.loop_end);
-    }
-    report.bpm = 60e6 / timing.tempos.front().second;
-
-    report.silent = report.tracks == 0;
-    if (report.silent || !write)
-    {
-        report.ok = true;
-        return report;
-    }
-
-    // The files' names and titles, and the MIDI file's description.
-    const std::string number = SongNumber(song, int(info.songs.size()));
-    const std::string title = rom.Title() + " #" + number;
-    char about[192];
-    std::snprintf(about, sizeof about, "%s (%s) module at 0x%08X from order %d, converted by %s", rom.Title().c_str(),
-                  rom.GameCode().c_str(), unsigned(entry.module), entry.order, settings.program.c_str());
-    const std::string stem = SongStem(settings, number);
-
-    std::string error;
-    std::vector<uint8_t> bytes = MidiBytes(title, about, sim, timing, notes);
-    if (files)
-    {
-        files->midi = std::move(bytes);
-    }
-    else
-    {
-        report.midi_path = stem + ".mid";
-        if (!WriteFile(report.midi_path, bytes, error))
-        {
-            report.warnings.push_back(error);
-            return report;
-        }
-    }
-
-    // The song's SoundFont, unless the instruments go in a shared one.
-    if (!shared)
-    {
-        Sf2File file = own.Build(rom);
-        file.program = settings.program;
-        file.SetTitle(title);
-        if (!files)
-        {
-            report.sf2_path = stem + ".sf2";
-        }
-        if (files ? !file.Encode(files->sf2, error) : !file.Write(report.sf2_path, error))
-        {
-            report.warnings.push_back(error);
-            return report;
-        }
-    }
-
-    report.ok = true;
-
-    return report;
+    return RunWith<Player>(rom, play, song, count, source, settings, shared, write, files);
 }
 
 } // namespace

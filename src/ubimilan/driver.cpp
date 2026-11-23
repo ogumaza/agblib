@@ -186,6 +186,7 @@ void FindPsgTables(const Rom& rom, DriverInfo& info)
             {
                 match = (rom.U16(at + 2 * uint32_t(i)) & lookup[i].mask) == lookup[i].value;
             }
+
             if (match)
             {
                 info.instrument_tables[size_t(channel++)] = ThumbLiteral(rom, at + 2);
@@ -253,6 +254,7 @@ bool ReadBank(const Rom& rom, uint32_t song_table, DriverInfo& info, std::string
     {
         info.bank = *bank;
     }
+
     if (!info.bank || !rom.Contains(info.bank, 16))
     {
         error = info.bank ? "the sound bank isn't in the ROM" : "the sound bank wasn't found";
@@ -290,6 +292,7 @@ bool FindSongs(const Rom& rom, int song_count, DriverInfo& info, std::string& er
             info.songs.push_back(id);
         }
     }
+
     info.piece_count = int(info.songs.size());
     if (IsTombRaider(rom))
     {
@@ -302,11 +305,13 @@ bool FindSongs(const Rom& rom, int song_count, DriverInfo& info, std::string& er
             }
         }
     }
+
     if (song_count > 0 && size_t(song_count) < info.songs.size())
     {
         info.songs.resize(size_t(song_count));
         info.piece_count = std::min(info.piece_count, song_count);
     }
+
     if (rom.GameCode() == "AUME")
     {
         for (size_t song = 0; song < info.songs.size(); song++)
@@ -318,6 +323,7 @@ bool FindSongs(const Rom& rom, int song_count, DriverInfo& info, std::string& er
             }
         }
     }
+
     if (info.songs.empty())
     {
         error = "the sound bank has no music";
@@ -408,6 +414,7 @@ bool DetectDriver(const Rom& rom, const DriverOverrides& overrides, DriverInfo& 
             info.older_bank = *bank;
             error = OlderBuildError(rom, *bank);
         }
+
         return false;
     }
 
@@ -470,6 +477,7 @@ bool ReadMusic(const Rom& rom, const DriverInfo& info, int song, MusicPiece& pie
         {
             return false;
         }
+
         piece.sample = info.songs[size_t(song)];
         piece.flags = sample.loop ? 1 : 0;
 

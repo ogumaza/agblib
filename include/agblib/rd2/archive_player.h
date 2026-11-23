@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-// Plays a song of a GBA ROM with Nintendo R&D2's driver on ntdlib's models: the driver's sequencer and mixer
-// (rd2::Output) on the GBA's sound hardware (agb::Apu), frame by frame. The driver's stores go to the PSG's registers,
-// and its bytes to the FIFOs.
+// Plays a song of a GBA ROM with Nintendo R&D2's driver on the models of the driver's sequencer and mixer (rd2::Output)
+// and of the GBA's sound hardware (agb::Apu), frame by frame. The driver's stores go to the PSG's registers, and its
+// bytes to the FIFOs.
 //
 // A frame runs the hardware up to the driver's routine, makes the routine's stores, queues the frame's mix in the
 // FIFOs, and runs the hardware to the frame's end. On the console, timer 0 takes a byte from each FIFO every
@@ -50,7 +50,7 @@ namespace agblib::rd2
 // What the driver and the hardware start from, beyond the song.
 struct ArchivePlayerOptions
 {
-    // The cycle of each frame at which the driver's routine makes its stores. It lies below agb::kFrameCycles.
+    // The cycle of each frame at which the driver's routine makes its stores. It is below agb::kFrameCycles.
     uint32_t store_cycle = agb::kFrameCycles / 6;
 
     // The frame sequencer's phase at the song's start: see agb::Apu::SetSequencer.
@@ -75,7 +75,7 @@ public:
     ArchivePlayer(const Rom& rom, const DriverInfo& info);
 
     // Starts song `song` from the state that the game's init leaves. Throws std::invalid_argument when the song can't
-    // be played or an option lies out of range.
+    // be played or an option is out of range.
     void Start(int song, const ArchivePlayerOptions& options = {});
 
     // Runs one frame of the driver and of the hardware, and adds the frame's samples to `out` at Rate(), left then
@@ -127,7 +127,7 @@ public:
         return apu_;
     }
 
-    // Asks for the echo's level `level`, up to 31, as the game's request does. The level moves towards it by 1 a frame.
+    // Asks for the echo's level `level`, up to 31 as the game's request does. The level moves towards it by 1 a frame.
     // Throws std::logic_error before a start.
     void SetEchoGoal(uint8_t level);
 
@@ -141,7 +141,7 @@ public:
     }
 
     // While any track is soloed, leaves every track that isn't out of the output, in the same way as a mute. A mute
-    // still holds on a soloed track.
+    // still applies on a soloed track.
     void SoloTrack(int track, bool solo);
     bool IsTrackSoloed(int track) const
     {
@@ -167,7 +167,7 @@ public:
         return output_peaks_;
     }
 
-    // What Restore() takes to go back to a place in the song. A snapshot holds the driver's whole state, its echo's
+    // What Restore() takes to go back to a place in the song. A snapshot contains the driver's whole state, its echo's
     // history and the hardware's FIFOs: tens of kilobytes, or a few hundred with the enhanced mode's line.
     class Snapshot
     {
@@ -182,7 +182,7 @@ public:
         bool enhanced_ = false;
     };
 
-    // Takes a snapshot. `previous` is there for the interface that ntdlib's archive players share: a snapshot stands
+    // Takes a snapshot. `previous` is there for the interface that the agblib archive players share: a snapshot stands
     // alone. Throws std::logic_error before a start.
     Snapshot Save(const Snapshot* previous = nullptr) const;
 

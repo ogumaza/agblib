@@ -9,7 +9,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <map>
 #include <memory>
 #include <optional>
@@ -18,10 +17,12 @@
 #include <utility>
 #include <vector>
 
+#include "ntdlib/wave/blep.h"
 #include "xsflib/binary.h"
 #include "xsflib/player/archive_source.h"
 #include "xsflib/testing/check.h"
 
+#include "agb_test_util.h"
 #include "agblib/agb/gba.h"
 #include "agblib/agb/rom.h"
 #include "agblib/konami/archive_player.h"
@@ -30,10 +31,12 @@
 #include "agblib/konami/output.h"
 #include "agblib/konami/seqformat.h"
 #include "konami_output_image.h"
-#include "ntdlib/wave/blep.h"
 
 namespace konami_player_tests
 {
+
+using agblib::testing::agb_tests::NearPrinted;
+using agblib::testing::agb_tests::Throws;
 
 using namespace konami_testing;
 
@@ -61,21 +64,6 @@ constexpr uint32_t kRingSilence = kStore / kPoint + 704 - 224;
 // half width, to keep them in time with the steps.
 constexpr size_t kEnhancedStart = size_t((uint64_t(kStore + 48 * kPoint) * kEnhanced + kFrameCycles) / kFrameCycles) +
                                   size_t(ntdlib::wave::BandLimitedSteps::kHalfWidth);
-
-template <typename E, typename F>
-inline bool Throws(F f)
-{
-    try
-    {
-        f();
-    }
-    catch (const E&)
-    {
-        return true;
-    }
-
-    return false;
-}
 
 inline bool AllAre(const std::vector<int8_t>& bytes, int value)
 {
@@ -121,6 +109,7 @@ inline Rom Sine(uint32_t step)
     {
         bytes.push_back(int8_t(std::lround(100.0 * std::sin(2.0 * 3.14159265358979 * i / 64.0))));
     }
+
     m.Sample(0, step, 64, 0, bytes);
     return m.ToRom();
 }
@@ -152,17 +141,6 @@ inline ArchivePlayerOptions EnhancedOptions()
     ArchivePlayerOptions options;
     options.enhanced = true;
     return options;
-}
-
-inline bool Near(float value, double expected, double within = 0.002)
-{
-    const bool near = std::fabs(double(value) - expected) <= within;
-    if (!near)
-    {
-        std::printf("%f, expected %f\n", double(value), expected);
-    }
-
-    return near;
 }
 
 } // namespace konami_player_tests

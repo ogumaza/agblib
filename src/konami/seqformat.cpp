@@ -15,7 +15,7 @@ namespace agblib::konami
 namespace
 {
 
-// Decodes the command at `addr` in the Ultimate Masters revision or one of its later builds. `c` already holds the
+// Decodes the command at `addr` in the Ultimate Masters revision or one of its later builds. `c` already contains the
 // address and the opcode. The later builds play 90-9F as calls, give a duty by the opcode's low nibble and have WCT
 // 2004's F4, F5 and F6. Their FA holds back a track's output. A sample byte above EF takes the next byte too in Live
 // Start, and is a sample in Prince of Tennis 2004.
@@ -95,6 +95,7 @@ Command DecodeUltimateMasters(const Rom& rom, uint32_t addr, int track, Revision
                                     : Op::kHoldOutput;
                 break;
             }
+
             [[fallthrough]];
 
         default:
@@ -132,6 +133,7 @@ Command DecodeUltimateMasters(const Rom& rom, uint32_t addr, int track, Revision
         {
             c.sample = ((c.sample & 0x0F) << 8) | rom.U8(p++);
         }
+
         if (op >= 0xB0)
         {
             c.semitone = int8_t(rom.U8(p++));
@@ -164,13 +166,13 @@ Command DecodeUltimateMasters(const Rom& rom, uint32_t addr, int track, Revision
 }
 
 // Decodes the command at `addr` in the WCT 2004, Kitaro, Minna no Ouji-sama, Rave Master, Hunter X Hunter, Captain
-// Tsubasa or Eternal Duelist revision. `c` already holds the address and the opcode. The Kitaro revision reads FA as
-// FB, which does nothing. The Minna no Ouji-sama revision reads FB xx as the song's volume. In the Rave Master revision
-// F6-FC do nothing. The Hunter X Hunter revision reads F6 as WCT 2004 does, and F7-FC do nothing. The Captain Tsubasa
-// revision reads F6-FC as F1, and the Eternal Duelist revision reads F4-FC as F1. In these four, F3 has no extra bytes
-// on sample tracks, 00-7F do nothing, and 80-8F store a duty of 0-3 as it is. WCT 2004 and Minna no Ouji-sama shift the
-// duty into bits 6-7. The F0 of Captain Tsubasa and Eternal Duelist sets a PSG track's NR51 bits, or a sample track's
-// volume and the next one's.
+// Tsubasa or Eternal Duelist revision. `c` already contains the address and the opcode. The Kitaro revision reads FA as
+// FB, a command that does nothing. The Minna no Ouji-sama revision reads FB xx as the song's volume. In the Rave Master
+// revision F6-FC do nothing. The Hunter X Hunter revision reads F6 as WCT 2004 does, and F7-FC do nothing. The Captain
+// Tsubasa revision reads F6-FC as F1, and the Eternal Duelist revision reads F4-FC as F1. In these four, F3 has no
+// extra bytes on sample tracks, 00-7F do nothing, and 80-8F store a duty of 0-3 as it is. WCT 2004 and Minna no
+// Ouji-sama shift the duty into bits 6-7. The F0 of Captain Tsubasa and Eternal Duelist sets a PSG track's NR51 bits,
+// or a sample track's volume and the next one's.
 Command DecodeWct2004(const Rom& rom, uint32_t addr, int track, Revision revision, Command c)
 {
     const bool eternal_duelist = revision == Revision::kEternalDuelist;
@@ -321,8 +323,8 @@ Command DecodeWct2004(const Rom& rom, uint32_t addr, int track, Revision revisio
     return c;
 }
 
-// Decodes the command at `addr` in the Dungeon Dice Monsters revision. `c` already holds the address and the opcode. A
-// sample note's byte is an entry of the driver's sample map, where the sequencer looks the sample up. FA's two bytes
+// Decodes the command at `addr` in the Dungeon Dice Monsters revision. `c` already contains the address and the opcode.
+// A sample note's byte is an entry of the driver's sample map, where the sequencer looks the sample up. FA's two bytes
 // are a delay and a command that only a song loop reads, and F5's last byte is a duty or wave command that the call
 // starts with, and also the delay that follows the call.
 Command DecodeDungeonDice(const Rom& rom, uint32_t addr, Command c)
@@ -541,16 +543,19 @@ uint32_t ReadDelay(const Rom& rom, uint32_t addr, Revision revision, uint32_t& d
         delay = b <= 0xEF ? b : (uint32_t(b & 0x0F) << 8) | rom.U8(addr + 1);
         return b <= 0xEF ? 1 : 2;
     }
+
     if (b <= 0xDF)
     {
         delay = b;
         return 1;
     }
+
     if (revision != Revision::kUltimateMasters)
     {
         delay = (uint32_t(b & 0x1F) << 8) | rom.U8(addr + 1);
         return 2;
     }
+
     if (b <= 0xEF)
     {
         delay = (uint32_t(b & 0x0F) << 8) | rom.U8(addr + 1);
@@ -598,9 +603,9 @@ Command DutyOrWave(uint8_t opcode, Revision revision)
         return c;
     }
 
-    // The Kitaro revision stores a duty of 0-3 as it is, as the revisions with Rave Master's commands do. Its output
-    // stage writes the byte to a square's length and duty bits, as WCT 2004's does. The duty bits stay 0, so every
-    // square plays at a duty of 12.5 %.
+    // The Kitaro revision stores a duty of 0-3 as it is as the revisions with Rave Master's commands do. Its output
+    // stage writes the byte to a square's length and duty bits as WCT 2004's does. The duty bits stay 0. Every square
+    // therefore plays at a duty of 12.5 %.
     const bool as_is = RaveMasterCommands(revision) || revision == Revision::kKitaro;
     c.op = nibble <= 3 ? Op::kDuty : Op::kWave;
     c.value = nibble > 3 ? nibble - 4 : as_is ? nibble : nibble << 6;
@@ -913,6 +918,7 @@ std::string Describe(const Command& c, int track, Revision revision)
                     set.op = Op::kDuty;
                     set.value = DutyByteForNibble(c.opcode);
                 }
+
                 std::string what = Describe(set, track, revision);
                 what.erase(std::unique(what.begin(), what.end(), [](char a, char b) { return a == ' ' && b == ' '; }),
                            what.end());

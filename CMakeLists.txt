@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 cmake_minimum_required(VERSION 3.20)
-project(agblib VERSION 1.3.0 LANGUAGES C CXX)
+project(agblib VERSION 1.4.0 LANGUAGES C CXX)
 
 # CMake 3.20 has no PROJECT_IS_TOP_LEVEL. agblib is the top-level project when the build starts in its folder.
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
@@ -31,14 +31,14 @@ if (NOT TARGET ntdlib::common)
         set(NTDLIB_INSTALL ${AGBLIB_INSTALL})
         add_subdirectory(externals/ntdlib)
     else()
-        find_package(ntdlib 4.0 REQUIRED)
+        find_package(ntdlib 7.0 REQUIRED)
     endif()
 endif()
 
 # seqlib, for the conversions. A build of agblib alone takes the copy that xsflib adds from its submodule, or finds an
 # installed seqlib.
 if (AGBLIB_SEQUENCE_EXPORT AND NOT TARGET seqlib::seqlib)
-    find_package(seqlib 1.4 REQUIRED)
+    find_package(seqlib 1.5 REQUIRED)
 endif()
 
 if (AGBLIB_TESTS)
@@ -64,17 +64,29 @@ target_link_libraries(agblib_agb PUBLIC xsflib::common xsflib::psf_container ntd
 xsflib_add_project_test(agblib agb agblib::agb)
 
 # A model of the GBA's sound hardware: the PSG channels, the DirectSound FIFOs and the output stage.
-xsflib_add_project_library(agblib agb_apu src/agb/apu.cpp)
+xsflib_add_project_library(agblib agb_apu src/agb/apu.cpp src/agb/apu_output.cpp)
+# The model's two files build as one translation unit, in the order of the list. Their functions then compile as before.
+set_target_properties(agblib_agb_apu PROPERTIES UNITY_BUILD ON UNITY_BUILD_MODE GROUP)
+set_source_files_properties(src/agb/apu.cpp src/agb/apu_output.cpp PROPERTIES UNITY_GROUP agb_apu)
 target_link_libraries(agblib_agb_apu PUBLIC xsflib::common ntdlib::wave)
 xsflib_add_project_test(agblib agb_apu agblib::agb_apu)
+xsflib_add_project_test(agblib agb_apu_enhanced agblib::agb_apu)
 
 # MusicPlayer2000 (MP2K), the sound driver of Nintendo's GBA SDK: its detection, its songs and voice groups, the decoder
 # and the encoder of its track commands in the form of ntdlib::commands, the cut and the join of a ROM's songs for an
-# editor, and a model of its sequencer, which reads the commands through the decoder.
+# editor, and a model of its sequencer. The sequencer reads the commands through the decoder.
 xsflib_add_project_library(agblib mp2k src/mp2k/commands.cpp src/mp2k/driver.cpp src/mp2k/layout.cpp
-                           src/mp2k/sequencer.cpp src/mp2k/sequencer_enhanced.cpp src/mp2k/sequencer_mixer.cpp
+                           src/mp2k/sequencer.cpp src/mp2k/sequencer_notes.cpp src/mp2k/sequencer_channels.cpp
+                           src/mp2k/sequencer_enhanced.cpp src/mp2k/sequencer_mixer.cpp src/mp2k/sequencer_camelot.cpp
                            src/mp2k/sequencer_psg.cpp src/mp2k/song.cpp)
 target_link_libraries(agblib_mp2k PUBLIC agblib::agb ntdlib::commands PRIVATE ntdlib::wave)
+# The sequencer's three files, and the mixer's two, each build as one translation unit, in the order of the list. Their
+# functions then compile as before.
+set_target_properties(agblib_mp2k PROPERTIES UNITY_BUILD ON UNITY_BUILD_MODE GROUP)
+set_source_files_properties(src/mp2k/sequencer.cpp src/mp2k/sequencer_notes.cpp src/mp2k/sequencer_channels.cpp
+                            PROPERTIES UNITY_GROUP mp2k_sequencer)
+set_source_files_properties(src/mp2k/sequencer_mixer.cpp src/mp2k/sequencer_camelot.cpp
+                            PROPERTIES UNITY_GROUP mp2k_mixer)
 xsflib_add_project_test(agblib mp2k_commands agblib::mp2k)
 xsflib_add_project_test(agblib mp2k_layout agblib::mp2k)
 
@@ -87,13 +99,16 @@ target_link_libraries(agblib_mp2k_player PUBLIC agblib::mp2k agblib::agb_apu)
 # output stage and the mixer.
 xsflib_add_project_library(agblib konami src/konami/commands.cpp src/konami/driver.cpp src/konami/layout.cpp
                            src/konami/output.cpp src/konami/output_stages.cpp src/konami/output_mixer.cpp
-                           src/konami/pitch.cpp src/konami/seqformat.cpp src/konami/sequencer.cpp
-                           src/konami/sequencer_wct2004.cpp src/konami/sequencer_dungeon_dice.cpp)
+                           src/konami/output_enhanced.cpp src/konami/pitch.cpp src/konami/seqformat.cpp
+                           src/konami/sequencer.cpp src/konami/sequencer_wct2004.cpp
+                           src/konami/sequencer_dungeon_dice.cpp)
 target_link_libraries(agblib_konami PUBLIC agblib::agb ntdlib::commands PRIVATE ntdlib::wave)
-# The output stage's files and the sequencer's build as one translation unit each. Their calls then stay inlined as
-# before.
+# The files of the output stage, the mixer and the sequencer build as one translation unit each, in the order of the
+# list. Their functions then compile as before.
 set_target_properties(agblib_konami PROPERTIES UNITY_BUILD ON UNITY_BUILD_MODE GROUP)
 set_source_files_properties(src/konami/output.cpp src/konami/output_stages.cpp PROPERTIES UNITY_GROUP konami_output)
+set_source_files_properties(src/konami/output_mixer.cpp src/konami/output_enhanced.cpp
+                            PROPERTIES UNITY_GROUP konami_mixer)
 set_source_files_properties(src/konami/sequencer.cpp src/konami/sequencer_wct2004.cpp
                             src/konami/sequencer_dungeon_dice.cpp PROPERTIES UNITY_GROUP konami_sequencer)
 xsflib_add_project_test(agblib konami_commands agblib::konami)
@@ -107,8 +122,11 @@ target_link_libraries(agblib_konami_player PUBLIC agblib::konami agblib::agb_apu
 # in the form of ntdlib::commands, the cut and the join of a ROM's tunes for an editor, and the model of the driver's
 # per-frame routine.
 xsflib_add_project_library(agblib rare src/rare/commands.cpp src/rare/driver.cpp src/rare/layout.cpp
-                           src/rare/sequencer.cpp src/rare/song.cpp)
+                           src/rare/sequencer.cpp src/rare/sequencer_voices.cpp src/rare/song.cpp)
 target_link_libraries(agblib_rare PUBLIC agblib::agb ntdlib::commands)
+# The sequencer's files build as one translation unit, in the order of the list. Their functions then compile as before.
+set_target_properties(agblib_rare PROPERTIES UNITY_BUILD ON UNITY_BUILD_MODE GROUP)
+set_source_files_properties(src/rare/sequencer.cpp src/rare/sequencer_voices.cpp PROPERTIES UNITY_GROUP rare_sequencer)
 xsflib_add_project_test(agblib rare_commands agblib::rare)
 xsflib_add_project_test(agblib rare_layout agblib::rare)
 
@@ -135,16 +153,18 @@ target_link_libraries(agblib_quintet_player PUBLIC agblib::quintet agblib::agb_a
 
 # Krawall, the GBA's player of XM and S3M modules: detection of its builds, the modules' patterns, their commands, the
 # cut and join of a ROM, the instruments and samples, and the model of the player and its mixer.
-xsflib_add_project_library(agblib krawall src/krawall/commands.cpp src/krawall/driver.cpp src/krawall/driver_songs.cpp
-                           src/krawall/driver_files.cpp src/krawall/instruments.cpp src/krawall/layout.cpp
-                           src/krawall/player.cpp src/krawall/player_effects.cpp src/krawall/player_mixer.cpp
-                           src/krawall/player_records.cpp src/krawall/player_v1.cpp src/krawall/song.cpp
-                           src/krawall/unpack.cpp)
+xsflib_add_project_library(agblib krawall src/krawall/commands.cpp src/krawall/driver.cpp src/krawall/driver_modules.cpp
+                           src/krawall/instruments.cpp src/krawall/layout.cpp src/krawall/player.cpp
+                           src/krawall/player_rows.cpp src/krawall/player_channels.cpp src/krawall/player_effects.cpp
+                           src/krawall/player_mixer.cpp src/krawall/player_records.cpp src/krawall/player_v1.cpp
+                           src/krawall/song.cpp src/krawall/unpack.cpp)
 target_link_libraries(agblib_krawall PUBLIC agblib::agb ntdlib::commands)
-# The parts of the detection build as one translation unit (driver_internal.h).
+# The detection and the module format build as one translation unit, and so do the parts of the player's main file.
+# Each group builds in the order of the list. Their functions then compile as before.
 set_target_properties(agblib_krawall PROPERTIES UNITY_BUILD ON UNITY_BUILD_MODE GROUP)
-set_source_files_properties(src/krawall/driver.cpp src/krawall/driver_songs.cpp src/krawall/driver_files.cpp
-                            PROPERTIES UNITY_GROUP krawall_driver)
+set_source_files_properties(src/krawall/driver.cpp src/krawall/driver_modules.cpp PROPERTIES UNITY_GROUP krawall_driver)
+set_source_files_properties(src/krawall/player.cpp src/krawall/player_rows.cpp src/krawall/player_channels.cpp
+                            PROPERTIES UNITY_GROUP krawall_player)
 xsflib_add_project_test(agblib krawall_layout agblib::krawall)
 
 # Nintendo R&D2's GBA driver: detection, the commands of its revisions and the model of the driver.
@@ -158,6 +178,9 @@ set_source_files_properties(src/rd2/sequencer.cpp src/rd2/sequencer_voices.cpp s
                             src/rd2/sequencer_output.cpp PROPERTIES UNITY_GROUP rd2_sequencer)
 xsflib_add_project_test(agblib rd2_commands agblib::rd2)
 xsflib_add_project_test(agblib rd2_layout agblib::rd2)
+
+# A cartridge with Nintendo R&D2's driver and MP2K side by side.
+xsflib_add_project_test(agblib two_drivers agblib::mp2k agblib::rd2)
 
 # Brownie Brown's GBA driver: detection, the commands of its two revisions and the model of the driver.
 xsflib_add_project_library(agblib brownie src/brownie/commands.cpp src/brownie/driver.cpp src/brownie/layout.cpp
@@ -177,11 +200,17 @@ target_link_libraries(agblib_brownie_player PUBLIC agblib::brownie agblib::agb_a
 
 # Ubisoft Milan's GBA driver: detection and a model of its sequencer.
 xsflib_add_project_library(agblib ubimilan src/ubimilan/commands.cpp src/ubimilan/driver.cpp src/ubimilan/layout.cpp
-                           src/ubimilan/output.cpp src/ubimilan/sequencer.cpp src/ubimilan/song.cpp)
+                           src/ubimilan/output.cpp src/ubimilan/sequencer.cpp src/ubimilan/sequencer_psg.cpp
+                           src/ubimilan/song.cpp)
 target_link_libraries(agblib_ubimilan PUBLIC agblib::agb ntdlib::commands PRIVATE ntdlib::wave)
+# The sequencer's two files build as one translation unit. Their functions then compile as before.
+set_target_properties(agblib_ubimilan PROPERTIES UNITY_BUILD ON UNITY_BUILD_MODE GROUP)
+set_source_files_properties(src/ubimilan/sequencer.cpp src/ubimilan/sequencer_psg.cpp PROPERTIES UNITY_GROUP
+                            ubimilan_sequencer)
 xsflib_add_project_test(agblib ubimilan_commands agblib::ubimilan)
 xsflib_add_project_test(agblib ubimilan_layout agblib::ubimilan)
 xsflib_add_project_test(agblib ubimilan_output agblib::ubimilan)
+xsflib_add_project_test(agblib ubimilan_psg agblib::ubimilan)
 
 # Nintendo R&D1's GBA driver for Standard MIDI Files: detection, the songs' records and files, the decoder
 # and the encoder of the files' events in the form of ntdlib::commands, the cut and the join of a ROM's files for an
@@ -210,8 +239,20 @@ xsflib_add_project_test(agblib alphadream_layout agblib::alphadream)
 # player of each format, and a module's listing.
 xsflib_add_project_library(agblib logikstate src/logikstate/driver.cpp src/logikstate/mod1_pieces.cpp
                            src/logikstate/mod1_player.cpp src/logikstate/player.cpp src/logikstate/song.cpp
-                           src/logikstate/mod30.cpp src/logikstate/mod30_player.cpp src/logikstate/mod30_games.cpp)
+                           src/logikstate/mod30.cpp src/logikstate/mod30_records.cpp src/logikstate/mod30_player.cpp
+                           src/logikstate/mod30_player_effects.cpp src/logikstate/mod30_games.cpp)
 target_link_libraries(agblib_logikstate PUBLIC agblib::agb)
+# The MOD-30 player's files build as one translation unit, in the order of the list. Their functions then compile as
+# before.
+set_target_properties(agblib_logikstate PROPERTIES UNITY_BUILD ON UNITY_BUILD_MODE GROUP)
+set_source_files_properties(src/logikstate/mod30_records.cpp src/logikstate/mod30_player.cpp
+                            src/logikstate/mod30_player_effects.cpp PROPERTIES UNITY_GROUP logikstate_mod30)
+
+# Webfoot Technologies' GBA driver: detection of its song tables and a model of its player and mixer, in the two builds
+# of the driver.
+xsflib_add_project_library(agblib webfoot src/webfoot/driver.cpp src/webfoot/player.cpp src/webfoot/player_mix.cpp)
+target_link_libraries(agblib_webfoot PUBLIC agblib::agb)
+xsflib_add_project_test(agblib webfoot agblib::webfoot)
 
 # ITE Media's GBA driver, a player of 4-channel modules in a bank: detection, the reader of its songs and the walk of a
 # song's rows for its loop or end.
@@ -219,9 +260,17 @@ xsflib_add_project_library(agblib ite src/ite/driver.cpp)
 target_link_libraries(agblib_ite PUBLIC agblib::agb)
 xsflib_add_project_test(agblib ite agblib::ite)
 
+# Frontline Studios' MOD player: detection, the games' set-up and songs, and the model of the player and its mixer.
+xsflib_add_project_library(agblib frontline_mod src/frontline_mod/driver.cpp src/frontline_mod/player.cpp)
+target_link_libraries(agblib_frontline_mod PUBLIC agblib::agb)
+xsflib_add_project_test(agblib frontline_mod agblib::frontline_mod)
+xsflib_add_project_library(agblib frontline_xm src/frontline_xm/driver.cpp src/frontline_xm/player.cpp)
+target_link_libraries(agblib_frontline_xm PUBLIC agblib::agb)
+xsflib_add_project_test(agblib frontline_xm agblib::frontline_xm)
+
 # Enough of a GBA to run a game's sound driver on the ARM interpreter: the memories, the I/O registers, the DMA's
-# immediate transfers and the BIOS's calls that the drivers make. A game's MP2K driver runs on it (mp2k_game), as the
-# reference for ntdlib's model of the driver.
+# immediate transfers and the BIOS's calls that the drivers make. A game's MP2K driver runs on it (mp2k_game) as the
+# reference for agblib's model of the driver.
 xsflib_add_project_library(agblib agb_system src/agb/system.cpp)
 target_link_libraries(agblib_agb_system PUBLIC agblib::agb ntdlib::arm)
 xsflib_add_project_test(agblib agb_system agblib::agb_system)
@@ -235,9 +284,17 @@ xsflib_add_project_library(agblib quintet_game src/quintet/game_driver.cpp)
 target_link_libraries(agblib_quintet_game PUBLIC agblib::quintet agblib::agb_system)
 xsflib_add_project_library(agblib ubimilan_game src/ubimilan/game_driver.cpp)
 target_link_libraries(agblib_ubimilan_game PUBLIC agblib::ubimilan agblib::agb_system)
+xsflib_add_project_library(agblib webfoot_game src/webfoot/game_driver.cpp)
+target_link_libraries(agblib_webfoot_game PUBLIC agblib::webfoot agblib::agb_system)
+xsflib_add_project_test(agblib webfoot_game agblib::webfoot_game)
 xsflib_add_project_test(agblib konami_output agblib::konami_game)
+xsflib_add_project_test(agblib konami_game_driver agblib::konami_game)
 xsflib_add_project_library(agblib krawall_game src/krawall/game_driver.cpp)
 target_link_libraries(agblib_krawall_game PUBLIC agblib::krawall agblib::agb_system)
+xsflib_add_project_library(agblib frontline_mod_game src/frontline_mod/game_driver.cpp)
+target_link_libraries(agblib_frontline_mod_game PUBLIC agblib::frontline_mod agblib::agb_system)
+xsflib_add_project_library(agblib frontline_xm_game src/frontline_xm/game_driver.cpp)
+target_link_libraries(agblib_frontline_xm_game PUBLIC agblib::frontline_xm agblib::agb_system)
 # krawall::ArchivePlayer: a piece of a ROM with Krawall on the models of the player and the sound hardware.
 xsflib_add_project_library(agblib krawall_player src/krawall/archive_player.cpp)
 target_link_libraries(agblib_krawall_player PUBLIC agblib::krawall agblib::agb_apu)
@@ -246,7 +303,7 @@ target_link_libraries(agblib_rd1_game PUBLIC agblib::rd1 agblib::agb_system)
 # rd1::ArchivePlayer: a song of a ROM with R&D1's driver, on the game's copy of the driver and the model of the sound
 # hardware.
 xsflib_add_project_library(agblib rd1_player src/rd1/archive_player.cpp src/rd1/enhanced_mix.cpp)
-target_link_libraries(agblib_rd1_player PUBLIC agblib::rd1_game agblib::agb_apu)
+target_link_libraries(agblib_rd1_player PUBLIC agblib::rd1_game agblib::agb_apu PRIVATE seqlib::seqlib)
 xsflib_add_project_test(agblib rd1_enhanced agblib::rd1_player)
 if (AGBLIB_TESTS)
     # The test of the enhanced mode reads its private enhanced_mix.h.
@@ -277,12 +334,14 @@ xsflib_add_project_test(agblib brownie_player agblib::brownie_player)
 # The conversion of the GBA's songs to seqlib's MIDI, SoundFont 2 and SFZ files.
 if (AGBLIB_SEQUENCE_EXPORT)
     # The GBA's conversions: what every driver's conversion shares (sequence_export_agb), MP2K's, Konami's, Rare's,
-    # Quintet's, Krawall's, Nintendo R&D2's, Brownie Brown's, Ubisoft Milan's, AlphaDream's and Logik State's.
+    # Quintet's, Krawall's, Nintendo R&D2's, Brownie Brown's, Ubisoft Milan's, AlphaDream's, Logik State's and Webfoot
+    # Technologies'.
     xsflib_add_project_library(agblib sequence_export_agb
         src/sequence_export/agb/beat_grid.cpp
         src/sequence_export/agb/beat_midi.cpp
         src/sequence_export/agb/midi.cpp
         src/sequence_export/agb/module_bars.cpp
+        src/sequence_export/agb/module_conversion.cpp
         src/sequence_export/agb/psg.cpp
         src/sequence_export/agb/settings.cpp
         src/sequence_export/agb/sf2.cpp
@@ -324,13 +383,34 @@ if (AGBLIB_SEQUENCE_EXPORT)
         src/sequence_export/alphadream/convert.cpp
         src/sequence_export/alphadream/performance.cpp
         src/sequence_export/alphadream/sequencer.cpp
+        src/sequence_export/alphadream/sequencer_envelopes.cpp
         src/sequence_export/alphadream/soundfont.cpp)
     target_link_libraries(agblib_sequence_export_alphadream PUBLIC agblib::sequence_export_agb agblib::alphadream)
+    # The model's two files build as one translation unit. Their functions then compile as before.
+    set_target_properties(agblib_sequence_export_alphadream PROPERTIES UNITY_BUILD ON UNITY_BUILD_MODE GROUP)
+    set_source_files_properties(src/sequence_export/alphadream/sequencer.cpp
+        src/sequence_export/alphadream/sequencer_envelopes.cpp PROPERTIES UNITY_GROUP alphadream_sequencer)
     # Logik State's conversion: the model's playback of a module to MIDI and SoundFont 2.
     xsflib_add_project_library(agblib sequence_export_logikstate
         src/sequence_export/logikstate/convert.cpp
         src/sequence_export/logikstate/soundfont.cpp)
     target_link_libraries(agblib_sequence_export_logikstate PUBLIC agblib::sequence_export_agb agblib::logikstate)
+    # Webfoot Technologies' conversion: the model's playback of a song to MIDI and SoundFont 2.
+    xsflib_add_project_library(agblib sequence_export_webfoot
+        src/sequence_export/webfoot/convert.cpp
+        src/sequence_export/webfoot/soundfont.cpp)
+    target_link_libraries(agblib_sequence_export_webfoot PUBLIC agblib::sequence_export_agb agblib::webfoot)
+    # Frontline Studios' conversion: the model's playback of a module to MIDI and SoundFont 2.
+    xsflib_add_project_library(agblib sequence_export_frontline_mod
+        src/sequence_export/frontline_mod/convert.cpp
+        src/sequence_export/frontline_mod/soundfont.cpp)
+    target_link_libraries(agblib_sequence_export_frontline_mod PUBLIC agblib::sequence_export_agb
+        agblib::frontline_mod)
+    xsflib_add_project_library(agblib sequence_export_frontline_xm
+        src/sequence_export/frontline_xm/convert.cpp
+        src/sequence_export/frontline_xm/soundfont.cpp)
+    target_link_libraries(agblib_sequence_export_frontline_xm PUBLIC agblib::sequence_export_agb
+        agblib::frontline_xm)
     xsflib_add_project_library(agblib sequence_export_brownie
         src/sequence_export/brownie/convert.cpp
         src/sequence_export/brownie/performance.cpp
@@ -348,10 +428,13 @@ if (AGBLIB_SEQUENCE_EXPORT)
     target_link_libraries(agblib_sequence_export_rd1 PUBLIC agblib::sequence_export_agb agblib::rd1)
     xsflib_add_project_test(agblib sequence_export_agb agblib::sequence_export_agb)
     xsflib_add_project_test(agblib mp2k agblib::sequence_export_mp2k agblib::mp2k_player)
+    xsflib_add_project_test(agblib mp2k_detection agblib::sequence_export_mp2k agblib::mp2k_player)
     xsflib_add_project_test(agblib mp2k_loops agblib::sequence_export_mp2k agblib::mp2k_player)
     xsflib_add_project_test(agblib mp2k_conversion agblib::sequence_export_mp2k agblib::mp2k_player)
+    xsflib_add_project_test(agblib mp2k_voice_channels agblib::sequence_export_mp2k agblib::mp2k_player)
     xsflib_add_project_test(agblib mp2k_mixer agblib::sequence_export_mp2k agblib::mp2k_player)
     xsflib_add_project_test(agblib mp2k_builds agblib::sequence_export_mp2k agblib::mp2k_player)
+    xsflib_add_project_test(agblib mp2k_camelot_mixer agblib::sequence_export_mp2k agblib::mp2k_player)
     xsflib_add_project_test(agblib mp2k_player agblib::sequence_export_mp2k agblib::mp2k_player)
     xsflib_add_project_test(agblib mp2k_enhanced agblib::sequence_export_mp2k agblib::mp2k_player)
     xsflib_add_project_test(agblib konami agblib::sequence_export_konami)
@@ -360,13 +443,19 @@ if (AGBLIB_SEQUENCE_EXPORT)
     xsflib_add_project_test(agblib konami_revisions agblib::sequence_export_konami)
     xsflib_add_project_test(agblib konami_dungeon_dice agblib::sequence_export_konami)
     xsflib_add_project_test(agblib rare agblib::sequence_export_rare agblib::rare_player)
+    xsflib_add_project_test(agblib rare_loops agblib::sequence_export_rare agblib::rare_player)
     xsflib_add_project_test(agblib rare_conversion agblib::sequence_export_rare agblib::rare_player)
     xsflib_add_project_test(agblib rare_player agblib::sequence_export_rare agblib::rare_player)
     xsflib_add_project_test(agblib quintet agblib::sequence_export_quintet agblib::quintet_player)
+    xsflib_add_project_test(agblib quintet_loops agblib::sequence_export_quintet)
+    xsflib_add_project_test(agblib quintet_sounds agblib::sequence_export_quintet agblib::quintet_player)
     xsflib_add_project_test(agblib quintet_performance agblib::sequence_export_quintet)
     xsflib_add_project_test(agblib krawall agblib::sequence_export_krawall agblib::krawall_player)
+    xsflib_add_project_test(agblib krawall_midi agblib::sequence_export_krawall agblib::krawall_player)
+    xsflib_add_project_test(agblib krawall_songs agblib::sequence_export_krawall agblib::krawall_player)
     xsflib_add_project_test(agblib rd1 agblib::sequence_export_rd1)
     xsflib_add_project_test(agblib rd2 agblib::sequence_export_rd2)
+    xsflib_add_project_test(agblib rd2_cuts agblib::sequence_export_rd2)
     xsflib_add_project_test(agblib rd2_levels agblib::sequence_export_rd2)
     xsflib_add_project_test(agblib rd2_performance agblib::sequence_export_rd2)
     xsflib_add_project_test(agblib brownie agblib::sequence_export_brownie)
@@ -378,6 +467,9 @@ if (AGBLIB_SEQUENCE_EXPORT)
     xsflib_add_project_test(agblib logikstate agblib::sequence_export_logikstate)
     xsflib_add_project_test(agblib logikstate_mod1 agblib::sequence_export_logikstate)
     xsflib_add_project_test(agblib logikstate_mod30 agblib::sequence_export_logikstate)
+    xsflib_add_project_test(agblib webfoot_conversion agblib::sequence_export_webfoot)
+    xsflib_add_project_test(agblib frontline_mod_conversion agblib::sequence_export_frontline_mod)
+    xsflib_add_project_test(agblib frontline_xm_conversion agblib::sequence_export_frontline_xm)
 endif()
 
 # The tests that take files supplied on the machine, from a local_tests.cmake in a folder of the source tree, if any.

@@ -5,12 +5,35 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 
+#include "agblib/agb/sound_registers.h"
 #include "sequencer_internal.h"
 
 namespace agblib::brownie
 {
+
+namespace
+{
+
+// Returns the low byte of `v` as two hex digits.
+std::string HexByte(int v)
+{
+    char b[8];
+    std::snprintf(b, sizeof b, "%02X", unsigned(v & 0xFF));
+
+    return b;
+}
+
+// Returns a sample channel's volume with its envelope's level: (volume + 1) × level / 256, rounded down. The record
+// contains it at 0x25.
+uint8_t VolumeAtLevel(const Channel& ch)
+{
+    return uint8_t(((ch.volume + 1u) * ch.level) >> 8);
+}
+
+} // namespace
 
 // Reads the channel's data up to its next note, rest or hold, or a command that ends its frame.
 void Sequencer::ReadChannel(int c)
@@ -56,8 +79,10 @@ void Sequencer::ReadChannel(int c)
             {
                 PsgNote(c, uint32_t(rom_.U16(info_.frequency_table + 2 * uint32_t(key))) + ch.detune);
             }
+
             return;
         }
+
         if (b < 0xE0)
         {
             // The Magical Vacation revision has no length sets. There, LengthSet() gives the group of 16 lengths, one
@@ -131,6 +156,7 @@ bool Sequencer::RunCommand(int c, uint8_t command, uint32_t& at)
             {
                 channels_[size_t(k)].flags = 0;
             }
+
             return true;
         }
 
@@ -182,6 +208,7 @@ bool Sequencer::RunCommand(int c, uint8_t command, uint32_t& at)
                     Write(c & 1 ? kIoTimer1Control : kIoTimer0Control, 2, 0);
                     StopEnhanced(c & 1);
                 }
+
                 AddEvent(c, Event::kRest);
                 return false;
             }
@@ -196,6 +223,7 @@ bool Sequencer::RunCommand(int c, uint8_t command, uint32_t& at)
             {
                 Warn("channel " + std::to_string(c) + " has command EC, which changes the mixer's buffers");
             }
+
             AddEvent(c, Event::kRest);
             return false;
         }
@@ -213,6 +241,7 @@ bool Sequencer::RunCommand(int c, uint8_t command, uint32_t& at)
                 r5_ ^= 0x8000;
                 Write(FrequencyRegister(c), 2, r5_);
             }
+
             AddEvent(c, Event::kRest);
             return false;
         }
@@ -250,6 +279,7 @@ bool Sequencer::RunCommand(int c, uint8_t command, uint32_t& at)
             {
                 at = ch.loop_start;
             }
+
             return true;
         }
 
@@ -275,6 +305,7 @@ bool Sequencer::RunCommand(int c, uint8_t command, uint32_t& at)
                 AddEvent(c, Event::kLoop);
                 events_.back().first = it->second;
             }
+
             return true;
         }
 
@@ -297,12 +328,13 @@ bool Sequencer::RunCommand(int c, uint8_t command, uint32_t& at)
             LoadWave(ch.wave);
             r5_ = 0;
         }
+
         return true;
 
     case 0xFD:
         {
-            // A PSG channel's pan: its bits of NR51 for the right side in the low nibble and the left in the high,
-            // which the driver shifts to the channel's bits.
+            // A PSG channel's pan: its bits of NR51 for the right side in the low nibble and the left in the high. The
+            // driver shifts them to the channel's bits.
             uint32_t pan = rom_.U8(at++);
             uint32_t mask = 0x11;
             for (int k = 0; k < (c & 3); k++)
@@ -321,6 +353,7 @@ bool Sequencer::RunCommand(int c, uint8_t command, uint32_t& at)
                 Set16(SoundcntLCopy(), value);
                 Write(kIoSoundcntL, 2, value);
             }
+
             r5_ = mask;
             return true;
         }
@@ -342,7 +375,8 @@ bool Sequencer::RunCommand(int c, uint8_t command, uint32_t& at)
     }
 }
 
-// Starts a PSG note: the frequency setting, the envelope's first step, and the registers, which start the channel.
+// Starts a PSG note: the frequency setting, the envelope's first step, and the registers. The registers start the
+// channel.
 void Sequencer::PsgNote(int c, uint32_t frequency)
 {
     Channel& ch = channels_[size_t(c)];
@@ -361,6 +395,7 @@ void Sequencer::PsgNote(int c, uint32_t frequency)
         {
             Write(kIoNr10, 2, ch.sweep);
         }
+
         Write(ControlRegister(c), 2, control);
 
         // The Magical Vacation revision flips bit 15 of the frequency setting where the other sets it, and writes it
@@ -412,13 +447,14 @@ void Sequencer::SampleNote(int c, int key)
         Write(kIoDma1Control, 2, kDmaOn);
         Write(kIoDma2Control, 2, kDmaOn);
     }
+
     Write(kIoTimer0Control, 2, kTimerOn);
 }
 
-// A sample note in the Magical Vacation revision: the timer reload value for the key and the detune, which is signed
-// and in 12ths of a semitone, and the envelope's first step. Unless a sound effect has the FIFO, the note stops the
+// A sample note in the Magical Vacation revision: the timer reload value for the key and the detune, and the envelope's
+// first step. The detune is signed and in 12ths of a semitone. Unless a sound effect has the FIFO, the note stops the
 // FIFO's timer, gives the FIFO the sample's first 4 points as they are, sets the FIFO's sample from the channel's, and
-// starts the timer again at the new rate, with the FIFO's DMA, whose requests interrupt.
+// starts the timer again at the new rate, with the FIFO's DMA. The DMA's requests interrupt.
 void Sequencer::FifoNote(int c, int key)
 {
     Channel& ch = channels_[size_t(c)];
@@ -436,8 +472,8 @@ void Sequencer::FifoNote(int c, int key)
     const uint32_t timer = x ? kIoTimer1Control : kIoTimer0Control;
     Write(timer, 2, 0);
     fifos_[size_t(x)].owner = c;
-    Write(kIoFifoA + 4 * uint32_t(x), 2, rom_.U16(ch.SampleStart()));
-    Write(kIoFifoA + 4 * uint32_t(x) + 2, 2, rom_.U16(ch.SampleStart() + 2));
+    Write(agb::kRegFifoA + 4 * uint32_t(x), 2, rom_.U16(ch.SampleStart()));
+    Write(agb::kRegFifoA + 4 * uint32_t(x) + 2, 2, rom_.U16(ch.SampleStart() + 2));
     FifoVoice& v = fifo_voices_[size_t(x)];
     v.point = ch.SampleStart() + 4;
     v.end = ch.sample_end;
@@ -452,8 +488,8 @@ void Sequencer::FifoNote(int c, int key)
     r5_ = interrupts_;
 }
 
-// A PSG envelope's next step: its frames and NRx2, less the channel's volume, which starts the channel again. The
-// Magical Vacation revision keeps the new NRx1 and NRx2 only while the channel has its PSG channel.
+// A PSG envelope's next step: its frames and NRx2, less the channel's volume. The write of NRx2 starts the channel
+// again. The Magical Vacation revision keeps the new NRx1 and NRx2 only while the channel has its PSG channel.
 void Sequencer::PsgEnvelopeStep(int c)
 {
     Channel& ch = channels_[size_t(c)];
@@ -467,6 +503,7 @@ void Sequencer::PsgEnvelopeStep(int c)
     {
         ch.control = uint16_t(control);
     }
+
     if (!(ch.flags & kFlagEffect))
     {
         Write(ControlRegister(c), 2, control);
@@ -522,7 +559,7 @@ void Sequencer::TakeFifoStep(int c, uint32_t at)
     ch.step = at + 3;
 }
 
-// A sample channel's change in level, which stops at 0 and 255.
+// A sample channel's change in level. The level stops at 0 and 255.
 void Sequencer::RampStep(int c)
 {
     Channel& ch = channels_[size_t(c)];
@@ -539,9 +576,9 @@ void Sequencer::RampStep(int c)
     SetVoiceLevels(c);
 }
 
-// A sample channel's change in level in the Magical Vacation revision, by its low 3 bits, down with bit 3 set, which
-// stops at 0 and 255. The FIFO's sample takes the volume with the master level plus 1, where the envelope's step uses
-// the master level itself.
+// A sample channel's change in level in the Magical Vacation revision, by its low 3 bits, down with bit 3 set. The
+// level stops at 0 and 255. The FIFO's sample takes the volume with the master level plus 1, where the envelope's step
+// uses the master level itself.
 void Sequencer::FifoRampStep(int c)
 {
     Channel& ch = channels_[size_t(c)];
