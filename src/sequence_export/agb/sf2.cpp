@@ -17,6 +17,7 @@
 
 #include "agblib/agb/files.h"
 #include "agblib/agb/gba.h"
+#include "agblib/agb/rom.h"
 
 namespace agblib::sequence_export::agb
 {
@@ -171,6 +172,34 @@ void AddLoopGuard(sf2::Sample& s)
     {
         s.data.push_back(s.data[s.loop_start + i % (s.loop_end - s.loop_start)]);
     }
+}
+
+sf2::Sample Signed8Sample(const agblib::agb::Rom& rom, uint32_t points, uint32_t count, const char* name, uint32_t rate,
+                          int root, bool loops, uint32_t loop_start)
+{
+    sf2::Sample s;
+    s.name = name;
+    s.sample_rate = rate;
+    s.original_key = uint8_t(root);
+    for (uint32_t i = 0; i < count; i++)
+    {
+        s.data.push_back(int16_t(rom.S8(points + i) * 256));
+    }
+
+    if (loops)
+    {
+        s.loop_start = loop_start;
+        s.loop_end = count;
+        LengthenLoop(s);
+        AddLoopGuard(s);
+    }
+
+    if (s.data.empty())
+    {
+        s.data.push_back(0);
+    }
+
+    return s;
 }
 
 std::string AddressName(const char* kind, uint32_t address)

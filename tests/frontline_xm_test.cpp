@@ -13,6 +13,7 @@
 #include "agblib/frontline_xm/driver.h"
 #include "agblib/frontline_xm/player.h"
 #include "agblib/testing/frontline_xm_cart.h"
+#include "detection_test_util.h"
 #include "frontline_xm_test_util.h"
 #include "module_test_util.h"
 
@@ -68,12 +69,7 @@ void TestNoDriver()
     const cart::Data data(kRomBase);
     const Rom rom = MakeRom(data);
 
-    DriverInfo info;
-    std::string error;
-    const bool found = DetectDriver(rom, info, error);
-
-    SEQLIB_CHECK(!found);
-    SEQLIB_CHECK(error.empty());
+    agblib::testing::detection_tests::CheckNoDriver<DriverInfo>(rom, DetectDriver);
 }
 
 // The samples a tick at the module's BPM: the rate x 5 / (2 x BPM).

@@ -36,6 +36,7 @@ using agblib::sequence_export::agb::FinishModuleSimulation;
 using agblib::sequence_export::agb::kModuleMaxSeconds;
 using agblib::sequence_export::agb::LoopPassesBend;
 using agblib::sequence_export::agb::LoopPassSamples;
+using agblib::sequence_export::agb::MissingSongWarning;
 using agblib::sequence_export::agb::ModuleRecorder;
 using agblib::sequence_export::agb::ModuleSimulation;
 using agblib::sequence_export::agb::RunModuleSong;
@@ -154,7 +155,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int loops,
     Simulation sim;
     if (song < 0 || size_t(song) >= info.songs.size())
     {
-        sim.warnings.push_back("there's no song " + std::to_string(song));
+        sim.warnings.push_back(MissingSongWarning(song));
         return sim;
     }
 

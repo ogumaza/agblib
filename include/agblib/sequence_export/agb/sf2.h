@@ -11,6 +11,8 @@
 #include "seqlib/sf2/presets.h"
 #include "seqlib/sf2/soundfont.h"
 
+#include "agblib/agb/rom.h"
+
 namespace agblib::sequence_export::agb
 {
 
@@ -113,6 +115,12 @@ void LengthenLoop(sf2::Sample& s);
 // Adds kLoopGuard points after the data of `s` that repeat the start of its loop. The loop has to end at the end of the
 // data and can't be empty.
 void AddLoopGuard(sf2::Sample& s);
+
+// Returns a sample named `name` of the `count` signed 8-bit points at `points` in `rom`. The sample plays at `rate`
+// hertz on key `root`. With `loops`, its loop runs from point `loop_start` to the last point, lengthened by
+// LengthenLoop() and guarded by AddLoopGuard(). A sample without points gets one point of silence.
+sf2::Sample Signed8Sample(const agblib::agb::Rom& rom, uint32_t points, uint32_t count, const char* name, uint32_t rate,
+                          int root, bool loops, uint32_t loop_start);
 
 // Returns a name made of `kind` and `address` in 8 hex digits, such as "Sample 08123456".
 std::string AddressName(const char* kind, uint32_t address);

@@ -23,6 +23,8 @@ namespace agblib::sequence_export::webfoot
 
 using agblib::agb::LoopStart;
 using agblib::sequence_export::agb::kModuleMaxSeconds;
+using agblib::sequence_export::agb::MissingSongReport;
+using agblib::sequence_export::agb::MissingSongWarning;
 using agblib::sequence_export::agb::ModuleRecorder;
 using agblib::sequence_export::agb::ModuleSimulation;
 using agblib::sequence_export::agb::RunModuleConversion;
@@ -109,7 +111,7 @@ Simulation Simulate(const Rom& rom, const DriverInfo& info, int song, int loops,
     const SongTable* table = info.TableOf(song, index);
     if (table == nullptr)
     {
-        sim.warnings.push_back("there's no song " + std::to_string(song));
+        sim.warnings.push_back(MissingSongWarning(song));
         return sim;
     }
 
@@ -187,9 +189,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
     const SongTable* table = info.TableOf(song, index);
     if (table == nullptr)
     {
-        SongReport report;
-        report.warnings.push_back("there's no song " + std::to_string(song));
-        return report;
+        return MissingSongReport(song);
     }
 
     const SongHeader& header = table->songs[size_t(index)];

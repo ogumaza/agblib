@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -33,6 +34,11 @@ std::vector<uint32_t> FindThumb(const Rom& rom, const std::vector<ThumbPattern>&
 // Returns the address of the first match of the pattern that `text` gives in ParseThumbPattern()'s form, or 0 if the
 // ROM has none.
 uint32_t FindFirstThumb(const Rom& rom, std::string_view text);
+
+// Returns true if the halfwords from `at` on match `pattern`, one after another, or the pattern that `text` gives in
+// ParseThumbPattern()'s form.
+bool MatchesThumb(const Rom& rom, uint32_t at, std::span<const ThumbPattern> pattern);
+bool MatchesThumb(const Rom& rom, uint32_t at, std::string_view text);
 
 // Whether the Thumb instruction at `at` is `ldr rX, [pc, #imm]`.
 bool IsThumbLiteralLoad(const Rom& rom, uint32_t at);

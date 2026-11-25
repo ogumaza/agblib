@@ -13,6 +13,7 @@
 #include "agblib/frontline_mod/driver.h"
 #include "agblib/frontline_mod/player.h"
 #include "agblib/testing/frontline_mod_cart.h"
+#include "detection_test_util.h"
 #include "module_test_util.h"
 
 namespace agblib::frontline_mod
@@ -82,12 +83,7 @@ void TestNoDriver()
 {
     const Rom rom = MakeRom();
 
-    DriverInfo info;
-    std::string error;
-    const bool found = DetectDriver(rom, info, error);
-
-    SEQLIB_CHECK(!found);
-    SEQLIB_CHECK(error.empty());
+    agblib::testing::detection_tests::CheckNoDriver<DriverInfo>(rom, DetectDriver);
 }
 
 // The bytes of the mixer for 1,200 frames from each start. The game's player and mixer (Hardcore Pool's, on the ARM

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 cmake_minimum_required(VERSION 3.20)
-project(agblib VERSION 1.4.0 LANGUAGES C CXX)
+project(agblib VERSION 1.5.0 LANGUAGES C CXX)
 
 # CMake 3.20 has no PROJECT_IS_TOP_LEVEL. agblib is the top-level project when the build starts in its folder.
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
@@ -268,6 +268,13 @@ xsflib_add_project_library(agblib frontline_xm src/frontline_xm/driver.cpp src/f
 target_link_libraries(agblib_frontline_xm PUBLIC agblib::agb)
 xsflib_add_project_test(agblib frontline_xm agblib::frontline_xm)
 
+# Engine Software's driver, a player of modules in a bank: detection, the builds, the bank's reader and the model of
+# the driver and its mixer.
+xsflib_add_project_library(agblib engine_software src/engine_software/driver.cpp src/engine_software/player.cpp
+    src/engine_software/player_mix.cpp)
+target_link_libraries(agblib_engine_software PUBLIC agblib::agb)
+xsflib_add_project_test(agblib engine_software agblib::engine_software)
+
 # Enough of a GBA to run a game's sound driver on the ARM interpreter: the memories, the I/O registers, the DMA's
 # immediate transfers and the BIOS's calls that the drivers make. A game's MP2K driver runs on it (mp2k_game) as the
 # reference for agblib's model of the driver.
@@ -295,6 +302,8 @@ xsflib_add_project_library(agblib frontline_mod_game src/frontline_mod/game_driv
 target_link_libraries(agblib_frontline_mod_game PUBLIC agblib::frontline_mod agblib::agb_system)
 xsflib_add_project_library(agblib frontline_xm_game src/frontline_xm/game_driver.cpp)
 target_link_libraries(agblib_frontline_xm_game PUBLIC agblib::frontline_xm agblib::agb_system)
+xsflib_add_project_library(agblib engine_software_game src/engine_software/game_driver.cpp)
+target_link_libraries(agblib_engine_software_game PUBLIC agblib::engine_software agblib::agb_system)
 # krawall::ArchivePlayer: a piece of a ROM with Krawall on the models of the player and the sound hardware.
 xsflib_add_project_library(agblib krawall_player src/krawall/archive_player.cpp)
 target_link_libraries(agblib_krawall_player PUBLIC agblib::krawall agblib::agb_apu)
@@ -411,6 +420,11 @@ if (AGBLIB_SEQUENCE_EXPORT)
         src/sequence_export/frontline_xm/soundfont.cpp)
     target_link_libraries(agblib_sequence_export_frontline_xm PUBLIC agblib::sequence_export_agb
         agblib::frontline_xm)
+    xsflib_add_project_library(agblib sequence_export_engine_software
+        src/sequence_export/engine_software/convert.cpp
+        src/sequence_export/engine_software/soundfont.cpp)
+    target_link_libraries(agblib_sequence_export_engine_software PUBLIC agblib::sequence_export_agb
+        agblib::engine_software)
     xsflib_add_project_library(agblib sequence_export_brownie
         src/sequence_export/brownie/convert.cpp
         src/sequence_export/brownie/performance.cpp
@@ -470,6 +484,7 @@ if (AGBLIB_SEQUENCE_EXPORT)
     xsflib_add_project_test(agblib webfoot_conversion agblib::sequence_export_webfoot)
     xsflib_add_project_test(agblib frontline_mod_conversion agblib::sequence_export_frontline_mod)
     xsflib_add_project_test(agblib frontline_xm_conversion agblib::sequence_export_frontline_xm)
+    xsflib_add_project_test(agblib engine_software_conversion agblib::sequence_export_engine_software)
 endif()
 
 # The tests that take files supplied on the machine, from a local_tests.cmake in a folder of the source tree, if any.

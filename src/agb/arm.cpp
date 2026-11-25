@@ -7,26 +7,14 @@
 #include <span>
 
 #include "agblib/agb/rom.h"
+#include "code_match_internal.h"
 
 namespace agblib::agb
 {
 
 bool MatchesArm(const Rom& rom, uint32_t at, std::span<const ArmPattern> pattern)
 {
-    if (!rom.Contains(at, 4 * uint32_t(pattern.size())))
-    {
-        return false;
-    }
-
-    for (size_t i = 0; i < pattern.size(); i++)
-    {
-        if ((rom.U32(at + 4 * uint32_t(i)) & pattern[i].mask) != pattern[i].value)
-        {
-            return false;
-        }
-    }
-
-    return true;
+    return MatchesCode(rom, at, pattern);
 }
 
 uint32_t FindArm(const Rom& rom, uint32_t from, uint32_t to, std::span<const ArmPattern> pattern)

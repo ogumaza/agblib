@@ -37,6 +37,7 @@ using agblib::logikstate::Song;
 using agblib::sequence_export::agb::kModuleMaxSeconds;
 using agblib::sequence_export::agb::LoopPassesBend;
 using agblib::sequence_export::agb::LoopPassSamples;
+using agblib::sequence_export::agb::MissingSongReport;
 using agblib::sequence_export::agb::ModuleRecorder;
 using agblib::sequence_export::agb::ModuleRow;
 using agblib::sequence_export::agb::ModuleSimulation;
@@ -382,9 +383,7 @@ SongReport Run(const Rom& rom, const DriverInfo& info, int song, const ConvertSe
 {
     if (song < 0 || size_t(song) >= info.songs.size())
     {
-        SongReport report;
-        report.warnings.push_back("there's no song " + std::to_string(song));
-        return report;
+        return MissingSongReport(song);
     }
 
     const Song& entry = info.songs[size_t(song)];

@@ -41,7 +41,8 @@ constexpr uint32_t kIoBase = 0x04000000;
 constexpr uint32_t kIoSize = 0x400;
 constexpr uint32_t kMaxRomSize = 0x2000000;
 
-// The I/O registers that the sound drivers use.
+// The I/O registers that the sound drivers use. DISPSTAT gives the line of the vertical count's interrupt.
+constexpr uint32_t kRegDispStat = 0x04000004;
 constexpr uint32_t kRegVcount = 0x04000006;
 constexpr uint32_t kRegDma0Source = 0x040000B0; // DMAs 1 to 3 follow, 12 bytes apart
 constexpr uint32_t kRegTimer0Reload = 0x04000100;

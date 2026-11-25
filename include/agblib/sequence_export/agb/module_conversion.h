@@ -41,6 +41,20 @@ constexpr double kModuleTuningCents = 3;
 // The longest conversion, in seconds.
 constexpr uint64_t kModuleMaxSeconds = 60 * 60;
 
+// Returns the warning of a conversion of song `song` when the driver has no such song.
+inline std::string MissingSongWarning(int song)
+{
+    return "there's no song " + std::to_string(song);
+}
+
+// Returns the report of a conversion of song `song` when the driver has no such song: not converted, with the warning.
+inline SongReport MissingSongReport(int song)
+{
+    SongReport report;
+    report.warnings.push_back(MissingSongWarning(song));
+    return report;
+}
+
 // Returns the samples that a pass of a loop lasts where the mixer checks the loop's end once every `spacing` samples
 // and restarts the loop with the place's fraction at 0: the first multiple of `spacing` whose samples at the step
 // `step` cover the loop's `span`. `span` and `step` have the same fraction bits.
@@ -541,9 +555,7 @@ SongReport RunModuleSong(const agblib::agb::Rom& rom, const Info& info, int song
 {
     if (song < 0 || size_t(song) >= info.songs.size())
     {
-        SongReport report;
-        report.warnings.push_back("there's no song " + std::to_string(song));
-        return report;
+        return MissingSongReport(song);
     }
 
     const auto& entry = info.songs[size_t(song)];

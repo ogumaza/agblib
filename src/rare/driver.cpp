@@ -25,6 +25,7 @@ using agblib::agb::ArmPattern;
 using agblib::agb::FindArm;
 using agblib::agb::FindThumb;
 using agblib::agb::Hex;
+using agblib::agb::MatchesThumb;
 using agblib::agb::ParseThumbPattern;
 using agblib::agb::ThumbLiteral;
 using agblib::agb::ThumbPattern;
@@ -196,21 +197,6 @@ bool IsLdrLiteral(uint16_t h, int reg)
 bool IsBl(const Rom& rom, uint32_t at)
 {
     return (rom.U16(at) & 0xF800) == 0xF000 && (rom.U16(at + 2) & 0xF800) == 0xF800;
-}
-
-// Returns true if the Thumb code at `at` matches `pattern`.
-bool MatchesThumb(const Rom& rom, uint32_t at, const std::vector<ThumbPattern>& pattern)
-{
-    for (size_t k = 0; k < pattern.size(); k++)
-    {
-        const uint32_t address = at + 2 * uint32_t(k);
-        if (!rom.Contains(address, 2) || (rom.U16(address) & pattern[k].mask) != pattern[k].value)
-        {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 // Returns the channels from `first` to `last` as a mask, or 0 if they aren't a range of channels.

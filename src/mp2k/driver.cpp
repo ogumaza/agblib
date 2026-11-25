@@ -25,6 +25,7 @@ using agblib::agb::FindThumb;
 using agblib::agb::Hex;
 using agblib::agb::IsThumbLiteralLoad;
 using agblib::agb::kRomBase;
+using agblib::agb::MatchesThumb;
 using agblib::agb::ParseThumbPattern;
 using agblib::agb::Rom;
 using agblib::agb::ThumbLiteral;
@@ -539,32 +540,12 @@ void ReadPlayers(const Rom& rom, DriverInfo& info)
     info.players.resize(used);
 }
 
-// Returns true if the ROM contains the Thumb code that `text` gives in ParseThumbPattern()'s form at `at`.
-bool HasThumbAt(const Rom& rom, uint32_t at, std::string_view text)
-{
-    const std::vector<agb::ThumbPattern> pattern = ParseThumbPattern(text);
-    if (!rom.Contains(at, uint32_t(2 * pattern.size())))
-    {
-        return false;
-    }
-
-    for (size_t i = 0; i < pattern.size(); i++)
-    {
-        if ((rom.U16(at + 2 * uint32_t(i)) & pattern[i].mask) != pattern[i].value)
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 // Finds the songs that the game's code gives another number of DirectSound channels, from kChannelSettings.
 void FindSongChannels(const Rom& rom, DriverInfo& info)
 {
     for (const ChannelSetting& game : kChannelSettings)
     {
-        if (rom.GameCode() == game.game_code && HasThumbAt(rom, game.routine, game.code))
+        if (rom.GameCode() == game.game_code && MatchesThumb(rom, game.routine, game.code))
         {
             info.song_channels.routine = game.routine;
             info.song_channels.channels = std::min(game.channels, kMaxDirectChannels);

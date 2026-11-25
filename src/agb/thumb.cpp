@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #include "xsflib/bytes.h"
 
 #include "agblib/agb/rom.h"
+#include "code_match_internal.h"
 
 namespace agblib::agb
 {
@@ -693,6 +695,16 @@ uint32_t FindFirstThumb(const Rom& rom, std::string_view text)
 {
     const std::vector<uint32_t> hits = FindThumb(rom, ParseThumbPattern(text));
     return hits.empty() ? 0 : hits[0];
+}
+
+bool MatchesThumb(const Rom& rom, uint32_t at, std::span<const ThumbPattern> pattern)
+{
+    return MatchesCode(rom, at, pattern);
+}
+
+bool MatchesThumb(const Rom& rom, uint32_t at, std::string_view text)
+{
+    return MatchesThumb(rom, at, ParseThumbPattern(text));
 }
 
 bool IsThumbLiteralLoad(const Rom& rom, uint32_t at)
